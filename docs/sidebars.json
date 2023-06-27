@@ -214,7 +214,8 @@
                     ]
                 },
                 "lakehouse/file",
-                "lakehouse/filecache"
+                "lakehouse/filecache",
+                "lakehouse/fs_benchmark_tool"
             ]
         },
         {
@@ -493,6 +494,15 @@
                                 "sql-manual/sql-functions/struct-functions/struct",
                                 "sql-manual/sql-functions/struct-functions/named_struct",
                                 "sql-manual/sql-functions/struct-functions/struct_element"
+                            ]
+                        },
+                        {
+                            "type": "category",
+                            "label": "Combinators",
+                            "items": [
+                                "sql-manual/sql-functions/combinators/state",
+                                "sql-manual/sql-functions/combinators/merge",
+                                "sql-manual/sql-functions/combinators/union"
                             ]
                         },
                         {
@@ -907,7 +917,6 @@
                                 "sql-manual/sql-reference/Database-Administration-Statements/SET-VARIABLE",
                                 "sql-manual/sql-reference/Database-Administration-Statements/INSTALL-PLUGIN",
                                 "sql-manual/sql-reference/Database-Administration-Statements/UNINSTALL-PLUGIN",
-                                "sql-manual/sql-reference/Database-Administration-Statements/ENABLE-FEATURE",
                                 "sql-manual/sql-reference/Database-Administration-Statements/ADMIN-SET-REPLICA-STATUS",
                                 "sql-manual/sql-reference/Database-Administration-Statements/ADMIN-SHOW-REPLICA-DISTRIBUTION",
                                 "sql-manual/sql-reference/Database-Administration-Statements/ADMIN-SHOW-REPLICA-STATUS",
@@ -1029,7 +1038,8 @@
                                 "sql-manual/sql-reference/Data-Types/ARRAY",
                                 "sql-manual/sql-reference/Data-Types/MAP",
                                 "sql-manual/sql-reference/Data-Types/STRUCT",
-                                "sql-manual/sql-reference/Data-Types/JSON"
+                                "sql-manual/sql-reference/Data-Types/JSON",
+                                "sql-manual/sql-reference/Data-Types/AGG_STATE"
                             ]
                         },
                         {
