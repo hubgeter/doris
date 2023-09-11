@@ -279,18 +279,19 @@ TEST(TextSerde, ComplexTypeSerdeTextTest) {
                                    "[1, NULL, NULL, 1, NULL]"},
                                   {"[0, 1, NULL, 1]", "[1, 0]", "[NULL, NULL]", "[1, 1, NULL]",
                                    "[1, NULL, NULL, 1, NULL]"}),
-                FieldType_RandStr(
-                        FieldType::OLAP_FIELD_TYPE_TINYINT,
-                        {"[1111, 12, ]", "[,1 , 3]", "[ed, 2,]", "[],[]", "[[]]"},
-                        {"[NULL, 12, NULL]", "[NULL, 1, 3]", "[NULL, 2, NULL]", "[NULL]", "[NULL]"},
-                        {"[NULL, 12, NULL]", "[NULL, 1, 3]", "[NULL, 2, NULL]", "[NULL]",
-                         "[NULL]"}),
-                FieldType_RandStr(
-                        FieldType::OLAP_FIELD_TYPE_FLOAT,
-                        {"[0.33, 0.67, 0]", "[3.40282e+38, 3.40282e+38+1]", "[\"3.40282e+38+1\"]",
-                         "[\"3.14\", 0.77]"},
-                        {"[0.33, 0.67, 0]", "[3.40282e+38, NULL]", "[NULL]", "[NULL, 0.77]"},
-                        {"[0.33, 0.67, 0]", "[3.40282e+38, NULL]", "[NULL]", "[3.14, 0.77]"}),
+                FieldType_RandStr(FieldType::OLAP_FIELD_TYPE_TINYINT,
+                                  {"[1111, 12, ]", "[,1 , 3]", "[ed, 2,]", "[],[]", "[[]]", "\\N"},
+                                  {"[NULL, 12, NULL]", "[NULL, 1, 3]", "[NULL, 2, NULL]", "[NULL]",
+                                   "[NULL]", "NULL"},
+                                  {"[NULL, 12, NULL]", "[NULL, 1, 3]", "[NULL, 2, NULL]", "[NULL]",
+                                   "[NULL]", "NULL"}),
+                FieldType_RandStr(FieldType::OLAP_FIELD_TYPE_FLOAT,
+                                  {"[0.33, 0.67, 0]", "[3.40282e+38, 3.40282e+38+1]",
+                                   "[\"3.40282e+38+1\"]", "[\"3.14\", 0.77]", "\\N"},
+                                  {"[0.33, 0.67, 0]", "[3.40282e+38, NULL]", "[NULL]",
+                                   "[NULL, 0.77]", "NULL"},
+                                  {"[0.33, 0.67, 0]", "[3.40282e+38, NULL]", "[NULL]",
+                                   "[3.14, 0.77]", "NULL"}),
                 FieldType_RandStr(
                         FieldType::OLAP_FIELD_TYPE_DOUBLE,
                         {"[3.1415926, 0.878787878, 12.44456475432]",
@@ -304,16 +305,20 @@ TEST(TextSerde, ComplexTypeSerdeTextTest) {
                         {"[\"hello\", \"world\"]", "['a', 'b', 'c']",
                          "[\"42\",1412341,true,42.43,3.40282e+38+1,alpha:beta:gamma,Earth#42:"
                          "Control#86:Bob#31,17:true:Abe "
-                         "Linkedin,BLUE,\"\\N\",\"\u0001\u0002\u0003,\\u0001bc\"]"},
+                         "Linkedin,BLUE,\"\\N\",\"\u0001\u0002\u0003,\\u0001bc\"]",
+                         "[\"heeeee\",null,\"NULL\",\"\\N\",null,\"sssssssss\"]"},
                         // last : ["42",1412341,true,42.43,3.40282e+38+1,alpha:beta:gamma,Earth#42:Control#86:Bob#31,17:true:Abe Linkedin,BLUE,"\N",",\u0001bc"]
                         {"[\"hello\", \"world\"]", "['a', 'b', 'c']",
                          "[\"42\", 1412341, true, 42.43, 3.40282e+38+1, alpha:beta:gamma, "
                          "Earth#42:Control#86:Bob#31, 17:true:Abe Linkedin, BLUE, \"\\N\", "
-                         "\"\x1\x2\x3,\\u0001bc\"]"},
+                         "\"\x1\x2\x3,\\u0001bc\"]",
+                         "[\"heeeee\", NULL, \"NULL\", \"\\N\", NULL, \"sssssssss\"]",
+                         "[\"heeeee\", NULL, \"NULL\", \"\\N\", NULL, \"sssssssss\"]"},
                         {"[hello, world]", "[a, b, c]",
                          "[42, 1412341, true, 42.43, 3.40282e+38+1, alpha:beta:gamma, "
                          "Earth#42:Control#86:Bob#31, 17:true:Abe Linkedin, BLUE, \\N, "
-                         "\x1\x2\x3,\\u0001bc]"}),
+                         "\x1\x2\x3,\\u0001bc]",
+                         "[heeeee, NULL, NULL, \\N, NULL, sssssssss]"}),
                 FieldType_RandStr(
                         FieldType::OLAP_FIELD_TYPE_DATE,
                         {"[\\\"2022-07-13\\\",\"2022-07-13 12:30:00\"]",
@@ -324,11 +329,17 @@ TEST(TextSerde, ComplexTypeSerdeTextTest) {
                          "[2022-07-13, 2022-07-13]"}),
                 FieldType_RandStr(
                         FieldType::OLAP_FIELD_TYPE_DATETIME,
-                        {"[\"2022-07-13\",\"2022-07-13 12:30:00\"]",
-                         "[2022-07-13 12:30:00, \"2022-07-13\", 2022-07-13 12:30:00.0000]"},
-                        {"[NULL, NULL]", "[2022-07-13 12:30:00, NULL, 2022-07-13 12:30:00]"},
+                        {
+                                "[\"2022-07-13\",\"2022-07-13 12:30:00\"]",
+                                "[2022-07-13 12:30:00, \"2022-07-13\", 2022-07-13 12:30:00.0000]",
+                                "\\N",
+                                "[null,null,null]",
+                        },
+                        {"[NULL, NULL]", "[2022-07-13 12:30:00, NULL, 2022-07-13 12:30:00]", "NULL",
+                         "[NULL, NULL, NULL]"},
                         {"[2022-07-13 00:00:00, 2022-07-13 12:30:00]",
-                         "[2022-07-13 12:30:00, 2022-07-13 00:00:00, 2022-07-13 12:30:00]"}),
+                         "[2022-07-13 12:30:00, 2022-07-13 00:00:00, 2022-07-13 12:30:00]", "NULL",
+                         "[NULL, NULL, NULL]"}),
                 FieldType_RandStr(
                         FieldType::OLAP_FIELD_TYPE_DECIMAL,
                         {"[4, 5.5, 6.67]",
@@ -355,8 +366,8 @@ TEST(TextSerde, ComplexTypeSerdeTextTest) {
             auto type = std::get<0>(type_pair);
             DataTypePtr nested_data_type_ptr =
                     DataTypeFactory::instance().create_data_type(type, 0, 0);
-            DataTypePtr array_data_type_ptr =
-                    std::make_shared<DataTypeArray>(make_nullable(nested_data_type_ptr));
+            DataTypePtr array_data_type_ptr = make_nullable(
+                    std::make_shared<DataTypeArray>(make_nullable(nested_data_type_ptr)));
 
             std::cout << "========= This type is  " << array_data_type_ptr->get_name() << ": "
                       << fmt::format("{}", type) << std::endl;
@@ -450,15 +461,23 @@ TEST(TextSerde, ComplexTypeSerdeTextTest) {
                         FieldType::OLAP_FIELD_TYPE_STRING, FieldType::OLAP_FIELD_TYPE_DOUBLE,
                         {"{\" ,.amory\": 111.2343, \"\": 112., 'dggs': 13.14 , NULL: 12.2222222, "
                          ": NULL\\}",
-                         "{\"\": NULL, null: 12.44}", "{{}}", "{{}", "}}", "{}, {}"},
+                         "{\"\": NULL, null: 12.44}", "{{}}", "{{}", "}}", "{}, {}", "\\N",
+                         "{null:null,\"null\":null}",
+                         "{\"hello "
+                         "world\":0.2222222,\"hello2\":null,null:1111.1,\"NULL\":null,\"null\":"
+                         "null,\"null\":0.1}"},
                         {"{\" ,.amory\":111.2343, \"\":112, 'dggs':13.14, NULL:12.2222222, :NULL}",
-                         "{\"\":NULL, null:12.44}", "{}", "{}", "", "{}"}),
+                         "{\"\":NULL, NULL:12.44}", "{}", "{}", "NULL", "{}", "NULL",
+                         "{NULL:NULL, \"null\":NULL}",
+                         "{\"hello world\":0.2222222, \"hello2\":NULL, NULL:1111.1, \"NULL\":NULL, "
+                         "\"null\":NULL, \"null\":0.1}"}),
                 FieldType_RandStr(FieldType::OLAP_FIELD_TYPE_FLOAT,
                                   FieldType::OLAP_FIELD_TYPE_DOUBLE,
                                   {"{0.33: 3.1415926,3.1415926: 22}", "{3.14, 15926: 22}", "{3.14}",
-                                   "{222:3444},", "{4.12, 677: 455: 356, 67.6:67.7}"},
-                                  {"{0.33:3.1415926, 3.1415925:22}", "{NULL:22}", "{}", "",
-                                   "{NULL:NULL, 67.6:67.7}"}),
+                                   "{222:3444},", "{4.12, 677: 455: 356, 67.6:67.7}",
+                                   "{null:null,null:1.0,1.0:null}"},
+                                  {"{0.33:3.1415926, 3.1415925:22}", "{NULL:22}", "{}", "NULL",
+                                   "{NULL:NULL, 67.6:67.7}", "{NULL:NULL, NULL:1, 1:NULL}"}),
                 FieldType_RandStr(
                         FieldType::OLAP_FIELD_TYPE_DATE, FieldType::OLAP_FIELD_TYPE_DATETIME,
                         {"{2022-07-13: 2022-07-13 12:30:00, 2022-07-13 12:30:00: 2022-07-13 "
@@ -466,11 +485,13 @@ TEST(TextSerde, ComplexTypeSerdeTextTest) {
                          "2022-07-13:'2022-07-13 12:30:00'}",
                          // escaped char ':'
                          "{2022-07-13 12\\:30\\:00: 2022-07-13, 2022-07-13 12\\:30\\:00.000: "
-                         "2022-07-13 12:30:00.000, 2022-07-13:\'2022-07-13 12:30:00\'}"},
+                         "2022-07-13 12:30:00.000, 2022-07-13:\'2022-07-13 12:30:00\'}",
+                         "\\N"},
                         {"{2022-07-13:2022-07-13 12:30:00, 2022-07-13:NULL, 2022-07-13:NULL, "
                          "NULL:NULL, 2022-07-13:NULL}",
                          "{2022-07-13:2022-07-13 00:00:00, 2022-07-13:2022-07-13 12:30:00, "
-                         "2022-07-13:NULL}"}),
+                         "2022-07-13:NULL}",
+                         "NULL"}),
                 FieldType_RandStr(
                         FieldType::OLAP_FIELD_TYPE_DATETIME, FieldType::OLAP_FIELD_TYPE_DECIMAL,
                         {"{2022-07-13 12:30:00: 12.45675432, 2022-07-13: 12.45675432, NULL: NULL}",
@@ -491,8 +512,8 @@ TEST(TextSerde, ComplexTypeSerdeTextTest) {
                     DataTypeFactory::instance().create_data_type(key_type, 0, 0);
             DataTypePtr nested_value_type_ptr =
                     DataTypeFactory::instance().create_data_type(value_type, 0, 0);
-            DataTypePtr map_data_type_ptr = std::make_shared<DataTypeMap>(
-                    make_nullable(nested_key_type_ptr), make_nullable(nested_value_type_ptr));
+            DataTypePtr map_data_type_ptr = make_nullable(std::make_shared<DataTypeMap>(
+                    make_nullable(nested_key_type_ptr), make_nullable(nested_value_type_ptr)));
 
             std::cout << "========= This type is  " << map_data_type_ptr->get_name() << std::endl;
 
@@ -620,11 +641,14 @@ TEST(TextSerde, ComplexTypeWithNestedSerdeTextTest) {
                            std::vector<string>>
                 FieldType_RandStr;
         std::vector<FieldType_RandStr> nested_field_types = {
-                FieldType_RandStr(FieldType::OLAP_FIELD_TYPE_STRING,
-                                  {"[[Hello, World],[This, is, a, nested, array]]"},
-                                  {"[[Hello, World], [This, is, a, nested, array]]"},
-                                  {"[NULL, NULL, NULL, NULL, NULL, NULL, NULL]"},
-                                  {"[[Hello, World], [This, is, a, nested, array]]"}),
+                FieldType_RandStr(
+                        FieldType::OLAP_FIELD_TYPE_STRING,
+                        {"[[Hello, World],[This, is, a, nested, array],null,[null,null,aaaa]]"},
+                        {"[[Hello, World], [This, is, a, nested, array], NULL, [NULL, NULL, "
+                         "aaaa]]"},
+                        {"[NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL]"},
+                        {"[[Hello, World], [This, is, a, nested, array], NULL, [NULL, NULL, "
+                         "aaaa]]"}),
                 FieldType_RandStr(
                         FieldType::OLAP_FIELD_TYPE_STRING,
                         {"[[With, special, \"characters\"], [like, @, #, $, % \"^\", &, *, (, ), "
@@ -745,7 +769,7 @@ TEST(TextSerde, ComplexTypeWithNestedSerdeTextTest) {
                  "3050124830713523,\"mKH57V-YmwCNFq-vs8-vUIX\":0.36446683035480754},{\"HfhEMX-"
                  "oAMBJCC-YIC-hCqN\":0.8131454631693608,\"xrnTFd-ikONWik-T7J-sL8J\":0."
                  "37509722558990855,\"SVyEes-77mlzIr-N6c-DkYw\":0.4703053945053086,"
-                 "\"NULL\":0.1,\"\\N\":0.1}]"},
+                 "\"NULL\":0.1,\"\\N\":0.1,null:null}, {NULL:0.1, NULL:NULL, \"NULL\":0}]"},
                 {"[{\"2cKtIM-L1mOcEm-udR-HcB2\":0.23929040957798242, "
                  "\"eof2UN-Is0EEuA-H5D-hE58\":0.42373055809540094, "
                  "\"FwUSOB-R8rtK9W-BVG-8wYZ\":0.7680704548628841}, "
@@ -761,7 +785,7 @@ TEST(TextSerde, ComplexTypeWithNestedSerdeTextTest) {
                  "{\"HfhEMX-oAMBJCC-YIC-hCqN\":0.8131454631693608, "
                  "\"xrnTFd-ikONWik-T7J-sL8J\":0.37509722558990855, "
                  "\"SVyEes-77mlzIr-N6c-DkYw\":0.4703053945053086, "
-                 "\"NULL\":0.1, \"\\N\":0.1}]"},
+                 "\"NULL\":0.1, \"\\N\":0.1, NULL:NULL}, {NULL:0.1, NULL:NULL, \"NULL\":0}]"},
                 {""},
                 {"[{2cKtIM-L1mOcEm-udR-HcB2:0.23929040957798242, "
                  "eof2UN-Is0EEuA-H5D-hE58:0.42373055809540094, "
@@ -778,7 +802,7 @@ TEST(TextSerde, ComplexTypeWithNestedSerdeTextTest) {
                  "{HfhEMX-oAMBJCC-YIC-hCqN:0.8131454631693608, "
                  "xrnTFd-ikONWik-T7J-sL8J:0.37509722558990855, "
                  "SVyEes-77mlzIr-N6c-DkYw:0.4703053945053086, "
-                 "NULL:0.1, NULL:0.1}]"})};
+                 "NULL:0.1, \\N:0.1, NULL:NULL}, {NULL:0.1, NULL:NULL, NULL:0}]"})};
         for (auto type_pair : nested_field_types) {
             auto key_type = std::get<0>(type_pair);
             DataTypePtr nested_key_data_type_ptr =
