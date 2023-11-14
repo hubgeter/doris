@@ -345,6 +345,10 @@ public abstract class Table extends MetaObject implements Writable, TableIf {
         return 0;
     }
 
+    public long getCacheRowCount() {
+        return getRowCount();
+    }
+
     public long getAvgRowLength() {
         return 0;
     }

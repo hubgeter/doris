@@ -121,6 +121,11 @@ public class JdbcExternalTable extends ExternalTable {
     }
 
     @Override
+    public long getCacheRowCount() {
+        return getRowCount();
+    }
+
+    @Override
     public long estimatedRowCount() {
         return getRowCount();
     }

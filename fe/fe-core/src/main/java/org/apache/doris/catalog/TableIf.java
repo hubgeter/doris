@@ -120,6 +120,8 @@ public interface TableIf {
 
     long getRowCount();
 
+    long getCacheRowCount();
+
     long getDataLength();
 
     long getAvgRowLength();
