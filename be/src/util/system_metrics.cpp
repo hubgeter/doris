@@ -374,6 +374,7 @@ SystemMetrics::~SystemMetrics() {
 }
 
 void SystemMetrics::update() {
+    std::cout << "update()\n";
     _update_cpu_metrics();
     _update_memory_metrics();
     _update_disk_metrics();
