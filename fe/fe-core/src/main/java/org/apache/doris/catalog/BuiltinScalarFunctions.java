@@ -183,6 +183,7 @@ import org.apache.doris.nereids.trees.expressions.functions.scalar.Fmod;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.Fpow;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.FromBase64;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.FromDays;
+import org.apache.doris.nereids.trees.expressions.functions.scalar.FromIso8601Date;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.FromMicrosecond;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.FromMillisecond;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.FromSecond;
@@ -238,6 +239,7 @@ import org.apache.doris.nereids.trees.expressions.functions.scalar.JsonLength;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.JsonObject;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.JsonQuote;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.JsonReplace;
+import org.apache.doris.nereids.trees.expressions.functions.scalar.JsonSearch;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.JsonSet;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.JsonUnQuote;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.JsonbExistsPath;
@@ -319,6 +321,7 @@ import org.apache.doris.nereids.trees.expressions.functions.scalar.MurmurHash364
 import org.apache.doris.nereids.trees.expressions.functions.scalar.Negative;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.NgramSearch;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.NonNullable;
+import org.apache.doris.nereids.trees.expressions.functions.scalar.NormalCdf;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.NotNullOrEmpty;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.Now;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.NullIf;
@@ -429,6 +432,7 @@ import org.apache.doris.nereids.trees.expressions.functions.scalar.ToIpv4OrNull;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.ToIpv6;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.ToIpv6OrDefault;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.ToIpv6OrNull;
+import org.apache.doris.nereids.trees.expressions.functions.scalar.ToIso8601;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.ToMonday;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.ToQuantileState;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.Tokenize;
@@ -641,6 +645,7 @@ public class BuiltinScalarFunctions implements FunctionHelper {
             scalar(Fpow.class, "fpow"),
             scalar(FromBase64.class, "from_base64"),
             scalar(FromDays.class, "from_days"),
+            scalar(FromIso8601Date.class, "from_iso8601_date"),
             scalar(FromUnixtime.class, "from_unixtime"),
             scalar(G.class, "g"),
             scalar(GetJsonBigInt.class, "get_json_bigint"),
@@ -731,6 +736,7 @@ public class BuiltinScalarFunctions implements FunctionHelper {
             scalar(JsonbParseNullableErrorToNull.class, "jsonb_parse_nullable_error_to_null"),
             scalar(JsonbParseNullableErrorToValue.class, "json_parse_nullable_error_to_value"),
             scalar(JsonbParseNullableErrorToValue.class, "jsonb_parse_nullable_error_to_value"),
+            scalar(JsonSearch.class, "json_search"),
             scalar(JsonbValid.class, "json_valid"),
             scalar(JsonbValid.class, "jsonb_valid"),
             scalar(JsonbType.class, "json_type"),
@@ -792,6 +798,7 @@ public class BuiltinScalarFunctions implements FunctionHelper {
             scalar(MurmurHash364.class, "murmur_hash3_64"),
             scalar(Negative.class, "negative"),
             scalar(NonNullable.class, "non_nullable"),
+            scalar(NormalCdf.class, "normal_cdf"),
             scalar(NotNullOrEmpty.class, "not_null_or_empty"),
             scalar(NgramSearch.class, "ngram_search"),
             scalar(Now.class, "now", "current_timestamp", "localtime", "localtimestamp"),
@@ -907,6 +914,7 @@ public class BuiltinScalarFunctions implements FunctionHelper {
             scalar(ToIpv6.class, "to_ipv6"),
             scalar(ToIpv6OrDefault.class, "to_ipv6_or_default"),
             scalar(ToIpv6OrNull.class, "to_ipv6_or_null"),
+            scalar(ToIso8601.class, "to_iso8601"),
             scalar(Tokenize.class, "tokenize"),
             scalar(ToMonday.class, "to_monday"),
             scalar(ToQuantileState.class, "to_quantile_state"),
