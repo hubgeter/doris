@@ -41,6 +41,8 @@ import org.apache.doris.thrift.TPlanNode;
 import org.apache.doris.thrift.TPlanNodeType;
 import org.apache.doris.thrift.TPushAggOp;
 import org.apache.doris.thrift.TScanRangeLocations;
+import org.apache.doris.thrift.TTransactionalHiveDeleteDeltaDesc;
+import org.apache.doris.thrift.TTransactionalHiveDesc;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ArrayListMultimap;
@@ -175,6 +177,21 @@ public abstract class FileScanNode extends ExternalScanNode {
                         .append(" start: ").append(file.getStartOffset())
                         .append(" length: ").append(file.getSize())
                         .append("\n");
+                }
+                if (!fileRangeDescs.isEmpty() && fileRangeDescs.get(0).isSetTableFormatParams()
+                        && fileRangeDescs.get(0).table_format_params.isSetTransactionalHiveParams()) {
+                    TTransactionalHiveDesc transactionalHiveParams =
+                            fileRangeDescs.get(0).table_format_params.getTransactionalHiveParams();
+                    int deleteFileSize =  transactionalHiveParams.delete_deltas.size();
+                    output.append(prefix).append("  ")
+                            .append(String.format("transactionalDeleteFileSize=%d\n", deleteFileSize));
+
+                    for (int i = 0; i < Math.min(12, deleteFileSize); i++) {
+                        TTransactionalHiveDeleteDeltaDesc deleteFile = transactionalHiveParams.delete_deltas.get(i);
+                        output.append(prefix).append("    ")
+                                .append(deleteFile.directory_location)
+                                .append(", deleteDeltas=").append(deleteFile.file_names).append('\n');
+                    }
                 }
             }
         }
