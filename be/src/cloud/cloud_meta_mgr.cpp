@@ -655,10 +655,36 @@ Status CloudMetaMgr::sync_tablet_delete_bitmap(CloudTablet* tablet, int64_t old_
     }
 
     VLOG_DEBUG << "send GetDeleteBitmapRequest: " << req.ShortDebugString();
-    stub->get_delete_bitmap(&cntl, &req, &res, nullptr);
-    if (cntl.Failed()) {
-        return Status::RpcError("failed to get delete bitmap: {}", cntl.ErrorText());
+
+    int retry_times = 0;
+    while (true) {
+        brpc::Controller cntl;
+        // When there are many delete bitmaps that need to be synchronized, it
+        // may take a longer time, especially when loading the tablet for the
+        // first time, so set a relatively long timeout time.
+        cntl.set_timeout_ms(3 * config::meta_service_brpc_timeout_ms);
+        cntl.set_max_retry(kBrpcRetryTimes);
+        res.Clear();
+        stub->get_delete_bitmap(&cntl, &req, &res, nullptr);
+        if (cntl.Failed()) [[unlikely]] {
+            LOG_INFO("failed to get delete bitmap")
+                    .tag("reason", cntl.ErrorText())
+                    .tag("tablet_id", tablet->tablet_id())
+                    .tag("partition_id", tablet->partition_id())
+                    .tag("tried", retry_times);
+        } else {
+            break;
+        }
+
+        if (++retry_times > config::delete_bitmap_rpc_retry_times) {
+            if (cntl.Failed()) {
+                return Status::RpcError("failed to get delete bitmap, tablet={} err={}",
+                        tablet->tablet_id(), cntl.ErrorText());
+            }
+            break;
+        }
     }
+
     if (res.status().code() == MetaServiceCode::TABLET_NOT_FOUND) {
         return Status::NotFound("failed to get delete bitmap: {}", res.status().msg());
     }

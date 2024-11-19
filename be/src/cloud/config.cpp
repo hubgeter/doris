@@ -75,4 +75,5 @@ DEFINE_mInt32(tablet_txn_info_min_expired_seconds, "120");
 
 DEFINE_mBool(enable_use_cloud_unique_id_from_fe, "true");
 
+DEFINE_mInt32(delete_bitmap_rpc_retry_times, "25");
 } // namespace doris::config
