@@ -19,13 +19,9 @@ package org.apache.doris.maxcompute;
 
 import org.apache.doris.common.jni.vec.ColumnValue;
 
-import com.aliyun.odps.OdpsType;
-import com.aliyun.odps.data.ArrayRecord;
-import com.aliyun.odps.type.TypeInfo;
-import org.apache.log4j.Logger;
-
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -33,126 +29,109 @@ import java.util.List;
 /**
  * MaxCompute Column value in vector column
  */
-public class MaxComputeColumnValue implements ColumnValue {
-    private static final Logger LOG = Logger.getLogger(MaxComputeColumnValue.class);
-    private int idx;
-    private ArrayRecord record;
+public class MaxComputePartitionValue implements ColumnValue {
+    private String partitionValue;
 
-    public MaxComputeColumnValue() {
-        idx = 0;
+    public MaxComputePartitionValue(String partitionValue) {
+        reset(partitionValue);
     }
 
-    public MaxComputeColumnValue(ArrayRecord record, int i) {
-        this.record = record;
-        this.idx = i;
-    }
-
-    public void reset(ArrayRecord record) {
-        this.record = record;
-        this.idx = 0;
+    public void reset(String partitionValue) {
+        this.partitionValue = partitionValue;
     }
 
     @Override
     public boolean canGetStringAsBytes() {
-        return true;
+        return false;
     }
 
     @Override
     public boolean isNull() {
-        return record.isNull(idx);
-    }
-
-    public void setColumnIdx(int idx) {
-        this.idx = idx;
+        return false;
     }
 
     @Override
     public boolean getBoolean() {
-        return record.getBoolean(idx);
+        throw new UnsupportedOperationException();
     }
 
     @Override
     public byte getByte() {
-        return record.getTinyint(idx);
+        throw new UnsupportedOperationException();
     }
 
     @Override
     public short getShort() {
-        return record.getSmallint(idx);
+        throw new UnsupportedOperationException();
     }
 
     @Override
     public int getInt() {
-        return record.getInt(idx);
+        return Integer.parseInt(partitionValue);
     }
 
     @Override
     public float getFloat() {
-        return record.getFloat(idx);
+        throw new UnsupportedOperationException();
     }
 
     @Override
     public long getLong() {
-        return record.getBigint(idx);
+        return Long.parseLong(partitionValue);
     }
 
     @Override
     public double getDouble() {
-        return record.getDouble(idx);
+        throw new UnsupportedOperationException();
     }
 
     @Override
     public BigInteger getBigInteger() {
-        return BigInteger.valueOf(record.getBigint(idx));
+        return BigInteger.valueOf(getLong());
     }
 
     @Override
     public BigDecimal getDecimal() {
-        return record.getDecimal(idx);
+        return BigDecimal.valueOf(getDouble());
     }
 
     @Override
     public String getString() {
-        return record.getString(idx);
+        return partitionValue;
     }
 
     @Override
     public byte[] getStringAsBytes() {
-        return record.getString(idx).getBytes();
+        throw new UnsupportedOperationException();
     }
 
     @Override
     public LocalDate getDate() {
-        return record.getDateAsLocalDate(idx);
+        throw new UnsupportedOperationException();
     }
 
     @Override
     public LocalDateTime getDateTime() {
-        TypeInfo typeinfo = record.getColumns()[idx].getTypeInfo();
-        if (typeinfo.getOdpsType() == OdpsType.DATETIME) {
-            return record.getDatetimeAsZonedDateTime(idx).toLocalDateTime();
-        } else {
-            return record.getTimestamp(idx).toLocalDateTime();
-        }
+        throw new UnsupportedOperationException();
     }
 
     @Override
     public byte[] getBytes() {
-        return record.getBinary(idx).data();
+        return partitionValue.getBytes(StandardCharsets.UTF_8);
     }
 
     @Override
     public void unpackArray(List<ColumnValue> values) {
-        return;
+        throw new UnsupportedOperationException();
     }
 
     @Override
     public void unpackMap(List<ColumnValue> keys, List<ColumnValue> values) {
-        return;
+        throw new UnsupportedOperationException();
     }
 
     @Override
     public void unpackStruct(List<Integer> structFieldIndex, List<ColumnValue> values) {
-        return;
+        throw new UnsupportedOperationException();
     }
 }
