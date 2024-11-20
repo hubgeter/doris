@@ -301,6 +301,7 @@ public class MaxComputeJniScanner extends JniScanner {
                     columnValue.reset(column);
                     batchRows = column.getValueCount();
                     for (int j = 0; j < batchRows; j++) {
+                        columnValue.setColumnIdx(j);
                         appendData(readColumnId, columnValue);
                     }
                 }
