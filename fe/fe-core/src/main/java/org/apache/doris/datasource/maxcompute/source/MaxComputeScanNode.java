@@ -132,7 +132,7 @@ public class MaxComputeScanNode extends FileQueryScanNode {
         long modificationTime = odpsTable.getLastDataModifiedTime().getTime();
         // use '-1' to read whole partition, avoid expending too much time on calling table.getTotalRows()
         result.add(new MaxComputeSplit(VIRTUAL_SLICE_PART,
-                0, -1L, -1, modificationTime, null, Collections.emptyList(), null));
+                0, -1L, -1, modificationTime, null, Collections.emptyList(), partitionSpec));
     }
 
     private static void addBatchSplits(List<Split> result, Table odpsTable, long totalRows) {
