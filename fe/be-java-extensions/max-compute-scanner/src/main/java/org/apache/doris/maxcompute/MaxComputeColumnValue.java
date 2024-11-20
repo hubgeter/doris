@@ -81,79 +81,62 @@ public class MaxComputeColumnValue implements ColumnValue {
         return column.isNull(idx);
     }
 
-    private void skippedIfNull() {
-        // null has been process by appendValue with isNull()
-        try {
-            if (column.isNull(idx)) {
-                idx++;
-            }
-        } catch (IndexOutOfBoundsException e) {
-            // skip left rows
-            idx++;
-        }
+    public void setColumnIdx(int idx) {
+        this.idx = idx;
     }
 
     @Override
     public boolean getBoolean() {
-        skippedIfNull();
         BitVector bitCol = (BitVector) column;
-        return bitCol.get(idx++) != 0;
+        return bitCol.get(idx) != 0;
     }
 
     @Override
     public byte getByte() {
-        skippedIfNull();
         TinyIntVector tinyIntCol = (TinyIntVector) column;
-        return tinyIntCol.get(idx++);
+        return tinyIntCol.get(idx);
     }
 
     @Override
     public short getShort() {
-        skippedIfNull();
         SmallIntVector smallIntCol = (SmallIntVector) column;
-        return smallIntCol.get(idx++);
+        return smallIntCol.get(idx);
     }
 
     @Override
     public int getInt() {
-        skippedIfNull();
         IntVector intCol = (IntVector) column;
-        return intCol.get(idx++);
+        return intCol.get(idx);
     }
 
     @Override
     public float getFloat() {
-        skippedIfNull();
         Float4Vector floatCol = (Float4Vector) column;
-        return floatCol.get(idx++);
+        return floatCol.get(idx);
     }
 
     @Override
     public long getLong() {
-        skippedIfNull();
         BigIntVector longCol = (BigIntVector) column;
-        return longCol.get(idx++);
+        return longCol.get(idx);
     }
 
     @Override
     public double getDouble() {
-        skippedIfNull();
         Float8Vector doubleCol = (Float8Vector) column;
-        return doubleCol.get(idx++);
+        return doubleCol.get(idx);
     }
 
     @Override
     public BigInteger getBigInteger() {
-        skippedIfNull();
         BigIntVector longCol = (BigIntVector) column;
-        return BigInteger.valueOf(longCol.get(idx++));
+        return BigInteger.valueOf(longCol.get(idx));
     }
 
     @Override
     public BigDecimal getDecimal() {
-        skippedIfNull();
         DecimalVector decimalCol = (DecimalVector) column;
-        return getBigDecimalFromArrowBuf(column.getDataBuffer(), idx++,
+        return getBigDecimalFromArrowBuf(column.getDataBuffer(), idx,
                     decimalCol.getScale(), DecimalVector.TYPE_WIDTH);
     }
 
@@ -187,53 +170,47 @@ public class MaxComputeColumnValue implements ColumnValue {
 
     @Override
     public String getString() {
-        skippedIfNull();
         VarCharVector varcharCol = (VarCharVector) column;
-        String v = varcharCol.getObject(idx++).toString();
+        String v = varcharCol.getObject(idx).toString();
         return v == null ? new String(new byte[0]) : v;
     }
 
     @Override
     public byte[] getStringAsBytes() {
-        skippedIfNull();
         VarCharVector varcharCol = (VarCharVector) column;
-        byte[] v = varcharCol.getObject(idx++).getBytes();
+        byte[] v = varcharCol.getObject(idx).getBytes();
         return v == null ? new byte[0] : v;
     }
 
     @Override
     public LocalDate getDate() {
-        skippedIfNull();
         DateDayVector dateCol = (DateDayVector) column;
-        Integer intVal = dateCol.getObject(idx++);
+        Integer intVal = dateCol.getObject(idx);
         return LocalDate.ofEpochDay(intVal == null ? 0 : intVal);
     }
 
     @Override
     public LocalDateTime getDateTime() {
-        skippedIfNull();
         LocalDateTime result;
         if (column instanceof DateMilliVector) {
             DateMilliVector datetimeCol = (DateMilliVector) column;
-            result = datetimeCol.getObject(idx++);
+            result = datetimeCol.getObject(idx);
         } else {
             TimeStampNanoVector datetimeCol = (TimeStampNanoVector) column;
-            result = datetimeCol.getObject(idx++);
+            result = datetimeCol.getObject(idx);
         }
         return result == null ? LocalDateTime.MIN : result;
     }
 
     @Override
     public byte[] getBytes() {
-        skippedIfNull();
         VarBinaryVector binaryCol = (VarBinaryVector) column;
-        byte[] v = binaryCol.getObject(idx++);
+        byte[] v = binaryCol.getObject(idx);
         return v == null ? new byte[0] : v;
     }
 
     @Override
     public void unpackArray(List<ColumnValue> values) {
-        skippedIfNull();
         ListVector listCol = (ListVector) column;
         int elemSize = listCol.getObject(idx).size();
         for (int i = 0; i < elemSize; i++) {
@@ -241,12 +218,10 @@ public class MaxComputeColumnValue implements ColumnValue {
             values.add(val);
             offset++;
         }
-        idx++;
     }
 
     @Override
     public void unpackMap(List<ColumnValue> keys, List<ColumnValue> values) {
-        skippedIfNull();
         MapVector mapCol = (MapVector) column;
         int elemSize = mapCol.getObject(idx).size();
         FieldVector keyList = mapCol.getDataVector().getChildrenFromFields().get(0);
@@ -258,17 +233,14 @@ public class MaxComputeColumnValue implements ColumnValue {
             values.add(val);
             offset++;
         }
-        idx++;
     }
 
     @Override
     public void unpackStruct(List<Integer> structFieldIndex, List<ColumnValue> values) {
-        skippedIfNull();
         StructVector structCol = (StructVector) column;
         for (Integer fieldIndex : structFieldIndex) {
             MaxComputeColumnValue val = new MaxComputeColumnValue(structCol.getChildByOrdinal(fieldIndex), idx);
             values.add(val);
         }
-        idx++;
     }
 }
