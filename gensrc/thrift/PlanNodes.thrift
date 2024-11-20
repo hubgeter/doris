@@ -333,10 +333,7 @@ struct TPaimonFileDesc {
 }
 
 struct TMaxComputeFileDesc {
-    1: optional string partition_spec // deprecated 
-    2: optional string session_id 
-    3: optional string table_batch_read_session
-
+    1: optional string partition_spec
 }
 
 struct THudiFileDesc {
