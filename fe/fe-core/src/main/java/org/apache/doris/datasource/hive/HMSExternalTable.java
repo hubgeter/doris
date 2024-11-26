@@ -40,7 +40,6 @@ import org.apache.doris.mtmv.MTMVRelatedTableIf;
 import org.apache.doris.mtmv.MTMVSnapshotIf;
 import org.apache.doris.mtmv.MTMVTimestampSnapshot;
 import org.apache.doris.nereids.exceptions.NotSupportedException;
-import org.apache.doris.nereids.trees.plans.logical.LogicalFileScan.SelectedPartitions;
 import org.apache.doris.qe.GlobalVariable;
 import org.apache.doris.statistics.AnalysisInfo;
 import org.apache.doris.statistics.BaseAnalysisTask;
@@ -296,9 +295,14 @@ public class HMSExternalTable extends ExternalTable implements MTMVRelatedTableI
                 .orElse(Collections.emptyList());
     }
 
-    public SelectedPartitions getAllPartitions() {
+    @Override
+    public boolean supportPartitionPruned() {
+        return getDlaType() == DLAType.HIVE;
+    }
+
+    public Map<Long, PartitionItem> getNameToPartitionItems() {
         if (CollectionUtils.isEmpty(this.getPartitionColumns())) {
-            return SelectedPartitions.NOT_PRUNED;
+            return Collections.emptyMap();
         }
 
         HiveMetaStoreCache cache = Env.getCurrentEnv().getExtMetaCacheMgr()
@@ -306,9 +310,7 @@ public class HMSExternalTable extends ExternalTable implements MTMVRelatedTableI
         List<Type> partitionColumnTypes = this.getPartitionColumnTypes();
         HiveMetaStoreCache.HivePartitionValues hivePartitionValues = cache.getPartitionValues(
                 this.getDbName(), this.getName(), partitionColumnTypes);
-        Map<Long, PartitionItem> idToPartitionItem = hivePartitionValues.getIdToPartitionItem();
-
-        return new SelectedPartitions(idToPartitionItem.size(), idToPartitionItem, false);
+        return hivePartitionValues.getIdToPartitionItem();
     }
 
     public boolean isHiveTransactionalTable() {
