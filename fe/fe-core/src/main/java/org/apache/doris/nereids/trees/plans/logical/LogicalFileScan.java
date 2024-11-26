@@ -43,7 +43,7 @@ import java.util.OptionalLong;
  */
 public class LogicalFileScan extends LogicalCatalogRelation {
 
-    protected final SelectedPartitions selectedPartitions;
+    protected SelectedPartitions selectedPartitions;
     protected final Optional<TableSample> tableSample;
     protected final Optional<TableSnapshot> tableSnapshot;
 

@@ -377,10 +377,11 @@ public class ExternalTable implements TableIf, Writable, GsonPostProcessable {
      * @return
      */
     public SelectedPartitions initSelectedPartitions(OptionalLong snapshotId) {
-        if (!supportPartitionPruned()) {
+        if (!supportInternalPartitionPruned()) {
             return SelectedPartitions.NOT_PRUNED;
         }
         if (CollectionUtils.isEmpty(this.getPartitionColumns(snapshotId))) {
+            //no partition table.
             return SelectedPartitions.NOT_PRUNED;
         }
         Map<String, PartitionItem> nameToPartitionItems = getNameToPartitionItems(snapshotId);
@@ -410,11 +411,12 @@ public class ExternalTable implements TableIf, Writable, GsonPostProcessable {
     }
 
     /**
-     * Does it support partition cpruned， If so, this method needs to be overridden in subclasses
+     * Does it support Internal partition pruned, If so, this method needs to be overridden in subclasses
+     * Internal partition pruned : Implement partition pruning logic without relying on external APIs.
      *
      * @return
      */
-    public boolean supportPartitionPruned() {
+    public boolean supportInternalPartitionPruned() {
         return false;
     }
 }
