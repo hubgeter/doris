@@ -26,6 +26,7 @@
 #include "pipeline/exec/olap_scan_operator.h"
 #include "pipeline/exec/scan_operator.h"
 #include "vec/exec/format/format_common.h"
+#include "vec/exec/scan/pip_scanner_context.h"
 #include "vec/exec/scan/vfile_scanner.h"
 
 namespace doris::pipeline {
@@ -39,7 +40,8 @@ Status FileScanLocalState::_init_scanners(std::list<vectorized::VScannerSPtr>* s
 
     auto& p = _parent->cast<FileScanOperatorX>();
     size_t shard_num = std::min<size_t>(
-            config::doris_scanner_thread_pool_thread_num / state()->query_parallel_instance_num(),
+            config::doris_scanner_thread_pool_thread_num /
+                    (_batch_split_mode ? 1 : state()->query_parallel_instance_num()),
             _max_scanners);
     shard_num = std::max(shard_num, (size_t)1);
     _kv_cache.reset(new vectorized::ShardedKVCache(shard_num));
@@ -53,6 +55,20 @@ Status FileScanLocalState::_init_scanners(std::list<vectorized::VScannerSPtr>* s
     return Status::OK();
 }
 
+Status FileScanLocalState::start_scanners(
+        const std::list<std::shared_ptr<vectorized::ScannerDelegate>>& scanners) {
+    auto& p = _parent->cast<FileScanOperatorX>();
+    _scanner_ctx = PipXScannerContext::create_shared(
+            state(), this, p._output_tuple_desc, p.output_row_descriptor(), scanners, p.limit(),
+            state()->scan_queue_mem_limit(), _scan_dependency,
+            // 1. If data distribution is ignored , we use 1 instance to scan.
+            // 2. Else, file scanner will consume much memory so we use config::doris_scanner_thread_pool_thread_num / query_parallel_instance_num scanners to scan.
+            p.ignore_data_distribution() && !p.is_file_scan_operator() ? 1
+            : _batch_split_mode                                        ? 1
+                                : state()->query_parallel_instance_num());
+    return Status::OK();
+}
+
 std::string FileScanLocalState::name_suffix() const {
     return fmt::format(" (id={}. table name = {})", std::to_string(_parent->node_id()),
                        _parent->cast<FileScanOperatorX>()._table_name);
@@ -60,21 +76,31 @@ std::string FileScanLocalState::name_suffix() const {
 
 void FileScanLocalState::set_scan_ranges(RuntimeState* state,
                                          const std::vector<TScanRangeParams>& scan_ranges) {
-    _max_scanners =
-            config::doris_scanner_thread_pool_thread_num / state->query_parallel_instance_num();
-    _max_scanners = std::max(std::max(_max_scanners, state->parallel_scan_max_scanners_count()), 1);
-    // For select * from table limit 10; should just use one thread.
-    if (should_run_serial()) {
-        _max_scanners = 1;
-    }
     if (scan_ranges.size() == 1) {
         auto scan_range = scan_ranges[0].scan_range.ext_scan_range.file_scan_range;
         if (scan_range.__isset.split_source) {
             auto split_source = scan_range.split_source;
             RuntimeProfile::Counter* get_split_timer = ADD_TIMER(_runtime_profile, "GetSplitTime");
+            _max_scanners = config::doris_scanner_thread_pool_thread_num / 1;
+            _max_scanners = std::max(std::max(_max_scanners, 1), 1);
+            // For select * from table limit 10; should just use one thread.
+            if (should_run_serial()) {
+                _max_scanners = 1;
+            }
             _split_source = std::make_shared<vectorized::RemoteSplitSourceConnector>(
                     state, get_split_timer, split_source.split_source_id, split_source.num_splits,
                     _max_scanners);
+            _batch_split_mode = true;
+        }
+    }
+
+    if (!_batch_split_mode) {
+        _max_scanners =
+                config::doris_scanner_thread_pool_thread_num / state->query_parallel_instance_num();
+        _max_scanners = std::max(std::max(_max_scanners, state->query_parallel_instance_num()), 1);
+        // For select * from table limit 10; should just use one thread.
+        if (should_run_serial()) {
+            _max_scanners = 1;
         }
     }
     if (_split_source == nullptr) {
