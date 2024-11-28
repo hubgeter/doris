@@ -985,6 +985,11 @@ public class Column implements GsonPostProcessable {
                 sb.append(" DEFAULT \"").append(defaultValue).append("\"");
             }
         }
+        if (getDataType() == PrimitiveType.BITMAP && defaultValue != null) {
+            if (defaultValueExprDef != null) {
+                sb.append(" DEFAULT ").append(defaultValueExprDef.getExprName()).append("");
+            }
+        }
         if (hasOnUpdateDefaultValue) {
             sb.append(" ON UPDATE ").append(defaultValue).append("");
         }
@@ -1180,5 +1185,11 @@ public class Column implements GsonPostProcessable {
 
     public Set<String> getGeneratedColumnsThatReferToThis() {
         return generatedColumnsThatReferToThis;
+    }
+
+    public void setDefaultValueInfo(Column refColumn) {
+        this.defaultValue = refColumn.defaultValue;
+        this.defaultValueExprDef = refColumn.defaultValueExprDef;
+        this.realDefaultValue = refColumn.realDefaultValue;
     }
 }

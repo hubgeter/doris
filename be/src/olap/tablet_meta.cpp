@@ -42,6 +42,7 @@
 #include "olap/olap_common.h"
 #include "olap/olap_define.h"
 #include "olap/rowset/rowset.h"
+#include "olap/rowset/rowset_meta_manager.h"
 #include "olap/tablet_meta_manager.h"
 #include "olap/utils.h"
 #include "util/debug_points.h"
@@ -1092,9 +1093,9 @@ uint64_t DeleteBitmap::cardinality() const {
     return res;
 }
 
-size_t DeleteBitmap::get_size() const {
+uint64_t DeleteBitmap::get_size() const {
     std::shared_lock l(lock);
-    size_t charge = 0;
+    uint64_t charge = 0;
     for (auto& [k, v] : delete_bitmap) {
         charge += v.getSizeInBytes();
     }

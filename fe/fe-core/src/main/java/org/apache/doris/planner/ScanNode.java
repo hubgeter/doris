@@ -111,6 +111,11 @@ public abstract class ScanNode extends PlanNode implements SplitGenerator {
 
     protected TableSnapshot tableSnapshot;
 
+    // Save the id of backends which this scan node will be executed on.
+    // This is also important for local shuffle logic.
+    // Now only OlapScanNode and FileQueryScanNode implement this.
+    protected HashSet<Long> scanBackendIds = new HashSet<>();
+
     public ScanNode(PlanNodeId id, TupleDescriptor desc, String planNodeName, StatisticalType statisticalType) {
         super(id, desc.getId().asList(), planNodeName, statisticalType);
         this.desc = desc;
@@ -732,7 +737,7 @@ public abstract class ScanNode extends PlanNode implements SplitGenerator {
     }
 
     public int numScanBackends() {
-        return 0;
+        return scanBackendIds.size();
     }
 
     public int getScanRangeNum() {
@@ -740,8 +745,20 @@ public abstract class ScanNode extends PlanNode implements SplitGenerator {
     }
 
     public boolean shouldUseOneInstance(ConnectContext ctx) {
-        long limitRowsForSingleInstance = ctx == null ? 10000 : ctx.getSessionVariable().limitRowsForSingleInstance;
-        return hasLimit() && getLimit() < limitRowsForSingleInstance && conjuncts.isEmpty();
+        int adaptivePipelineTaskSerialReadOnLimit = 10000;
+
+        if (ctx != null) {
+            if (ctx.getSessionVariable().enableAdaptivePipelineTaskSerialReadOnLimit) {
+                adaptivePipelineTaskSerialReadOnLimit = ctx.getSessionVariable().adaptivePipelineTaskSerialReadOnLimit;
+            } else {
+                return false;
+            }
+        } else {
+            // No connection context, typically for broker load.
+        }
+
+        // For UniqueKey table, we will use multiple instance.
+        return hasLimit() && getLimit() <= adaptivePipelineTaskSerialReadOnLimit && conjuncts.isEmpty();
     }
 
     // In cloud mode, meta read lock is not enough to keep a snapshot of the partition versions.
@@ -836,5 +853,12 @@ public abstract class ScanNode extends PlanNode implements SplitGenerator {
 
     public long getSelectedSplitNum() {
         return selectedSplitNum;
+    }
+
+    @Override
+    public boolean isSerialOperator() {
+        return numScanBackends() <= 0 || getScanRangeNum()
+                < ConnectContext.get().getSessionVariable().getParallelExecInstanceNum() * numScanBackends()
+                || (ConnectContext.get() != null && ConnectContext.get().getSessionVariable().isForceToLocalShuffle());
     }
 }

@@ -36,7 +36,8 @@ namespace doris {
 bvar::Adder<int64_t> g_loadchannel_cnt("loadchannel_cnt");
 
 LoadChannel::LoadChannel(const UniqueId& load_id, int64_t timeout_s, bool is_high_priority,
-                         std::string sender_ip, int64_t backend_id, bool enable_profile)
+                         std::string sender_ip, int64_t backend_id, bool enable_profile,
+                         int64_t wg_id)
         : _load_id(load_id),
           _timeout_s(timeout_s),
           _is_high_priority(is_high_priority),
@@ -46,16 +47,28 @@ LoadChannel::LoadChannel(const UniqueId& load_id, int64_t timeout_s, bool is_hig
     std::shared_ptr<QueryContext> query_context =
             ExecEnv::GetInstance()->fragment_mgr()->get_or_erase_query_ctx_with_lock(
                     _load_id.to_thrift());
+    std::shared_ptr<MemTrackerLimiter> mem_tracker = nullptr;
+    WorkloadGroupPtr wg_ptr = nullptr;
+
     if (query_context != nullptr) {
-        _query_thread_context = {_load_id.to_thrift(), query_context->query_mem_tracker,
-                                 query_context->workload_group()};
+        mem_tracker = query_context->query_mem_tracker;
+        wg_ptr = query_context->workload_group();
     } else {
-        _query_thread_context = {
-                _load_id.to_thrift(),
-                MemTrackerLimiter::create_shared(
-                        MemTrackerLimiter::Type::LOAD,
-                        fmt::format("(FromLoadChannel)Load#Id={}", _load_id.to_string()))};
+        // when memtable on sink is not enabled, load can not find queryctx
+        mem_tracker = MemTrackerLimiter::create_shared(
+                MemTrackerLimiter::Type::LOAD,
+                fmt::format("(FromLoadChannel)Load#Id={}", _load_id.to_string()));
+        if (wg_id > 0) {
+            WorkloadGroupPtr workload_group_ptr =
+                    ExecEnv::GetInstance()->workload_group_mgr()->get_task_group_by_id(wg_id);
+            if (workload_group_ptr) {
+                wg_ptr = workload_group_ptr;
+                wg_ptr->add_mem_tracker_limiter(mem_tracker);
+            }
+        }
     }
+    _query_thread_context = {_load_id.to_thrift(), mem_tracker, wg_ptr};
+
     g_loadchannel_cnt << 1;
     // _last_updated_time should be set before being inserted to
     // _load_channels in load_channel_mgr, or it may be erased

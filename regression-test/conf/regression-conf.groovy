@@ -217,7 +217,7 @@ txYunSk="***********"
 
 //arrow flight sql test config
 extArrowFlightSqlHost = "127.0.0.1"
-extArrowFlightSqlPort = 8080
+extArrowFlightSqlPort = 8081
 extArrowFlightSqlUser = "root"
 extArrowFlightSqlPassword= ""
 
@@ -241,3 +241,8 @@ enableTrinoConnectorTest = false
 enableKerberosTest=false
 kerberosHmsPort=9883
 kerberosHdfsPort=8820
+
+// cloud
+metaServiceToken = "greedisgood9999"
+instanceId = "default_instance_id"
+multiClusterInstance = "default_instance_id"

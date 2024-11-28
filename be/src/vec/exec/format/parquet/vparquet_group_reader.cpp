@@ -212,9 +212,9 @@ bool RowGroupReader::_can_filter_by_dict(int slot_id,
         //  the implementation of NULL values because the dictionary itself does not contain
         //  NULL value encoding. As a result, many NULL-related functions or expressions
         //  cannot work properly, such as is null, is not null, coalesce, etc.
-        //  Here we first disable dictionary filtering when predicate contains functions.
+        //  Here we first disable dictionary filtering when predicate is not slot.
         //  Implementation of NULL value dictionary filtering will be carried out later.
-        if (expr->node_type() == TExprNodeType::FUNCTION_CALL) {
+        if (expr->node_type() != TExprNodeType::SLOT_REF) {
             return false;
         }
         for (auto& child : expr->children()) {
@@ -654,6 +654,7 @@ Status RowGroupReader::_fill_partition_columns(
         auto _text_serde = slot_desc->get_data_type_ptr()->get_serde();
         Slice slice(value.data(), value.size());
         int num_deserialized = 0;
+        // Be careful when reading empty rows from parquet row groups.
         if (_text_serde->deserialize_column_from_fixed_json(*col_ptr, slice, rows,
                                                             &num_deserialized,
                                                             _text_formatOptions) != Status::OK()) {
@@ -846,7 +847,7 @@ Status RowGroupReader::_rewrite_dict_predicates() {
             ++index;
         }
 
-        // 2.2 Execute conjuncts and filter block.
+        // 2.2 Execute conjuncts.
         VExprContextSPtrs ctxs;
         auto iter = _slot_id_to_filter_conjuncts->find(slot_id);
         if (iter != _slot_id_to_filter_conjuncts->end()) {
@@ -859,33 +860,39 @@ Status RowGroupReader::_rewrite_dict_predicates() {
             return Status::NotFound(msg.str());
         }
 
-        std::vector<uint32_t> columns_to_filter(1, dict_pos);
-        int column_to_keep = temp_block.columns();
         if (dict_pos != 0) {
             // VExprContext.execute has an optimization, the filtering is executed when block->rows() > 0
             // The following process may be tricky and time-consuming, but we have no other way.
             temp_block.get_by_position(0).column->assume_mutable()->resize(dict_value_column_size);
         }
+        IColumn::Filter result_filter(temp_block.rows(), 1);
+        bool can_filter_all;
         {
             SCOPED_RAW_TIMER(&_predicate_filter_time);
-            RETURN_IF_ERROR_OR_CATCH_EXCEPTION(VExprContext::execute_conjuncts_and_filter_block(
-                    ctxs, &temp_block, columns_to_filter, column_to_keep));
+            RETURN_IF_ERROR(VExprContext::execute_conjuncts(ctxs, nullptr, &temp_block,
+                                                            &result_filter, &can_filter_all));
         }
         if (dict_pos != 0) {
             // We have to clean the first column to insert right data.
             temp_block.get_by_position(0).column->assume_mutable()->clear();
         }
 
-        // Check some conditions.
-        ColumnPtr& dict_column = temp_block.get_by_position(dict_pos).column;
-        // If dict_column->size() == 0, can filter this row group.
-        if (dict_column->size() == 0) {
+        // If can_filter_all = true, can filter this row group.
+        if (can_filter_all) {
             _is_row_group_filtered = true;
             return Status::OK();
         }
 
+        // 3. Get dict codes.
+        std::vector<int32_t> dict_codes;
+        for (size_t i = 0; i < result_filter.size(); ++i) {
+            if (result_filter[i]) {
+                dict_codes.emplace_back(i);
+            }
+        }
+
         // About Performance: if dict_column size is too large, it will generate a large IN filter.
-        if (dict_column->size() > MAX_DICT_CODE_PREDICATE_TO_REWRITE) {
+        if (dict_codes.size() > MAX_DICT_CODE_PREDICATE_TO_REWRITE) {
             it = _dict_filter_cols.erase(it);
             for (auto& ctx : ctxs) {
                 _filter_conjuncts.push_back(ctx);
@@ -893,22 +900,9 @@ Status RowGroupReader::_rewrite_dict_predicates() {
             continue;
         }
 
-        // 3. Get dict codes.
-        std::vector<int32_t> dict_codes;
-        if (dict_column->is_nullable()) {
-            const ColumnNullable* nullable_column =
-                    static_cast<const ColumnNullable*>(dict_column.get());
-            const ColumnString* nested_column = static_cast<const ColumnString*>(
-                    nullable_column->get_nested_column_ptr().get());
-            RETURN_IF_ERROR(_column_readers[dict_filter_col_name]->get_dict_codes(
-                    assert_cast<const ColumnString*>(nested_column), &dict_codes));
-        } else {
-            RETURN_IF_ERROR(_column_readers[dict_filter_col_name]->get_dict_codes(
-                    assert_cast<const ColumnString*>(dict_column.get()), &dict_codes));
-        }
-
         // 4. Rewrite conjuncts.
-        RETURN_IF_ERROR(_rewrite_dict_conjuncts(dict_codes, slot_id, dict_column->is_nullable()));
+        RETURN_IF_ERROR(_rewrite_dict_conjuncts(
+                dict_codes, slot_id, temp_block.get_by_position(dict_pos).column->is_nullable()));
         ++it;
     }
     return Status::OK();

@@ -38,7 +38,6 @@ suite("outer_join") {
       O_COMMENT        VARCHAR(79) NOT NULL
     )
     DUPLICATE KEY(o_orderkey, o_custkey)
-    PARTITION BY RANGE(o_orderdate) (PARTITION `day_2` VALUES LESS THAN ('2023-12-30'))
     DISTRIBUTED BY HASH(o_orderkey) BUCKETS 3
     PROPERTIES (
       "replication_num" = "1"
@@ -62,7 +61,6 @@ suite("outer_join") {
       O_COMMENT        VARCHAR(79) NULL
     )
     DUPLICATE KEY(o_orderkey, o_custkey)
-    PARTITION BY RANGE(o_orderdate) (PARTITION `day_2` VALUES LESS THAN ('2023-12-30'))
     DISTRIBUTED BY HASH(o_orderkey) BUCKETS 3
     PROPERTIES (
       "replication_num" = "1"
@@ -93,7 +91,6 @@ suite("outer_join") {
       l_comment      VARCHAR(44) NOT NULL
     )
     DUPLICATE KEY(l_orderkey, l_partkey, l_suppkey, l_linenumber)
-    PARTITION BY RANGE(l_shipdate) (PARTITION `day_1` VALUES LESS THAN ('2023-12-30'))
     DISTRIBUTED BY HASH(l_orderkey) BUCKETS 3
     PROPERTIES (
       "replication_num" = "1"
@@ -762,4 +759,56 @@ suite("outer_join") {
     async_mv_rewrite_success(db, mv11_0, query11_0, "mv11_0")
     order_qt_query11_0_after "${query11_0}"
     sql """ DROP MATERIALIZED VIEW IF EXISTS mv11_0"""
+<<<<<<< HEAD
+=======
+
+
+    def mv12_0 = """
+            select
+              o_orderdate,
+              o_shippriority,
+              o_comment,
+              o.o_code as o_o_code,
+              l_orderkey, 
+              l_partkey,
+              l.o_code as l_o_code
+            from
+              orders_same_col o left
+              join lineitem_same_col l on l_orderkey = o_orderkey
+              left join partsupp on ps_partkey = l_partkey and l_suppkey = ps_suppkey;
+    """
+
+    def query12_0 = """
+            select
+              o_orderdate,
+              o_shippriority,
+              o_comment,
+              o.o_code
+              l_orderkey, 
+              l_partkey
+            from
+              orders_same_col o left
+              join lineitem_same_col l on l_orderkey = o_orderkey
+              left join partsupp on ps_partkey = l_partkey and l_suppkey = ps_suppkey
+              where l.o_code <> '91'
+            union all
+            select
+              o_orderdate,
+              o_shippriority,
+              o_comment,
+              o.o_code
+              l_orderkey, 
+              l_partkey
+            from
+              orders_same_col o left
+              join lineitem_same_col l on l_orderkey = o_orderkey
+              left join partsupp on ps_partkey = l_partkey and l_suppkey = ps_suppkey
+              where l.o_code = '92';
+    """
+
+    order_qt_query12_0_before "${query12_0}"
+    async_mv_rewrite_success(db, mv12_0, query12_0, "mv12_0")
+    order_qt_query12_0_after "${query12_0}"
+    sql """ DROP MATERIALIZED VIEW IF EXISTS mv12_0"""
+>>>>>>> 3.0.3-rc03
 }

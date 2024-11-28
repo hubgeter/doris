@@ -179,9 +179,10 @@ void ParquetColumnReader::_generate_read_ranges(int64_t start_index, int64_t end
 Status ScalarColumnReader::init(io::FileReaderSPtr file, FieldSchema* field, size_t max_buf_size) {
     _field_schema = field;
     auto& chunk_meta = _chunk_meta.meta_data;
-    int64_t chunk_start = chunk_meta.__isset.dictionary_page_offset
-                                  ? chunk_meta.dictionary_page_offset
-                                  : chunk_meta.data_page_offset;
+    int64_t chunk_start =
+            chunk_meta.__isset.dictionary_page_offset && chunk_meta.dictionary_page_offset > 0
+                    ? chunk_meta.dictionary_page_offset
+                    : chunk_meta.data_page_offset;
     size_t chunk_len = chunk_meta.total_compressed_size;
     size_t prefetch_buffer_size = std::min(chunk_len, max_buf_size);
     if (typeid_cast<io::MergeRangeFileReader*>(file.get())) {
@@ -452,11 +453,6 @@ Status ScalarColumnReader::read_dict_values_to_column(MutableColumnPtr& doris_co
         return _chunk_reader->read_dict_values_to_column(doris_column);
     }
     return Status::OK();
-}
-
-Status ScalarColumnReader::get_dict_codes(const ColumnString* column_string,
-                                          std::vector<int32_t>* dict_codes) {
-    return _chunk_reader->get_dict_codes(column_string, dict_codes);
 }
 
 MutableColumnPtr ScalarColumnReader::convert_dict_column_to_string_column(

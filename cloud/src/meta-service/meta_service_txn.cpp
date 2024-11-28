@@ -1123,7 +1123,7 @@ void commit_txn_immediately(
             std::tie(code, msg) = task->wait();
             if (code != MetaServiceCode::OK) {
                 LOG(WARNING) << "advance_last_txn failed last_txn=" << last_pending_txn_id
-                             << " code=" << code << "msg=" << msg;
+                             << " code=" << code << " msg=" << msg;
                 return;
             }
             last_pending_txn_id = 0;
@@ -1167,7 +1167,7 @@ void commit_txn_immediately(
 
             // Accumulate affected rows
             auto& stats = tablet_stats[tablet_id];
-            stats.data_size += i.data_disk_size();
+            stats.data_size += i.total_disk_size();
             stats.num_rows += i.num_rows();
             ++stats.num_rowsets;
             stats.num_segs += i.num_segments();
@@ -1655,7 +1655,7 @@ void commit_txn_eventually(
             std::tie(code, msg) = task->wait();
             if (code != MetaServiceCode::OK) {
                 LOG(WARNING) << "advance_last_txn failed last_txn=" << last_pending_txn_id
-                             << " code=" << code << "msg=" << msg;
+                             << " code=" << code << " msg=" << msg;
                 return;
             }
 

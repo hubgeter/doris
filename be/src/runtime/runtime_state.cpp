@@ -460,15 +460,6 @@ std::string RuntimeState::get_error_log_file_path() {
     return _error_log_file_path;
 }
 
-int64_t RuntimeState::get_load_mem_limit() {
-    // TODO: the code is abandoned, it can be deleted after v1.3
-    if (_query_options.__isset.load_mem_limit && _query_options.load_mem_limit > 0) {
-        return _query_options.load_mem_limit;
-    } else {
-        return _query_mem_tracker->limit();
-    }
-}
-
 void RuntimeState::resize_op_id_to_local_state(int operator_size) {
     _op_id_to_local_state.resize(-operator_size);
 }
@@ -525,15 +516,15 @@ RuntimeFilterMgr* RuntimeState::global_runtime_filter_mgr() {
 }
 
 Status RuntimeState::register_producer_runtime_filter(
-        const TRuntimeFilterDesc& desc, bool need_local_merge,
-        std::shared_ptr<IRuntimeFilter>* producer_filter, bool build_bf_exactly) {
-    if (desc.has_remote_targets || need_local_merge) {
-        return global_runtime_filter_mgr()->register_local_merge_producer_filter(
-                desc, query_options(), producer_filter, build_bf_exactly);
-    } else {
-        return local_runtime_filter_mgr()->register_producer_filter(
-                desc, query_options(), producer_filter, build_bf_exactly);
-    }
+        const TRuntimeFilterDesc& desc, std::shared_ptr<IRuntimeFilter>* producer_filter,
+        bool build_bf_exactly) {
+    // Producers are created by local runtime filter mgr and shared by global runtime filter manager.
+    // When RF is published, consumers in both global and local RF mgr will be found.
+    RETURN_IF_ERROR(local_runtime_filter_mgr()->register_producer_filter(
+            desc, query_options(), producer_filter, build_bf_exactly));
+    RETURN_IF_ERROR(global_runtime_filter_mgr()->register_local_merge_producer_filter(
+            desc, query_options(), *producer_filter, build_bf_exactly));
+    return Status::OK();
 }
 
 Status RuntimeState::register_consumer_runtime_filter(

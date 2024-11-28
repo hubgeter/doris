@@ -118,6 +118,11 @@ public:
     TabletMeta(const TabletMeta& tablet_meta);
     TabletMeta(TabletMeta&& tablet_meta) = delete;
 
+// UT
+#ifdef BE_TEST
+    TabletMeta(TabletSchemaSPtr tablet_schema) : _schema(tablet_schema) {}
+#endif
+
     // Function create_from_file is used to be compatible with previous tablet_meta.
     // Previous tablet_meta is a physical file in tablet dir, which is not stored in rocksdb.
     Status create_from_file(const std::string& file_path);
@@ -455,7 +460,7 @@ public:
      * return the total size of the Delete Bitmap(after serialized)
      */
 
-    size_t get_size() const;
+    uint64_t get_size() const;
 
     /**
      * Sets the bitmap of specific segment, it's may be insertion or replacement
@@ -534,13 +539,12 @@ public:
 
     uint64_t get_delete_bitmap_count();
 
-    class AggCachePolicy : public LRUCachePolicyTrackingManual {
+    class AggCachePolicy : public LRUCachePolicy {
     public:
         AggCachePolicy(size_t capacity)
-                : LRUCachePolicyTrackingManual(CachePolicy::CacheType::DELETE_BITMAP_AGG_CACHE,
-                                               capacity, LRUCacheType::SIZE,
-                                               config::delete_bitmap_agg_cache_stale_sweep_time_sec,
-                                               256) {}
+                : LRUCachePolicy(CachePolicy::CacheType::DELETE_BITMAP_AGG_CACHE, capacity,
+                                 LRUCacheType::SIZE,
+                                 config::delete_bitmap_agg_cache_stale_sweep_time_sec, 256) {}
     };
 
     class AggCache {
@@ -639,7 +643,7 @@ inline size_t TabletMeta::num_rows() const {
 inline size_t TabletMeta::tablet_footprint() const {
     size_t total_size = 0;
     for (auto& rs : _rs_metas) {
-        total_size += rs->data_disk_size();
+        total_size += rs->total_disk_size();
     }
     return total_size;
 }
@@ -648,7 +652,7 @@ inline size_t TabletMeta::tablet_local_size() const {
     size_t total_size = 0;
     for (auto& rs : _rs_metas) {
         if (rs->is_local()) {
-            total_size += rs->data_disk_size();
+            total_size += rs->total_disk_size();
         }
     }
     return total_size;
@@ -658,7 +662,7 @@ inline size_t TabletMeta::tablet_remote_size() const {
     size_t total_size = 0;
     for (auto& rs : _rs_metas) {
         if (!rs->is_local()) {
-            total_size += rs->data_disk_size();
+            total_size += rs->total_disk_size();
         }
     }
     return total_size;

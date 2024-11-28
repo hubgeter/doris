@@ -43,6 +43,7 @@ import org.apache.doris.nereids.trees.expressions.NullSafeEqual;
 import org.apache.doris.nereids.trees.expressions.Or;
 import org.apache.doris.nereids.trees.expressions.Slot;
 import org.apache.doris.nereids.trees.expressions.functions.Monotonic;
+import org.apache.doris.nereids.trees.expressions.functions.scalar.ConvertTz;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.Date;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.DateTrunc;
 import org.apache.doris.nereids.trees.expressions.literal.BooleanLiteral;
@@ -92,7 +93,6 @@ public class OneRangePartitionEvaluator
     private final List<List<Expression>> inputs;
     private final Map<Expression, Boolean> partitionSlotContainsNull;
     private final Map<Slot, PartitionSlotType> slotToType;
-    private final Map<Expression, ColumnRange> rangeMap = new HashMap<>();
 
     /** OneRangePartitionEvaluator */
     public OneRangePartitionEvaluator(long partitionId, List<Slot> partitionSlots,
@@ -174,8 +174,8 @@ public class OneRangePartitionEvaluator
     @Override
     public Expression evaluate(Expression expression, Map<Slot, PartitionSlotInput> currentInputs) {
         Map<Expression, ColumnRange> defaultColumnRanges = currentInputs.values().iterator().next().columnRanges;
-        rangeMap.putAll(defaultColumnRanges);
-        EvaluateRangeResult result = expression.accept(this, new EvaluateRangeInput(currentInputs));
+        Map<Expression, ColumnRange> rangeMap = new HashMap<>(defaultColumnRanges);
+        EvaluateRangeResult result = expression.accept(this, new EvaluateRangeInput(currentInputs, rangeMap));
         return result.result;
     }
 
@@ -396,6 +396,7 @@ public class OneRangePartitionEvaluator
     public EvaluateRangeResult visitAnd(And and, EvaluateRangeInput context) {
         EvaluateRangeResult result = evaluateChildrenThenThis(and, context);
         result = mergeRanges(result.result, result.childrenResult.get(0), result.childrenResult.get(1),
+                context.rangeMap,
                 (leftRange, rightRange) -> leftRange.intersect(rightRange));
 
         result = returnFalseIfExistEmptyRange(result);
@@ -424,6 +425,7 @@ public class OneRangePartitionEvaluator
                     result.childrenResult);
         }
         result = mergeRanges(result.result, result.childrenResult.get(0), result.childrenResult.get(1),
+                context.rangeMap,
                 (leftRange, rightRange) -> leftRange.union(rightRange));
         return returnFalseIfExistEmptyRange(result);
     }
@@ -436,8 +438,8 @@ public class OneRangePartitionEvaluator
             for (Map.Entry<Expression, ColumnRange> entry : result.childrenResult.get(0).columnRanges.entrySet()) {
                 Expression expr = entry.getKey();
                 ColumnRange childRange = entry.getValue();
-                ColumnRange partitionRange = rangeMap.containsKey(expr)
-                        ? rangeMap.get(expr) : ColumnRange.all();
+                ColumnRange partitionRange = context.rangeMap.containsKey(expr)
+                        ? context.rangeMap.get(expr) : ColumnRange.all();
                 newRanges.put(expr, partitionRange.intersect(childRange.complete()));
             }
             result = new EvaluateRangeResult(result.result, newRanges, result.childrenResult);
@@ -561,6 +563,7 @@ public class OneRangePartitionEvaluator
 
     private EvaluateRangeResult mergeRanges(
             Expression originResult, EvaluateRangeResult left, EvaluateRangeResult right,
+            Map<Expression, ColumnRange> rangeMap,
             BiFunction<ColumnRange, ColumnRange, ColumnRange> mergeFunction) {
 
         Map<Expression, ColumnRange> leftRanges = left.columnRanges;
@@ -622,7 +625,7 @@ public class OneRangePartitionEvaluator
         if (partitionSlotContainsNull.containsKey(dateTruncChild)) {
             partitionSlotContainsNull.put(dateTrunc, true);
         }
-        return computeMonotonicFunctionRange(result);
+        return computeMonotonicFunctionRange(result, context.rangeMap);
     }
 
     @Override
@@ -635,7 +638,20 @@ public class OneRangePartitionEvaluator
         if (partitionSlotContainsNull.containsKey(dateChild)) {
             partitionSlotContainsNull.put(date, true);
         }
-        return computeMonotonicFunctionRange(result);
+        return computeMonotonicFunctionRange(result, context.rangeMap);
+    }
+
+    @Override
+    public EvaluateRangeResult visitConvertTz(ConvertTz convertTz, EvaluateRangeInput context) {
+        EvaluateRangeResult result = super.visitConvertTz(convertTz, context);
+        if (!(result.result instanceof ConvertTz)) {
+            return result;
+        }
+        Expression converTzChild = convertTz.child(0);
+        if (partitionSlotContainsNull.containsKey(converTzChild)) {
+            partitionSlotContainsNull.put(convertTz, true);
+        }
+        return computeMonotonicFunctionRange(result, context.rangeMap);
     }
 
     private boolean isPartitionSlot(Slot slot) {
@@ -667,10 +683,12 @@ public class OneRangePartitionEvaluator
 
     /** EvaluateRangeInput */
     public static class EvaluateRangeInput {
-        private Map<Slot, PartitionSlotInput> slotToInput;
+        private final Map<Slot, PartitionSlotInput> slotToInput;
+        private final Map<Expression, ColumnRange> rangeMap;
 
-        public EvaluateRangeInput(Map<Slot, PartitionSlotInput> slotToInput) {
+        public EvaluateRangeInput(Map<Slot, PartitionSlotInput> slotToInput, Map<Expression, ColumnRange> rangeMap) {
             this.slotToInput = slotToInput;
+            this.rangeMap = rangeMap;
         }
     }
 
@@ -802,7 +820,8 @@ public class OneRangePartitionEvaluator
         return onePartitionInputs;
     }
 
-    private EvaluateRangeResult computeMonotonicFunctionRange(EvaluateRangeResult result) {
+    private EvaluateRangeResult computeMonotonicFunctionRange(EvaluateRangeResult result,
+            Map<Expression, ColumnRange> rangeMap) {
         Monotonic func = (Monotonic) result.result;
         if (rangeMap.containsKey(func)) {
             return new EvaluateRangeResult((Expression) func, ImmutableMap.of((Expression) func,

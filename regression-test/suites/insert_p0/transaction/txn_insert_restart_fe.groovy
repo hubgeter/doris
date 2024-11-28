@@ -22,7 +22,7 @@
 import org.apache.doris.regression.suite.ClusterOptions
 import org.apache.doris.regression.util.NodeType
 
-suite("txn_insert_restart_fe") {
+suite("txn_insert_restart_fe", 'docker') {
     def get_observer_fe_url = {
         def fes = sql_return_maparray "show frontends"
         logger.info("frontends: ${fes}")
@@ -44,6 +44,7 @@ suite("txn_insert_restart_fe") {
     options.feConfigs.add('sys_log_verbose_modules=org.apache.doris')
     // options.beConfigs.add('sys_log_verbose_modules=*')
     options.beConfigs.add('enable_java_support=false')
+    options.beConfigs.add('pending_data_expire_time_sec=1')
     docker(options) {
         // ---------- test restart fe ----------
         def result = sql 'SELECT DATABASE()'

@@ -28,6 +28,7 @@ import org.apache.doris.common.util.PropertyAnalyzer;
 import org.apache.doris.datasource.CatalogMgr;
 import org.apache.doris.job.common.TaskStatus;
 import org.apache.doris.job.extensions.mtmv.MTMVTask;
+import org.apache.doris.mtmv.EnvInfo;
 import org.apache.doris.mtmv.MTMVCache;
 import org.apache.doris.mtmv.MTMVJobInfo;
 import org.apache.doris.mtmv.MTMVJobManager;
@@ -73,6 +74,9 @@ public class MTMV extends OlapTable {
     private String querySql;
     @SerializedName("s")
     private MTMVStatus status;
+    @Deprecated
+    @SerializedName("ei")
+    private EnvInfo envInfo;
     @SerializedName("ji")
     private MTMVJobInfo jobInfo;
     @SerializedName("mp")
@@ -110,7 +114,13 @@ public class MTMV extends OlapTable {
         this.mvPartitionInfo = params.mvPartitionInfo;
         this.relation = params.relation;
         this.refreshSnapshot = new MTMVRefreshSnapshot();
+        this.envInfo = new EnvInfo(-1L, -1L);
         mvRwLock = new ReentrantReadWriteLock(true);
+    }
+
+    @Override
+    public boolean needReadLockWhenPlan() {
+        return true;
     }
 
     public MTMVRefreshInfo getRefreshInfo() {
@@ -133,6 +143,10 @@ public class MTMV extends OlapTable {
         } finally {
             readMvUnlock();
         }
+    }
+
+    public EnvInfo getEnvInfo() {
+        return envInfo;
     }
 
     public MTMVJobInfo getJobInfo() {
@@ -248,6 +262,19 @@ public class MTMV extends OlapTable {
         }
     }
 
+    public boolean isUseForRewrite() {
+        readMvLock();
+        try {
+            if (!StringUtils.isEmpty(mvProperties.get(PropertyAnalyzer.PROPERTIES_USE_FOR_REWRITE))) {
+                return Boolean.valueOf(mvProperties.get(PropertyAnalyzer.PROPERTIES_USE_FOR_REWRITE));
+            }
+            // default is true
+            return true;
+        } finally {
+            readMvUnlock();
+        }
+    }
+
     public int getRefreshPartitionNum() {
         readMvLock();
         try {
@@ -331,7 +358,7 @@ public class MTMV extends OlapTable {
      *
      * @return mvPartitionName ==> mvPartitionKeyDesc
      */
-    public Map<String, PartitionKeyDesc> generateMvPartitionDescs() {
+    public Map<String, PartitionKeyDesc> generateMvPartitionDescs() throws AnalysisException {
         Map<String, PartitionItem> mtmvItems = getAndCopyPartitionItems();
         Map<String, PartitionKeyDesc> result = Maps.newHashMap();
         for (Entry<String, PartitionItem> entry : mtmvItems.entrySet()) {
@@ -480,6 +507,11 @@ public class MTMV extends OlapTable {
         refreshInfo = materializedView.refreshInfo;
         querySql = materializedView.querySql;
         status = materializedView.status;
+        if (materializedView.envInfo != null) {
+            envInfo = materializedView.envInfo;
+        } else {
+            envInfo = new EnvInfo(-1L, -1L);
+        }
         jobInfo = materializedView.jobInfo;
         mvProperties = materializedView.mvProperties;
         relation = materializedView.relation;

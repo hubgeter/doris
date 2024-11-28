@@ -83,6 +83,7 @@ public class PropertyAnalyzer {
     public static final String PROPERTIES_SCHEMA_VERSION = "schema_version";
     public static final String PROPERTIES_PARTITION_ID = "partition_id";
     public static final String PROPERTIES_VISIBLE_VERSION = "visible_version";
+    public static final String PROPERTIES_IN_ATOMIC_RESTORE = "in_atomic_restore";
 
     public static final String PROPERTIES_BF_COLUMNS = "bloom_filter_columns";
     public static final String PROPERTIES_BF_FPP = "bloom_filter_fpp";
@@ -186,6 +187,9 @@ public class PropertyAnalyzer {
 
     public static final String PROPERTIES_ENABLE_NONDETERMINISTIC_FUNCTION =
             "enable_nondeterministic_function";
+
+    public static final String PROPERTIES_USE_FOR_REWRITE =
+            "use_for_rewrite";
     public static final String PROPERTIES_EXCLUDED_TRIGGER_TABLES = "excluded_trigger_tables";
     public static final String PROPERTIES_REFRESH_PARTITION_NUM = "refresh_partition_num";
     public static final String PROPERTIES_WORKLOAD_GROUP = "workload_group";
@@ -218,6 +222,11 @@ public class PropertyAnalyzer {
             "enable_mow_light_delete";
     public static final boolean PROPERTIES_ENABLE_MOW_LIGHT_DELETE_DEFAULT_VALUE
             = Config.enable_mow_light_delete;
+
+    public static final String PROPERTIES_AUTO_ANALYZE_POLICY = "auto_analyze_policy";
+    public static final String ENABLE_AUTO_ANALYZE_POLICY = "enable";
+    public static final String DISABLE_AUTO_ANALYZE_POLICY = "disable";
+    public static final String USE_CATALOG_AUTO_ANALYZE_POLICY = "base_on_catalog";
 
     // compaction policy
     public static final String SIZE_BASED_COMPACTION_POLICY = "size_based";
@@ -335,8 +344,13 @@ public class PropertyAnalyzer {
                     throw new AnalysisException("Invalid storage medium: " + value);
                 }
             } else if (key.equalsIgnoreCase(PROPERTIES_STORAGE_COOLDOWN_TIME)) {
-                DateLiteral dateLiteral = new DateLiteral(value, ScalarType.getDefaultDateType(Type.DATETIME));
-                cooldownTimestamp = dateLiteral.unixTimestamp(TimeUtils.getTimeZone());
+                try {
+                    DateLiteral dateLiteral = new DateLiteral(value, ScalarType.getDefaultDateType(Type.DATETIME));
+                    cooldownTimestamp = dateLiteral.unixTimestamp(TimeUtils.getTimeZone());
+                } catch (AnalysisException e) {
+                    LOG.warn("dateLiteral failed, use max cool down time", e);
+                    cooldownTimestamp = DataProperty.MAX_COOLDOWN_TIME_MS;
+                }
             } else if (key.equalsIgnoreCase(PROPERTIES_STORAGE_POLICY)) {
                 hasStoragePolicy = true;
                 newStoragePolicy = value;
@@ -1466,14 +1480,15 @@ public class PropertyAnalyzer {
         throw new AnalysisException(PropertyAnalyzer.ENABLE_UNIQUE_KEY_MERGE_ON_WRITE + " must be `true` or `false`");
     }
 
-    public static boolean analyzeEnableDeleteOnDeletePredicate(Map<String, String> properties)
+    public static boolean analyzeEnableDeleteOnDeletePredicate(Map<String, String> properties,
+            boolean enableUniqueKeyMergeOnWrite)
             throws AnalysisException {
         if (properties == null || properties.isEmpty()) {
-            return false;
+            return enableUniqueKeyMergeOnWrite ? Config.enable_mow_light_delete : false;
         }
         String value = properties.get(PropertyAnalyzer.PROPERTIES_ENABLE_MOW_LIGHT_DELETE);
         if (value == null) {
-            return false;
+            return enableUniqueKeyMergeOnWrite ? Config.enable_mow_light_delete : false;
         }
         properties.remove(PropertyAnalyzer.PROPERTIES_ENABLE_MOW_LIGHT_DELETE);
         if (value.equals("true")) {

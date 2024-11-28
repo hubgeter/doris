@@ -34,6 +34,7 @@
 #include "common/status.h"
 #include "exec/olap_common.h"
 #include "io/file_factory.h"
+#include "io/fs/buffered_reader.h"
 #include "io/fs/file_reader.h"
 #include "io/fs/file_reader_writer_fwd.h"
 #include "olap/olap_common.h"
@@ -139,14 +140,15 @@ public:
               const std::string& ctz, io::IOContext* io_ctx, bool enable_lazy_mat = true);
 
     ~OrcReader() override;
-
+    //If you want to read the file by index instead of column name, set hive_use_column_names to false.
     Status init_reader(
             const std::vector<std::string>* column_names,
             std::unordered_map<std::string, ColumnValueRangeType>* colname_to_value_range,
             const VExprContextSPtrs& conjuncts, bool is_acid,
             const TupleDescriptor* tuple_descriptor, const RowDescriptor* row_descriptor,
             const VExprContextSPtrs* not_single_slot_filter_conjuncts,
-            const std::unordered_map<int, VExprContextSPtrs>* slot_id_to_filter_conjuncts);
+            const std::unordered_map<int, VExprContextSPtrs>* slot_id_to_filter_conjuncts,
+            const bool hive_use_column_names = true);
 
     Status set_fill_columns(
             const std::unordered_map<std::string, std::tuple<std::string, const SlotDescriptor*>>&
@@ -570,9 +572,11 @@ private:
     // This is used for Hive 1.x which use internal column name in Orc file.
     // _col0, _col1...
     std::unordered_map<std::string, std::string> _removed_acid_file_col_name_to_schema_col;
-    // Flag for hive engine. True if the external table engine is Hive1.x with orc col name
-    // as _col1, col2, ...
-    bool _is_hive1_orc = false;
+    // Flag for hive engine.
+    // 1. True if the external table engine is Hive1.x with orc col name as _col1, col2, ...
+    // 2. If true, use indexes instead of column names when reading orc tables.
+    bool _is_hive1_orc_or_use_idx = false;
+
     std::unordered_map<std::string, std::string> _col_name_to_file_col_name;
     std::unordered_map<std::string, const orc::Type*> _type_map;
     std::vector<const orc::Type*> _col_orc_type;
@@ -584,7 +588,6 @@ private:
     std::unique_ptr<orc::Reader> _reader;
     std::unique_ptr<orc::RowReader> _row_reader;
     std::unique_ptr<ORCFilterImpl> _orc_filter;
-    orc::ReaderOptions _reader_options;
     orc::RowReaderOptions _row_reader_options;
 
     std::shared_ptr<io::FileSystem> _file_system;
@@ -621,6 +624,8 @@ private:
     // resolve schema change
     std::unordered_map<std::string, std::unique_ptr<converter::ColumnTypeConverter>> _converters;
     //for iceberg table , when table column name != file column name
+    //TODO(CXY) : remove _table_col_to_file_col,because we hava _col_name_to_file_col_name，
+    // the two have the same effect.
     std::unordered_map<std::string, std::string> _table_col_to_file_col;
     //support iceberg position delete .
     std::vector<int64_t>* _position_delete_ordered_rowids = nullptr;
@@ -638,7 +643,11 @@ public:
               _io_ctx(io_ctx),
               _profile(profile) {}
 
-    ~ORCFileInputStream() override = default;
+    ~ORCFileInputStream() override {
+        if (_file_reader != nullptr) {
+            _file_reader->collect_profile_before_close();
+        }
+    }
 
     uint64_t getLength() const override { return _file_reader->size(); }
 
@@ -651,6 +660,12 @@ public:
     void beforeReadStripe(std::unique_ptr<orc::StripeInformation> current_strip_information,
                           std::vector<bool> selected_columns) override;
 
+    void set_all_tiny_stripes() { _is_all_tiny_stripes = true; }
+
+    io::FileReaderSPtr& get_file_reader() { return _file_reader; }
+
+    io::FileReaderSPtr& get_inner_reader() { return _inner_reader; }
+
 protected:
     void _collect_profile_at_runtime() override {};
     void _collect_profile_before_close() override;
@@ -659,10 +674,10 @@ private:
     const std::string& _file_name;
     io::FileReaderSPtr _inner_reader;
     io::FileReaderSPtr _file_reader;
+    bool _is_all_tiny_stripes = false;
     // Owned by OrcReader
     OrcReader::Statistics* _statistics = nullptr;
     const io::IOContext* _io_ctx = nullptr;
     RuntimeProfile* _profile = nullptr;
 };
-
 } // namespace doris::vectorized

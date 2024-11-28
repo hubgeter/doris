@@ -53,9 +53,11 @@
 #include "olap/schema_cache.h"
 #include "olap/segment_loader.h"
 #include "olap/storage_engine.h"
+#include "olap/tablet_column_object_pool.h"
 #include "olap/tablet_schema_cache.h"
 #include "olap/wal/wal_manager.h"
 #include "pipeline/pipeline_tracing.h"
+#include "pipeline/query_cache/query_cache.h"
 #include "pipeline/task_queue.h"
 #include "pipeline/task_scheduler.h"
 #include "runtime/broker_mgr.h"
@@ -276,7 +278,7 @@ Status ExecEnv::_init(const std::vector<StorePath>& store_paths,
     _fragment_mgr = new FragmentMgr(this);
     _result_cache = new ResultCache(config::query_cache_max_size_mb,
                                     config::query_cache_elasticity_size_mb);
-    _master_info = new TMasterInfo();
+    _cluster_info = new ClusterInfo();
     _load_path_mgr = new LoadPathMgr(this);
     _bfd_parser = BfdParser::create();
     _broker_mgr = new BrokerMgr(this);
@@ -297,7 +299,7 @@ Status ExecEnv::_init(const std::vector<StorePath>& store_paths,
         _stream_load_executor = StreamLoadExecutor::create_shared(this);
     }
     _routine_load_task_executor = new RoutineLoadTaskExecutor(this);
-    RETURN_IF_ERROR(_routine_load_task_executor->init());
+    RETURN_IF_ERROR(_routine_load_task_executor->init(MemInfo::mem_limit()));
     _small_file_mgr = new SmallFileMgr(this, config::small_file_dir);
     _group_commit_mgr = new GroupCommitMgr(this);
     _memtable_memory_limiter = std::make_unique<MemTableMemoryLimiter>();
@@ -336,11 +338,16 @@ Status ExecEnv::_init(const std::vector<StorePath>& store_paths,
     _tablet_schema_cache =
             TabletSchemaCache::create_global_schema_cache(config::tablet_schema_cache_capacity);
 
+    _tablet_column_object_pool = TabletColumnObjectPool::create_global_column_cache(
+            config::tablet_schema_cache_capacity);
+
     // Storage engine
     doris::EngineOptions options;
     options.store_paths = store_paths;
     options.broken_paths = broken_paths;
     options.backend_uid = doris::UniqueId::gen_uid();
+    // Check if the startup mode has been modified
+    RETURN_IF_ERROR(_check_deploy_mode());
     if (config::is_cloud_mode()) {
         std::cout << "start BE in cloud mode, cloud_unique_id: " << config::cloud_unique_id
                   << ", meta_service_endpoint: " << config::meta_service_endpoint << std::endl;
@@ -524,21 +531,18 @@ Status ExecEnv::_init_mem_env() {
     // SegmentLoader caches segments in rowset granularity. So the size of
     // opened files will greater than segment_cache_capacity.
     int64_t segment_cache_capacity = config::segment_cache_capacity;
-    if (segment_cache_capacity < 0 || segment_cache_capacity > fd_number * 1 / 5) {
-        segment_cache_capacity = fd_number * 1 / 5;
+    int64_t segment_cache_fd_limit = fd_number / 100 * config::segment_cache_fd_percentage;
+    if (segment_cache_capacity < 0 || segment_cache_capacity > segment_cache_fd_limit) {
+        segment_cache_capacity = segment_cache_fd_limit;
     }
 
     int64_t segment_cache_mem_limit =
             MemInfo::mem_limit() / 100 * config::segment_cache_memory_percentage;
-    // config::segment_cache_memory_percentage;
-    int64_t min_segment_cache_mem_limit =
-            min(segment_cache_mem_limit, segment_cache_capacity *
-                                                 config::estimated_num_columns_per_segment *
-                                                 config::estimated_mem_per_column_reader);
-    _segment_loader = new SegmentLoader(min_segment_cache_mem_limit, segment_cache_capacity);
+
+    _segment_loader = new SegmentLoader(segment_cache_mem_limit, segment_cache_capacity);
     LOG(INFO) << "segment_cache_capacity <= fd_number * 1 / 5, fd_number: " << fd_number
               << " segment_cache_capacity: " << segment_cache_capacity
-              << " min_segment_cache_mem_limit " << min_segment_cache_mem_limit;
+              << " min_segment_cache_mem_limit " << segment_cache_mem_limit;
 
     _schema_cache = new SchemaCache(config::schema_cache_capacity);
 
@@ -587,6 +591,9 @@ Status ExecEnv::_init_mem_env() {
     _orc_memory_pool = new doris::vectorized::ORCMemoryPool();
     _arrow_memory_pool = new doris::vectorized::ArrowMemoryPool();
 
+    _query_cache = QueryCache::create_global_cache(config::query_cache_size * 1024L * 1024L);
+    LOG(INFO) << "query cache memory limit: " << config::query_cache_size << "MB";
+
     return Status::OK();
 }
 
@@ -596,18 +603,16 @@ void ExecEnv::init_mem_tracker() {
     _s_tracking_memory = true;
     _orphan_mem_tracker =
             MemTrackerLimiter::create_shared(MemTrackerLimiter::Type::GLOBAL, "Orphan");
-    _orphan_mem_tracker_raw = _orphan_mem_tracker.get();
-    _details_mem_tracker_set =
-            MemTrackerLimiter::create_shared(MemTrackerLimiter::Type::GLOBAL, "DetailsTrackerSet");
-    _page_no_cache_mem_tracker =
-            std::make_shared<MemTracker>("PageNoCache", _details_mem_tracker_set.get());
+    _page_no_cache_mem_tracker = std::make_shared<MemTracker>("PageNoCache");
     _brpc_iobuf_block_memory_tracker =
-            std::make_shared<MemTracker>("IOBufBlockMemory", _details_mem_tracker_set.get());
+            MemTrackerLimiter::create_shared(MemTrackerLimiter::Type::GLOBAL, "IOBufBlockMemory");
     _segcompaction_mem_tracker =
             MemTrackerLimiter::create_shared(MemTrackerLimiter::Type::GLOBAL, "SegCompaction");
     _point_query_executor_mem_tracker =
             MemTrackerLimiter::create_shared(MemTrackerLimiter::Type::GLOBAL, "PointQueryExecutor");
-    _block_compression_mem_tracker =
+    _query_cache_mem_tracker =
+            MemTrackerLimiter::create_shared(MemTrackerLimiter::Type::GLOBAL, "QueryCache");
+    _block_compression_mem_tracker = _block_compression_mem_tracker =
             MemTrackerLimiter::create_shared(MemTrackerLimiter::Type::GLOBAL, "BlockCompression");
     _rowid_storage_reader_tracker =
             MemTrackerLimiter::create_shared(MemTrackerLimiter::Type::GLOBAL, "RowIdStorageReader");
@@ -616,7 +621,50 @@ void ExecEnv::init_mem_tracker() {
     _s3_file_buffer_tracker =
             MemTrackerLimiter::create_shared(MemTrackerLimiter::Type::GLOBAL, "S3FileBuffer");
     _stream_load_pipe_tracker =
-            MemTrackerLimiter::create_shared(MemTrackerLimiter::Type::GLOBAL, "StreamLoadPipe");
+            MemTrackerLimiter::create_shared(MemTrackerLimiter::Type::LOAD, "StreamLoadPipe");
+}
+
+Status ExecEnv::_check_deploy_mode() {
+    for (auto _path : _store_paths) {
+        auto deploy_mode_path = fmt::format("{}/{}", _path.path, DEPLOY_MODE_PREFIX);
+        std::string expected_mode = doris::config::is_cloud_mode() ? "cloud" : "local";
+        bool exists = false;
+        RETURN_IF_ERROR(io::global_local_filesystem()->exists(deploy_mode_path, &exists));
+        if (exists) {
+            // check if is ok
+            io::FileReaderSPtr reader;
+            RETURN_IF_ERROR(io::global_local_filesystem()->open_file(deploy_mode_path, &reader));
+            size_t fsize = reader->size();
+            if (fsize > 0) {
+                std::string actual_mode;
+                actual_mode.resize(fsize, '\0');
+                size_t bytes_read = 0;
+                RETURN_IF_ERROR(reader->read_at(0, {actual_mode.data(), fsize}, &bytes_read));
+                DCHECK_EQ(fsize, bytes_read);
+                if (expected_mode != actual_mode) {
+                    return Status::InternalError(
+                            "You can't switch deploy mode from {} to {}, "
+                            "maybe you need to check be.conf\n",
+                            actual_mode.c_str(), expected_mode.c_str());
+                }
+                LOG(INFO) << "The current deployment mode is " << expected_mode << ".";
+            }
+        } else {
+            io::FileWriterPtr file_writer;
+            RETURN_IF_ERROR(
+                    io::global_local_filesystem()->create_file(deploy_mode_path, &file_writer));
+            RETURN_IF_ERROR(file_writer->append(expected_mode));
+            RETURN_IF_ERROR(file_writer->close());
+            LOG(INFO) << "The file deploy_mode doesn't exist, create it.";
+            auto cluster_id_path = fmt::format("{}/{}", _path.path, CLUSTER_ID_PREFIX);
+            RETURN_IF_ERROR(io::global_local_filesystem()->exists(cluster_id_path, &exists));
+            if (exists) {
+                LOG(WARNING) << "This may be an upgrade from old version,"
+                             << "or the deploy_mode file has been manually deleted";
+            }
+        }
+    }
+    return Status::OK();
 }
 
 void ExecEnv::_register_metrics() {
@@ -673,7 +721,7 @@ void ExecEnv::destroy() {
     SAFE_STOP(_write_cooldown_meta_executors);
 
     // StorageEngine must be destoried before _page_no_cache_mem_tracker.reset and _cache_manager destory
-    // shouldn't use SAFE_STOP. otherwise will lead to twice stop.
+    SAFE_STOP(_storage_engine);
     _storage_engine.reset();
 
     SAFE_STOP(_spill_stream_mgr);
@@ -697,6 +745,7 @@ void ExecEnv::destroy() {
     SAFE_DELETE(_schema_cache);
     SAFE_DELETE(_segment_loader);
     SAFE_DELETE(_row_cache);
+    SAFE_DELETE(_query_cache);
 
     // Free resource after threads are stopped.
     // Some threads are still running, like threads created by _new_load_stream_mgr ...
@@ -755,9 +804,9 @@ void ExecEnv::destroy() {
 
     // Master Info is a thrift object, it could be the last one to deconstruct.
     // Master info should be deconstruct later than fragment manager, because fragment will
-    // access master_info.backend id to access some info. If there is a running query and master
+    // access cluster_info.backend_id to access some info. If there is a running query and master
     // info is deconstructed then BE process will core at coordinator back method in fragment mgr.
-    SAFE_DELETE(_master_info);
+    SAFE_DELETE(_cluster_info);
 
     // NOTE: runtime query statistics mgr could be visited by query and daemon thread
     // so it should be created before all query begin and deleted after all query and daemon thread stoppped

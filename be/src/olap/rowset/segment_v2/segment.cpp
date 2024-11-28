@@ -86,10 +86,30 @@ std::string file_cache_key_str(const std::string& seg_path) {
     return file_cache_key_from_path(seg_path).to_string();
 }
 
-Status Segment::open(io::FileSystemSPtr fs, const std::string& path, uint32_t segment_id,
-                     RowsetId rowset_id, TabletSchemaSPtr tablet_schema,
+Status Segment::open(io::FileSystemSPtr fs, const std::string& path, int64_t tablet_id,
+                     uint32_t segment_id, RowsetId rowset_id, TabletSchemaSPtr tablet_schema,
                      const io::FileReaderOptions& reader_options, std::shared_ptr<Segment>* output,
                      InvertedIndexFileInfo idx_file_info) {
+    auto s = _open(fs, path, segment_id, rowset_id, tablet_schema, reader_options, output,
+                   idx_file_info);
+    if (!s.ok()) {
+        if (!config::is_cloud_mode()) {
+            auto res = ExecEnv::get_tablet(tablet_id);
+            TabletSharedPtr tablet =
+                    res.has_value() ? std::dynamic_pointer_cast<Tablet>(res.value()) : nullptr;
+            if (tablet) {
+                tablet->report_error(s);
+            }
+        }
+    }
+
+    return s;
+}
+
+Status Segment::_open(io::FileSystemSPtr fs, const std::string& path, uint32_t segment_id,
+                      RowsetId rowset_id, TabletSchemaSPtr tablet_schema,
+                      const io::FileReaderOptions& reader_options, std::shared_ptr<Segment>* output,
+                      InvertedIndexFileInfo idx_file_info) {
     io::FileReaderSPtr file_reader;
     RETURN_IF_ERROR(fs->open_file(path, &file_reader, &reader_options));
     std::shared_ptr<Segment> segment(
@@ -450,45 +470,25 @@ Status Segment::_load_pk_bloom_filter() {
     DCHECK(_tablet_schema->keys_type() == UNIQUE_KEYS);
     DCHECK(_pk_index_meta != nullptr);
     DCHECK(_pk_index_reader != nullptr);
-    auto status = [this]() {
-        return _load_pk_bf_once.call([this] {
-            RETURN_IF_ERROR(_pk_index_reader->parse_bf(_file_reader, *_pk_index_meta));
-            // _meta_mem_usage += _pk_index_reader->get_bf_memory_size();
-            return Status::OK();
-        });
-    }();
-    if (!status.ok()) {
-        remove_from_segment_cache();
-    }
-    return status;
+
+    return _load_pk_bf_once.call([this] {
+        RETURN_IF_ERROR(_pk_index_reader->parse_bf(_file_reader, *_pk_index_meta));
+        // _meta_mem_usage += _pk_index_reader->get_bf_memory_size();
+        return Status::OK();
+    });
 }
 
-void Segment::remove_from_segment_cache() const {
-    if (config::disable_segment_cache) {
-        return;
-    }
-    SegmentCache::CacheKey cache_key(_rowset_id, _segment_id);
-    SegmentLoader::instance()->erase_segment(cache_key);
-}
-
-Status Segment::load_pk_index_and_bf() {
+Status Segment::load_pk_index_and_bf(OlapReaderStatistics* index_load_stats) {
+    _pk_index_load_stats = index_load_stats;
     RETURN_IF_ERROR(load_index());
     RETURN_IF_ERROR(_load_pk_bloom_filter());
     return Status::OK();
 }
 
 Status Segment::load_index() {
-    auto status = [this]() { return _load_index_impl(); }();
-    if (!status.ok()) {
-        remove_from_segment_cache();
-    }
-    return status;
-}
-
-Status Segment::_load_index_impl() {
     return _load_index_once.call([this] {
         if (_tablet_schema->keys_type() == UNIQUE_KEYS && _pk_index_meta != nullptr) {
-            _pk_index_reader = std::make_unique<PrimaryKeyIndexReader>();
+            _pk_index_reader = std::make_unique<PrimaryKeyIndexReader>(_pk_index_load_stats);
             RETURN_IF_ERROR(_pk_index_reader->parse_index(_file_reader, *_pk_index_meta));
             // _meta_mem_usage += _pk_index_reader->get_memory_size();
             return Status::OK();
@@ -517,6 +517,32 @@ Status Segment::_load_index_impl() {
             return _sk_index_decoder->parse(body, footer.short_key_page_footer());
         }
     });
+}
+
+Status Segment::healthy_status() {
+    try {
+        if (_load_index_once.has_called()) {
+            RETURN_IF_ERROR(_load_index_once.stored_result());
+        }
+        if (_load_pk_bf_once.has_called()) {
+            RETURN_IF_ERROR(_load_pk_bf_once.stored_result());
+        }
+        if (_create_column_readers_once_call.has_called()) {
+            RETURN_IF_ERROR(_create_column_readers_once_call.stored_result());
+        }
+        if (_inverted_index_file_reader_open.has_called()) {
+            RETURN_IF_ERROR(_inverted_index_file_reader_open.stored_result());
+        }
+        // This status is set by running time, for example, if there is something wrong during read segment iterator.
+        return _healthy_status.status();
+    } catch (const doris::Exception& e) {
+        // If there is an exception during load_xxx, should not throw exception directly because
+        // the caller may not exception safe.
+        return e.to_status();
+    } catch (const std::exception& e) {
+        // The exception is not thrown by doris code.
+        return Status::InternalError("Unexcepted error during load segment: {}", e.what());
+    }
 }
 
 // Return the storage datatype of related column to field.
@@ -921,7 +947,8 @@ Status Segment::new_inverted_index_iterator(const TabletColumn& tablet_column,
 }
 
 Status Segment::lookup_row_key(const Slice& key, const TabletSchema* latest_schema,
-                               bool with_seq_col, bool with_rowid, RowLocation* row_location) {
+                               bool with_seq_col, bool with_rowid, RowLocation* row_location,
+                               OlapReaderStatistics* stats) {
     RETURN_IF_ERROR(load_pk_index_and_bf());
     bool has_seq_col = latest_schema->has_sequence_col();
     bool has_rowid = !latest_schema->cluster_key_idxes().empty();
@@ -941,7 +968,7 @@ Status Segment::lookup_row_key(const Slice& key, const TabletSchema* latest_sche
     }
     bool exact_match = false;
     std::unique_ptr<segment_v2::IndexedColumnIterator> index_iterator;
-    RETURN_IF_ERROR(_pk_index_reader->new_iterator(&index_iterator));
+    RETURN_IF_ERROR(_pk_index_reader->new_iterator(&index_iterator, stats));
     auto st = index_iterator->seek_at_or_after(&key_without_seq, &exact_match);
     if (!st.ok() && !st.is<ErrorCode::ENTRY_NOT_FOUND>()) {
         return st;
