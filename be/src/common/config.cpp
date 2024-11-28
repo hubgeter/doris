@@ -1383,8 +1383,6 @@ DEFINE_mBool(enable_delete_bitmap_merge_on_compaction, "false");
 // Enable validation to check the correctness of table size.
 DEFINE_Bool(enable_table_size_correctness_check, "false");
 
-DEFINE_mBool(enable_delete_bitmap_merge_on_compaction, "false");
-
 // clang-format off
 #ifdef BE_TEST
 // test s3

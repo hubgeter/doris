@@ -57,12 +57,7 @@ Status ExchangeSinkLocalState::init(RuntimeState* state, LocalSinkStateInfo& inf
     _compress_timer = ADD_TIMER(_profile, "CompressTime");
     _local_send_timer = ADD_TIMER(_profile, "LocalSendTime");
     _split_block_hash_compute_timer = ADD_TIMER(_profile, "SplitBlockHashComputeTime");
-<<<<<<< HEAD
-    _split_block_distribute_by_channel_timer =
-            ADD_TIMER(_profile, "SplitBlockDistributeByChannelTime");
-=======
     _distribute_rows_into_channels_timer = ADD_TIMER(_profile, "DistributeRowsIntoChannelsTime");
->>>>>>> 3.0.3-rc03
     _send_new_partition_timer = ADD_TIMER(_profile, "SendNewPartitionTime");
     _blocks_sent_counter = ADD_COUNTER_WITH_LEVEL(_profile, "BlocksProduced", TUnit::UNIT, 1);
     _overall_throughput = _profile->add_derived_counter(

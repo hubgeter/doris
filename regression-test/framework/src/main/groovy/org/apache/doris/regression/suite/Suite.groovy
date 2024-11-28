@@ -2508,10 +2508,10 @@ class Suite implements GroovyInterceptable {
         }
     }
 
-<<<<<<< HEAD
     void wait_cluster_change() {
         sleep(20000)
-=======
+    }
+
     def fix_tablet_stats = { table_id ->
         def jsonOutput = new JsonOutput()
         def map = []
@@ -2531,7 +2531,6 @@ class Suite implements GroovyInterceptable {
             respCode, body ->
                 log.info("fix tablet stats resp: ${body} ${respCode}".toString())
         }
->>>>>>> 3.0.3-rc03
     }
 
     public void resetConnection() {

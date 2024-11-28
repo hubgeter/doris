@@ -97,18 +97,11 @@ public:
         return Status::OK();
     }
     Status _send_new_partition_batch(vectorized::Block* input_block);
-<<<<<<< HEAD
-    std::vector<vectorized::PipChannel*> channels;
-    std::vector<std::shared_ptr<vectorized::PipChannel>> channel_shared_ptrs;
-    int current_channel_idx; // index of current channel to send to if _random == true
-    bool only_local_exchange;
-=======
     std::vector<std::shared_ptr<vectorized::Channel>> channels;
     int current_channel_idx {0}; // index of current channel to send to if _random == true
     bool only_local_exchange {false};
 
     void on_channel_finished(InstanceLoId channel_id);
->>>>>>> 3.0.3-rc03
 
     // for external table sink hash partition
     std::unique_ptr<vectorized::ScaleWriterPartitioningExchanger<HashPartitionFunction>>

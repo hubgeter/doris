@@ -759,8 +759,6 @@ suite("outer_join") {
     async_mv_rewrite_success(db, mv11_0, query11_0, "mv11_0")
     order_qt_query11_0_after "${query11_0}"
     sql """ DROP MATERIALIZED VIEW IF EXISTS mv11_0"""
-<<<<<<< HEAD
-=======
 
 
     def mv12_0 = """
@@ -810,5 +808,4 @@ suite("outer_join") {
     async_mv_rewrite_success(db, mv12_0, query12_0, "mv12_0")
     order_qt_query12_0_after "${query12_0}"
     sql """ DROP MATERIALIZED VIEW IF EXISTS mv12_0"""
->>>>>>> 3.0.3-rc03
 }

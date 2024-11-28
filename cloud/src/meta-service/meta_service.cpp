@@ -2000,18 +2000,12 @@ void MetaServiceImpl::get_delete_bitmap(google::protobuf::RpcController* control
                 } else {
                     TEST_SYNC_POINT_CALLBACK("get_delete_bitmap_code", &code);
                     if (code != MetaServiceCode::OK) {
-<<<<<<< HEAD
-                        msg = "test get get_delete_bitmap fail,code=" + MetaServiceCode_Name(code);
-                        return;
-                    }
-=======
                         ss << "test get get_delete_bitmap fail, code=" << MetaServiceCode_Name(code)
                            << ", internal round=" << round;
                         msg = ss.str();
                         return;
                     }
                     delete_bitmap_byte += v.length();
->>>>>>> 3.0.3-rc03
                     response->mutable_segment_delete_bitmaps()->rbegin()->append(v);
                 }
             }

@@ -798,11 +798,7 @@ public abstract class AbstractMaterializedViewRule implements ExplorationRuleFac
             Set<Expression> queryPredicates,
             SlotMapping queryToViewMapping,
             StructInfo queryStructInfo,
-<<<<<<< HEAD
-            StructInfo viwStructInfo,
-=======
             StructInfo viewStructInfo,
->>>>>>> 3.0.3-rc03
             CascadesContext cascadesContext) {
         Set<Expression> queryPulledUpPredicates = queryPredicates.stream()
                 .flatMap(expr -> ExpressionUtils.extractConjunction(expr).stream())
@@ -840,11 +836,7 @@ public abstract class AbstractMaterializedViewRule implements ExplorationRuleFac
         for (Set<Slot> requireNullableSlots : requireNoNullableViewSlot) {
             shuttledRequireNoNullableViewSlot.add(
                     ExpressionUtils.shuttleExpressionWithLineage(new ArrayList<>(requireNullableSlots),
-<<<<<<< HEAD
-                                    viwStructInfo.getTopPlan(), new BitSet()).stream().map(Slot.class::cast)
-=======
                                     viewStructInfo.getTopPlan(), new BitSet()).stream().map(Slot.class::cast)
->>>>>>> 3.0.3-rc03
                             .collect(Collectors.toSet()));
         }
         // query pulledUp predicates should have null reject predicates and contains any require noNullable slot

@@ -75,20 +75,8 @@ if [[ ${RUN_VERSION} -eq 0 ]] && [[ -f "${DORIS_HOME}/bin/${process}.pid" ]]; th
 fi
 
 lib_path="${DORIS_HOME}/lib"
-<<<<<<< HEAD
 bin="${DORIS_HOME}/lib/${process}"
-if ldd "${bin}" | grep -Ei 'libfdb_c.*not found' &>/dev/null; then
-    if ! command -v patchelf &>/dev/null; then
-        echo "patchelf is needed to launch meta_service"
-        exit 1
-    fi
-    patchelf --set-rpath "${lib_path}" "${bin}"
-    # ldd "${bin}"
-fi
-=======
-bin="${DORIS_HOME}/lib/doris_cloud"
 export LD_LIBRARY_PATH="${lib_path}:${LD_LIBRARY_PATH}"
->>>>>>> 3.0.3-rc03
 
 chmod 550 "${DORIS_HOME}/lib/${process}"
 

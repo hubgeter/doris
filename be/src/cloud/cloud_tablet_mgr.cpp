@@ -143,15 +143,12 @@ CloudTabletMgr::CloudTabletMgr(CloudStorageEngine& engine)
 
 CloudTabletMgr::~CloudTabletMgr() = default;
 
-<<<<<<< HEAD
-=======
 void set_tablet_access_time_ms(CloudTablet* tablet) {
     using namespace std::chrono;
     int64_t now = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     tablet->last_access_time_ms = now;
 }
 
->>>>>>> 3.0.3-rc03
 Result<std::shared_ptr<CloudTablet>> CloudTabletMgr::get_tablet(int64_t tablet_id, bool warmup_data,
                                                                 bool sync_delete_bitmap) {
     // LRU value type. `Value`'s lifetime MUST NOT be longer than `CloudTabletMgr`

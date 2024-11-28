@@ -56,31 +56,16 @@ public class ShortCircuitQueryContext {
     public final Queriable analzyedQuery;
     // Serialized mysql Field, this could avoid serialize mysql field each time sendFields.
     // Since, serialize fields is too heavy when table is wide
-<<<<<<< HEAD
-    List<byte[]> serializedFields = new ArrayList();
-=======
     Map<Integer, byte[]> serializedFields = Maps.newHashMap();
->>>>>>> 3.0.3-rc03
 
     List<Type> returnTypes = null;
 
     public byte[] getSerializedField(int idx) {
-<<<<<<< HEAD
-        if (idx < serializedFields.size()) {
-            return serializedFields.get(idx);
-        }
-        return null;
-    }
-
-    public void addSerializedField(byte[] serializedField) {
-        serializedFields.add(serializedField);
-=======
         return serializedFields.getOrDefault(idx, null);
     }
 
     public void addSerializedField(int idx, byte[] serializedField) {
         serializedFields.put(idx, serializedField);
->>>>>>> 3.0.3-rc03
     }
 
     List<Type> getReturnTypes() {

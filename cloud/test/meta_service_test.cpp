@@ -5140,11 +5140,7 @@ TEST(MetaServiceTest, DeleteBimapCommitTxnTest) {
     }
 }
 
-<<<<<<< HEAD
-TEST(MetaServiceTest, GetDeleteBitmapWithRetryTest) {
-=======
 TEST(MetaServiceTest, GetDeleteBitmapWithRetryTest1) {
->>>>>>> 3.0.3-rc03
     auto meta_service = get_meta_service();
     SyncPoint::get_instance()->enable_processing();
     size_t index = 0;
@@ -5215,8 +5211,6 @@ TEST(MetaServiceTest, GetDeleteBitmapWithRetryTest1) {
     SyncPoint::get_instance()->clear_all_call_backs();
 }
 
-<<<<<<< HEAD
-=======
 TEST(MetaServiceTest, GetDeleteBitmapWithRetryTest2) {
     auto meta_service = get_meta_service();
     SyncPoint::get_instance()->enable_processing();
@@ -5382,7 +5376,6 @@ TEST(MetaServiceTest, GetDeleteBitmapWithRetryTest3) {
     SyncPoint::get_instance()->clear_all_call_backs();
 }
 
->>>>>>> 3.0.3-rc03
 TEST(MetaServiceTest, GetVersion) {
     auto service = get_meta_service();
 
