@@ -19,8 +19,6 @@ package org.apache.doris.datasource;
 
 import org.apache.doris.catalog.TableIf;
 import org.apache.doris.common.UserException;
-import org.apache.doris.common.profile.ProfileSpan;
-import org.apache.doris.common.profile.SummaryProfile;
 import org.apache.doris.spi.Split;
 import org.apache.doris.system.Backend;
 import org.apache.doris.thrift.TScanRangeLocations;
@@ -144,7 +142,7 @@ public class SplitAssignment {
         return sampleSplit;
     }
 
-    public void addToQueue(List<Split> splits, String scanNodeId) {
+    public void addToQueue(List<Split> splits) {
         if (splits.isEmpty()) {
             return;
         }
@@ -154,12 +152,10 @@ public class SplitAssignment {
                 sampleSplit = splits.get(0);
                 assignLock.notify();
             }
-            try (ProfileSpan ignored = ProfileSpan.create(scanNodeId, SummaryProfile.CREATE_SCAN_RANGE_TIME)) {
-                try {
-                    batch = backendPolicy.computeScanRangeAssignment(splits);
-                } catch (UserException e) {
-                    exception = e;
-                }
+            try {
+                batch = backendPolicy.computeScanRangeAssignment(splits);
+            } catch (UserException e) {
+                exception = e;
             }
         }
         if (batch != null) {
