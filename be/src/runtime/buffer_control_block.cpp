@@ -97,6 +97,8 @@ BufferControlBlock::BufferControlBlock(const TUniqueId& id, int buffer_size)
         : _fragment_id(id),
           _is_close(false),
           _is_cancelled(false),
+          _is_first_add(true),
+          _is_first_get(true),
           _buffer_rows(0),
           _buffer_limit(buffer_size),
           _packet_num(0) {
@@ -134,6 +136,11 @@ Status BufferControlBlock::add_batch(std::unique_ptr<TFetchDataResult>& result, 
         return Status::Cancelled("Cancelled");
     }
 
+    if (_is_first_add) {
+        LOG(INFO) << "BufferControlBlock::add_batch first: " << print_id(_fragment_id)
+                  << ", num_rows: " << num_rows;
+        _is_first_add = false;
+    }
     if (_waiting_rpc.empty()) {
         // Merge result into batch to reduce rpc times
         if (!_fe_result_batch_queue.empty() &&
@@ -149,6 +156,11 @@ Status BufferControlBlock::add_batch(std::unique_ptr<TFetchDataResult>& result, 
         }
         _buffer_rows += num_rows;
     } else {
+        if (_is_first_get) {
+            LOG(INFO) << "BufferControlBlock::get_batch add batch first: " << print_id(_fragment_id)
+                      << ", num_rows: " << num_rows;
+            _is_first_get = false;
+        }
         auto ctx = _waiting_rpc.front();
         _waiting_rpc.pop_front();
         ctx->on_data(result, _packet_num);
@@ -201,6 +213,11 @@ void BufferControlBlock::get_batch(GetResultBatchCtx* ctx) {
 
         ctx->on_data(result, _packet_num);
         _packet_num++;
+        if (_is_first_get) {
+            LOG(INFO) << "BufferControlBlock::get_batch first: " << print_id(_fragment_id)
+                      << ", num_rows: " << result->result_batch.rows.size();
+            _is_first_get = false;
+        }
         return;
     }
     if (_is_close) {

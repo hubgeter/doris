@@ -113,6 +113,8 @@ protected:
     TUniqueId _fragment_id;
     bool _is_close;
     std::atomic_bool _is_cancelled;
+    std::atomic_bool _is_first_add;
+    std::atomic_bool _is_first_get;
     Status _status;
     std::atomic_int _buffer_rows;
     const int _buffer_limit;
