@@ -122,7 +122,6 @@ suite("test_warmup_show_stmt_2") {
         if (!result[i].get("TableName").equals(hotTableName)) {
             continue
         }
-<<<<<<< HEAD
 
         def computeGroupId = result[i].get("cluster_id") == null ? result[i].get("ComputeGroupId") : result[i].get("cluster_id")
         def computeGroupName = result[i].get("cluster_name") == null ? result[i].get("ComputeGroupName") : result[i].get("cluster_name")
@@ -131,12 +130,7 @@ suite("test_warmup_show_stmt_2") {
         assertEquals(computeGroupId, "regression_cluster_id0")
         assertEquals(computeGroupName, "regression_cluster_name0")
         assertEquals(tableName, "regression_test_cloud_p0_cache_multi_cluster_warm_up_hotspot.customer")
-=======
         found = true
-        assertEquals(result[i].get("ComputeGroupId"), "regression_cluster_id0")
-        assertEquals(result[i].get("ComputeGroupName"), "regression_cluster_name0")
-        assertEquals(result[i].get("TableName"), "regression_test_cloud_p0_cache_multi_cluster_warm_up_hotspot.customer")
->>>>>>> 3.0.3-rc03
         break
     }
     org.junit.Assert.assertTrue("cannot find expected cache hotspot ${hotTableName}", found)

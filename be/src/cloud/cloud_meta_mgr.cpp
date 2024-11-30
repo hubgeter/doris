@@ -691,7 +691,7 @@ Status CloudMetaMgr::sync_tablet_delete_bitmap(CloudTablet* tablet, int64_t old_
         if (++retry_times > config::delete_bitmap_rpc_retry_times) {
             if (cntl.Failed()) {
                 return Status::RpcError("failed to get delete bitmap, tablet={} err={}",
-                        tablet->tablet_id(), cntl.ErrorText());
+                                        tablet->tablet_id(), cntl.ErrorText());
             }
             break;
         }

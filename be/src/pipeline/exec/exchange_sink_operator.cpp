@@ -352,13 +352,8 @@ Status ExchangeSinkOperatorX::open(RuntimeState* state) {
     _compression_type = state->fragement_transmission_compression_type();
     if (_part_type == TPartitionType::TABLET_SINK_SHUFFLE_PARTITIONED) {
         if (_output_tuple_id == -1) {
-<<<<<<< HEAD
-            RETURN_IF_ERROR(vectorized::VExpr::prepare(_tablet_sink_expr_ctxs, state,
-                                                       _child_x->row_desc()));
-=======
             RETURN_IF_ERROR(
                     vectorized::VExpr::prepare(_tablet_sink_expr_ctxs, state, _child->row_desc()));
->>>>>>> 3.0.3-rc03
         } else {
             auto* output_tuple_desc = state->desc_tbl().get_tuple_descriptor(_output_tuple_id);
             auto* output_row_desc = _pool->add(new RowDescriptor(output_tuple_desc, false));
@@ -538,12 +533,6 @@ Status ExchangeSinkOperatorX::sink(RuntimeState* state, vectorized::Block* block
             }
         }
 
-<<<<<<< HEAD
-        // the convert_block maybe different with block after execute exprs
-        // when send data we still use block
-        RETURN_IF_ERROR(channel_add_rows_with_idx(state, local_state.channels, num_channels,
-                                                  channel2rows, block, eos));
-=======
         {
             SCOPED_TIMER(local_state._distribute_rows_into_channels_timer);
             // the convert_block maybe different with block after execute exprs
@@ -559,7 +548,6 @@ Status ExchangeSinkOperatorX::sink(RuntimeState* state, vectorized::Block* block
                        new_channel_mem_usage - old_channel_mem_usage);
         COUNTER_SET(local_state.peak_memory_usage_counter(),
                     local_state.memory_used_counter()->value());
->>>>>>> 3.0.3-rc03
     } else if (_part_type == TPartitionType::TABLE_SINK_HASH_PARTITIONED) {
         {
             SCOPED_TIMER(local_state._split_block_hash_compute_timer);
