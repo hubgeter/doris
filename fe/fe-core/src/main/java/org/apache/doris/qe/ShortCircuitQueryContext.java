@@ -28,12 +28,14 @@ import org.apache.doris.thrift.TExprList;
 import org.apache.doris.thrift.TQueryOptions;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Maps;
 import com.google.protobuf.ByteString;
 import org.apache.thrift.TException;
 import org.apache.thrift.TSerializer;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
