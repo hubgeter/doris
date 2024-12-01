@@ -21,6 +21,7 @@ import org.apache.doris.catalog.ArrayType;
 import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.MapType;
+import org.apache.doris.catalog.PartitionItem;
 import org.apache.doris.catalog.ScalarType;
 import org.apache.doris.catalog.StructField;
 import org.apache.doris.catalog.StructType;
@@ -71,12 +72,26 @@ public class MaxComputeExternalTable extends ExternalTable {
         }
     }
 
+    @Override
+    public boolean supportInternalPartitionPruned() {
+        return true;
+    }
 
     public List<Column> getPartitionColumns() {
         makeSureInitialized();
         Optional<SchemaCacheValue> schemaCacheValue = getSchemaCacheValue();
         return schemaCacheValue.map(value -> ((MaxComputeSchemaCacheValue) value).getPartitionColumns())
                 .orElse(Collections.emptyList());
+    }
+
+    @Override
+    public Map<Long, PartitionItem> getNameToPartitionItems() {
+        if (getPartitionColumns().isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        TablePartitionValues tablePartitionValues = getPartitionValues();
+        return tablePartitionValues.getIdToPartitionItem();
     }
 
     public TablePartitionValues getPartitionValues() {
@@ -110,6 +125,8 @@ public class MaxComputeExternalTable extends ExternalTable {
 
     /**
      * parse all values from partitionPath to a single list.
+     * In MaxCompute : Support special characters : _$#.!@
+     * Ref : MaxCompute Error Code: ODPS-0130071  Invalid partition value.
      *
      * @param partitionColumns partitionColumns can contain the part1,part2,part3...
      * @param partitionPath partitionPath format is like the 'part1=123/part2=abc/part3=1bc'
