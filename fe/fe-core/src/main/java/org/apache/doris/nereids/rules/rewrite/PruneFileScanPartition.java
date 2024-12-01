@@ -58,7 +58,7 @@ public class PruneFileScanPartition extends OneRewriteRuleFactory {
                     ExternalTable tbl = scan.getTable();
 
                     SelectedPartitions selectedPartitions;
-                    if (tbl.supportPartitionPruned()) {
+                    if (tbl.supportInternalPartitionPruned()) {
                         selectedPartitions = pruneExternalPartitions(tbl, filter, scan, ctx.cascadesContext);
                     } else {
                         // set isPruned so that it won't go pass the partition prune again

@@ -296,10 +296,11 @@ public class HMSExternalTable extends ExternalTable implements MTMVRelatedTableI
     }
 
     @Override
-    public boolean supportPartitionPruned() {
+    public boolean supportInternalPartitionPruned() {
         return getDlaType() == DLAType.HIVE;
     }
 
+    @Override
     public Map<Long, PartitionItem> getNameToPartitionItems() {
         if (CollectionUtils.isEmpty(this.getPartitionColumns())) {
             return Collections.emptyMap();

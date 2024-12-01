@@ -370,7 +370,7 @@ public class ExternalTable implements TableIf, Writable, GsonPostProcessable {
     }
 
     public SelectedPartitions initSelectedPartitions() {
-        if (!supportPartitionPruned()) {
+        if (!supportInternalPartitionPruned()) {
             return SelectedPartitions.NOT_PRUNED;
         }
         if (CollectionUtils.isEmpty(this.getPartitionColumns())) {
@@ -390,8 +390,7 @@ public class ExternalTable implements TableIf, Writable, GsonPostProcessable {
         return Collections.emptyList();
     }
 
-
-    public boolean supportPartitionPruned() {
+    public boolean supportInternalPartitionPruned() {
         return false;
     }
 }
