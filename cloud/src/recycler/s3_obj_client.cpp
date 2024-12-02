@@ -292,7 +292,10 @@ ObjectStorageResponse S3ObjClient::delete_object(ObjectStoragePathRef path) {
                 .tag("responseCode", static_cast<int>(outcome.GetError().GetResponseCode()))
                 .tag("error", outcome.GetError().GetMessage())
                 .tag("exception", outcome.GetError().GetExceptionName());
-        return -1;
+        if (outcome.GetError().GetResponseCode() == Aws::Http::HttpResponseCode::NOT_FOUND) {
+            return {ObjectStorageResponse::NOT_FOUND, outcome.GetError().GetMessage()};
+        }
+        return {ObjectStorageResponse::UNDEFINED, outcome.GetError().GetMessage()};
     }
     return 0;
 }

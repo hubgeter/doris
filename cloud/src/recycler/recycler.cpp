@@ -1197,8 +1197,8 @@ int InstanceRecycler::recycle_tablets(int64_t table_id, int64_t index_id, int64_
     using TabletKeyPair = std::pair<std::string_view, bool>;
     SyncExecutor<TabletKeyPair> sync_executor(
             _thread_pool_group.recycle_tablet_pool,
-            fmt::format("recycle tablets, tablet id {}, index id {}, partition id {}", table_id,
-                        index_id, partition_id),
+            fmt::format("{} recycle tablets, tablet_id={} index_id={} partition_id={}",
+                        instance_id_, table_id, index_id, partition_id),
             [](const TabletKeyPair& k) { return k.first.empty(); });
 
     // Elements in `tablet_keys` has the same lifetime as `it` in `scan_and_recycle`
@@ -1575,7 +1575,8 @@ int InstanceRecycler::recycle_tablet(int64_t tablet_id) {
 
     SyncExecutor<int> concurrent_delete_executor(
             _thread_pool_group.s3_producer_pool,
-            fmt::format("delete tablet {} s3 rowset", tablet_id),
+            fmt::format("{} recycle_tablet, delete tablet data delete_directory tablet_id={}",
+                        instance_id_, tablet_id),
             [](const int& ret) { return ret != 0; });
 
     // delete all rowset data in this tablet
@@ -1791,7 +1792,8 @@ int InstanceRecycler::recycle_rowsets() {
         worker_pool->submit([&, rowset_keys_to_delete = std::move(rowset_keys_to_delete),
                              rowsets_to_delete = std::move(rowsets_to_delete)]() {
             if (delete_rowset_data(rowsets_to_delete) != 0) {
-                LOG(WARNING) << "failed to delete rowset data, instance_id=" << instance_id_;
+                LOG(WARNING) << "failed to delete rowset data, instance_id=" << instance_id_
+                             << " number_of_rowsets=" << rowsets_to_delete.size();
                 return;
             }
             if (txn_remove(txn_kv_.get(), rowset_keys_to_delete) != 0) {
