@@ -1445,7 +1445,8 @@ public class Coordinator implements CoordInterface {
 
         Long limitRows = fragments.get(0).getPlanRoot().getLimit();
         if (limitRows > 0 && numReceivedRows >= limitRows) {
-            LOG.info("reach limit rows: {}, received rows: {}, cancel query, {}", limitRows, numReceivedRows, DebugUtil.printId(queryId));
+            LOG.info("reach limit rows: {}, received rows: {}, cancel query, {}", limitRows,
+                      numReceivedRows, DebugUtil.printId(queryId));
             cancelInternal(Types.PPlanFragmentCancelReason.INTERNAL_ERROR, "reach limit");
             resultBatch.setEos(true);
         }

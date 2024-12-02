@@ -56,7 +56,7 @@ public class IcebergMetadataCache {
     private final LoadingCache<IcebergMetadataCacheKey, Table> tableCache;
 
     public IcebergMetadataCache(ExecutorService executor) {
-        CacheFactory snapshotListCacheFactory = new CacheFactory(
+        CacheFactory<IcebergMetadataCacheKey, List<Snapshot>> snapshotListCacheFactory = new CacheFactory(
                 OptionalLong.of(28800L),
                 OptionalLong.of(Config.external_cache_expire_time_minutes_after_access * 60),
                 Config.max_external_table_cache_num,
@@ -64,7 +64,7 @@ public class IcebergMetadataCache {
                 null);
         this.snapshotListCache = snapshotListCacheFactory.buildCache(key -> loadSnapshots(key), null, executor);
 
-        CacheFactory tableCacheFactory = new CacheFactory(
+        CacheFactory<IcebergMetadataCacheKey, Table> tableCacheFactory = new CacheFactory(
                 OptionalLong.of(28800L),
                 OptionalLong.of(Config.external_cache_expire_time_minutes_after_access * 60),
                 Config.max_external_table_cache_num,

@@ -19,11 +19,13 @@ package org.apache.doris.common;
 
 import com.github.benmanes.caffeine.cache.AsyncCacheLoader;
 import com.github.benmanes.caffeine.cache.AsyncLoadingCache;
+import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.CacheLoader;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.github.benmanes.caffeine.cache.RemovalListener;
 import com.github.benmanes.caffeine.cache.Ticker;
+import com.github.benmanes.caffeine.cache.Weigher;
 import org.jetbrains.annotations.NotNull;
 
 import java.time.Duration;
@@ -44,16 +46,20 @@ import java.util.concurrent.ExecutorService;
  * The cache can be created with the above parameters using the buildCache and buildAsyncCache methods.
  * </p>
  */
-public class CacheFactory {
+public class CacheFactory<K, V> {
 
     private OptionalLong expireAfterWriteSec;
     private OptionalLong refreshAfterWriteSec;
-    private long maxSize;
+    private OptionalLong maxSize;
     private boolean enableStats;
     // Ticker is used to provide a time source for the cache.
     // Only used for test, to provide a fake time source.
     // If not provided, the system time is used.
     private Ticker ticker;
+
+    private OptionalLong maxWeight;
+
+    private Weigher<K, V> weigher;
 
     public CacheFactory(
             OptionalLong expireAfterWriteSec,
@@ -61,11 +67,36 @@ public class CacheFactory {
             long maxSize,
             boolean enableStats,
             Ticker ticker) {
+        this(expireAfterWriteSec, refreshAfterWriteSec, OptionalLong.of(maxSize), enableStats, ticker,
+                OptionalLong.empty(), null);
+    }
+
+    public CacheFactory(
+            OptionalLong expireAfterWriteSec,
+            OptionalLong refreshAfterWriteSec,
+            boolean enableStats,
+            Ticker ticker,
+            long maxWeight,
+            Weigher<K, V> weigher) {
+        this(expireAfterWriteSec, refreshAfterWriteSec, OptionalLong.empty(), enableStats, ticker,
+                OptionalLong.of(maxWeight), weigher);
+    }
+
+    private CacheFactory(
+            OptionalLong expireAfterWriteSec,
+            OptionalLong refreshAfterWriteSec,
+            OptionalLong maxSize,
+            boolean enableStats,
+            Ticker ticker,
+            OptionalLong maxWeight,
+            Weigher<K, V> weigher) {
         this.expireAfterWriteSec = expireAfterWriteSec;
         this.refreshAfterWriteSec = refreshAfterWriteSec;
         this.maxSize = maxSize;
         this.enableStats = enableStats;
         this.ticker = ticker;
+        this.maxWeight = maxWeight;
+        this.weigher = weigher;
     }
 
     // Build a loading cache, without executor, it will use fork-join pool for refresh
@@ -85,6 +116,11 @@ public class CacheFactory {
         return builder.build(cacheLoader);
     }
 
+    public <K, V> Cache<K, V> buildCache() {
+        Caffeine<Object, Object> builder = buildWithParams();
+        return builder.build();
+    }
+
     // Build an async loading cache
     public <K, V> AsyncLoadingCache<K, V> buildAsyncCache(AsyncCacheLoader<K, V> cacheLoader,
             ExecutorService executor) {
@@ -94,9 +130,11 @@ public class CacheFactory {
     }
 
     @NotNull
-    private Caffeine<Object, Object> buildWithParams() {
+    private <K, V> Caffeine<Object, Object> buildWithParams() {
         Caffeine<Object, Object> builder = Caffeine.newBuilder();
-        builder.maximumSize(maxSize);
+        if (maxSize.isPresent()) {
+            builder.maximumSize(maxSize.getAsLong());
+        }
 
         if (expireAfterWriteSec.isPresent()) {
             builder.expireAfterWrite(Duration.ofSeconds(expireAfterWriteSec.getAsLong()));
@@ -111,6 +149,14 @@ public class CacheFactory {
 
         if (ticker != null) {
             builder.ticker(ticker);
+        }
+
+        if (maxWeight.isPresent()) {
+            builder.maximumWeight(maxWeight.getAsLong());
+        }
+
+        if (weigher != null) {
+            builder.weigher(weigher);
         }
         return builder;
     }

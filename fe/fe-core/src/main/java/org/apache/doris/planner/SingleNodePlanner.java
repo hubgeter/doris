@@ -58,6 +58,7 @@ import org.apache.doris.catalog.PrimitiveType;
 import org.apache.doris.catalog.Table;
 import org.apache.doris.catalog.TableIf;
 import org.apache.doris.common.AnalysisException;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.FeConstants;
 import org.apache.doris.common.Pair;
 import org.apache.doris.common.Reference;
@@ -71,6 +72,9 @@ import org.apache.doris.datasource.iceberg.source.IcebergScanNode;
 import org.apache.doris.datasource.jdbc.source.JdbcScanNode;
 import org.apache.doris.datasource.maxcompute.source.MaxComputeScanNode;
 import org.apache.doris.datasource.odbc.source.OdbcScanNode;
+import org.apache.doris.fs.DirectoryLister;
+import org.apache.doris.fs.FileSystemDirectoryLister;
+import org.apache.doris.fs.TransactionScopeCachingDirectoryListerFactory;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.rewrite.mvrewrite.MVSelectFailedException;
 import org.apache.doris.statistics.StatisticalType;
@@ -111,6 +115,8 @@ public class SingleNodePlanner {
     private final PlannerContext ctx;
     private final ArrayList<ScanNode> scanNodes = Lists.newArrayList();
     private Map<Analyzer, List<ScanNode>> selectStmtToScanNodes = Maps.newHashMap();
+
+    private DirectoryLister directoryLister;
 
     public SingleNodePlanner(PlannerContext ctx) {
         this.ctx = ctx;
@@ -1959,6 +1965,11 @@ public class SingleNodePlanner {
                 scanNode = ((TableValuedFunctionRef) tblRef).getScanNode(ctx.getNextNodeId());
                 break;
             case HMS_EXTERNAL_TABLE:
+                // TransactionScopeCachingDirectoryLister is only used in hms external tables.
+                if (directoryLister != null) {
+                    this.directoryLister = new TransactionScopeCachingDirectoryListerFactory(
+                            Config.max_external_table_split_file_meta_cache_num).get(new FileSystemDirectoryLister());
+                }
                 TableIf table = tblRef.getDesc().getTable();
                 switch (((HMSExternalTable) table).getDlaType()) {
                     case HUDI:
@@ -1968,14 +1979,15 @@ public class SingleNodePlanner {
                             throw new UserException("Hudi incremental read is not supported, "
                                     + "please set enable_nereids_planner = true to enable new optimizer");
                         }
+
                         scanNode = new HudiScanNode(ctx.getNextNodeId(), tblRef.getDesc(), true,
-                                Optional.empty(), Optional.empty());
+                                Optional.empty(), Optional.empty(), directoryLister);
                         break;
                     case ICEBERG:
                         scanNode = new IcebergScanNode(ctx.getNextNodeId(), tblRef.getDesc(), true);
                         break;
                     case HIVE:
-                        scanNode = new HiveScanNode(ctx.getNextNodeId(), tblRef.getDesc(), true);
+                        scanNode = new HiveScanNode(ctx.getNextNodeId(), tblRef.getDesc(), true, directoryLister);
                         ((HiveScanNode) scanNode).setTableSample(tblRef.getTableSample());
                         break;
                     default:
