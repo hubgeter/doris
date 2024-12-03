@@ -1966,7 +1966,7 @@ public class SingleNodePlanner {
                 break;
             case HMS_EXTERNAL_TABLE:
                 // TransactionScopeCachingDirectoryLister is only used in hms external tables.
-                if (directoryLister != null) {
+                if (directoryLister == null) {
                     this.directoryLister = new TransactionScopeCachingDirectoryListerFactory(
                             Config.max_external_table_split_file_meta_cache_num).get(new FileSystemDirectoryLister());
                 }

@@ -575,7 +575,7 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
         ScanNode scanNode;
         if (table instanceof HMSExternalTable) {
             // TransactionScopeCachingDirectoryLister is only used in hms external tables.
-            if (directoryLister != null) {
+            if (directoryLister == null) {
                 this.directoryLister = new TransactionScopeCachingDirectoryListerFactory(
                         Config.max_external_table_split_file_meta_cache_num).get(new FileSystemDirectoryLister());
             }
@@ -653,7 +653,7 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
     @Override
     public PlanFragment visitPhysicalHudiScan(PhysicalHudiScan fileScan, PlanTranslatorContext context) {
         // TransactionScopeCachingDirectoryLister is only used in hms external tables.
-        if (directoryLister != null) {
+        if (directoryLister == null) {
             this.directoryLister = new TransactionScopeCachingDirectoryListerFactory(
                     Config.max_external_table_split_file_meta_cache_num).get(new FileSystemDirectoryLister());
         }
