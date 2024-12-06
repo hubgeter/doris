@@ -91,6 +91,10 @@ public class MaxComputeScanNode extends FileQueryScanNode {
     private static final LocationPath ROW_OFFSET_PATH = new LocationPath("/row_offset", Maps.newHashMap());
     private static final LocationPath BYTE_SIZE_PATH = new LocationPath("/byte_size", Maps.newHashMap());
 
+    private int connectTimeout;
+    private int readTimeout;
+    private int retryTimes;
+
     @Setter
     private SelectedPartitions selectedPartitions = null;
 
@@ -129,6 +133,11 @@ public class MaxComputeScanNode extends FileQueryScanNode {
         fileDesc.setPartitionSpec("deprecated");
         fileDesc.setTableBatchReadSession(maxComputeSplit.scanSerialize);
         fileDesc.setSessionId(maxComputeSplit.getSessionId());
+
+        fileDesc.setReadTimeout(readTimeout);
+        fileDesc.setConnectTimeout(connectTimeout);
+        fileDesc.setRetryTimes(retryTimes);
+
         tableFormatFileDesc.setMaxComputeParams(fileDesc);
         rangeDesc.setTableFormatParams(tableFormatFileDesc);
         rangeDesc.setPath("[ " + maxComputeSplit.getStart() + " , " + maxComputeSplit.getLength() + " ]");
@@ -505,6 +514,10 @@ public class MaxComputeScanNode extends FileQueryScanNode {
             long modificationTime = table.getOdpsTable().getLastDataModifiedTime().getTime();
 
             MaxComputeExternalCatalog mcCatalog = (MaxComputeExternalCatalog) table.getCatalog();
+
+            readTimeout = mcCatalog.getReadTimeout();
+            connectTimeout = mcCatalog.getConnectTimeout();
+            retryTimes = mcCatalog.getRetryTimes();
 
             if (mcCatalog.getSplitStrategy().equals(MCProperties.SPLIT_BY_BYTE_SIZE_STRATEGY)) {
 
