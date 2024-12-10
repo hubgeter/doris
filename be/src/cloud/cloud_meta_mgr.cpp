@@ -631,9 +631,6 @@ Status CloudMetaMgr::sync_tablet_delete_bitmap(CloudTablet* tablet, int64_t old_
         *delete_bitmap = *new_delete_bitmap;
     }
 
-    std::shared_ptr<MetaService_Stub> stub;
-    RETURN_IF_ERROR(MetaServiceProxy::get_client(&stub));
-
     int64_t new_max_version = std::max(old_max_version, rs_metas.rbegin()->end_version());
     brpc::Controller cntl;
     // When there are many delete bitmaps that need to be synchronized, it
@@ -670,6 +667,8 @@ Status CloudMetaMgr::sync_tablet_delete_bitmap(CloudTablet* tablet, int64_t old_
 
     int retry_times = 0;
     while (true) {
+        std::shared_ptr<MetaService_Stub> stub;
+        RETURN_IF_ERROR(MetaServiceProxy::get_client(&stub));
         brpc::Controller cntl;
         // When there are many delete bitmaps that need to be synchronized, it
         // may take a longer time, especially when loading the tablet for the
