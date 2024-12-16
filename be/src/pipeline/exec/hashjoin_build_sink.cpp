@@ -594,12 +594,20 @@ Status HashJoinBuildSinkOperatorX::sink(RuntimeState* state, vectorized::Block* 
             local_state._runtime_filter_slots->copy_to_shared_context(_shared_hash_table_context);
             _shared_hashtable_controller->signal(node_id());
         }
+        if (_node_id == 6 && _is_broadcast_join) {
+            LOG(WARNING) << "=====testlog7 " << print_id(state->fragment_instance_id()) << ' '
+                         << _shared_hash_table_context->block->rows();
+        }
     } else if (!local_state._should_build_hash_table) {
         DCHECK(_shared_hashtable_controller != nullptr);
         DCHECK(_shared_hash_table_context != nullptr);
         // the instance which is not build hash table, it's should wait the signal of hash table build finished.
         // but if it's running and signaled == false, maybe the source operator have closed caused by some short circuit,
         if (!_shared_hash_table_context->signaled) {
+            if (_node_id == 6 && _is_broadcast_join) {
+                LOG(WARNING) << "=====testlog8 " << print_id(state->fragment_instance_id()) << ' '
+                             << _shared_hash_table_context->block->rows();
+            }
             return Status::Error<ErrorCode::END_OF_FILE>("source have closed");
         }
 
@@ -631,6 +639,10 @@ Status HashJoinBuildSinkOperatorX::sink(RuntimeState* state, vectorized::Block* 
         local_state._shared_state->build_block = _shared_hash_table_context->block;
         local_state._shared_state->build_indexes_null =
                 _shared_hash_table_context->build_indexes_null;
+        if (_node_id == 6 && _is_broadcast_join) {
+            LOG(WARNING) << "=====testlog9 " << print_id(state->fragment_instance_id()) << ' '
+                         << local_state._shared_state->build_block->rows();
+        }
     }
 
     if (eos) {

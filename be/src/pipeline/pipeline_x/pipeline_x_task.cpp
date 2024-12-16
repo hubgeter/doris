@@ -197,6 +197,7 @@ void PipelineXTask::_init_profile() {
     _wait_bf_counts = ADD_COUNTER(_task_profile, "WaitBfTimes", TUnit::UNIT);
     _wait_dependency_counts = ADD_COUNTER(_task_profile, "WaitDenpendencyTimes", TUnit::UNIT);
     _pending_finish_counts = ADD_COUNTER(_task_profile, "PendingFinishTimes", TUnit::UNIT);
+    _task_profile->add_info_string("InstanceId", print_id(_state->fragment_instance_id()));
 }
 
 void PipelineXTask::_fresh_profile_counter() {

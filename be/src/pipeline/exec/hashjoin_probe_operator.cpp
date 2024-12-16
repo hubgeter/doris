@@ -244,6 +244,10 @@ Status HashJoinProbeOperatorX::pull(doris::RuntimeState* state, vectorized::Bloc
     local_state.init_for_probe(state);
     SCOPED_TIMER(local_state._probe_timer);
     if (local_state._shared_state->short_circuit_for_probe) {
+        if (_node_id == 6 && _is_broadcast_join) {
+            LOG(WARNING) << "=====testlog1 " << print_id(state->fragment_instance_id()) << ' '
+                         << local_state._child_eos << ' ' << local_state._probe_eos;
+        }
         // If we use a short-circuit strategy, should return empty block directly.
         *eos = true;
         return Status::OK();
@@ -257,6 +261,10 @@ Status HashJoinProbeOperatorX::pull(doris::RuntimeState* state, vectorized::Bloc
         auto block_rows = local_state._probe_block.rows();
         if (local_state._probe_eos && block_rows == 0) {
             *eos = local_state._probe_eos;
+            if (_node_id == 6 && _is_broadcast_join) {
+                LOG(WARNING) << "=====testlog2 " << print_id(state->fragment_instance_id()) << ' '
+                             << local_state._child_eos << ' ' << local_state._probe_eos;
+            }
             return Status::OK();
         }
 
@@ -296,6 +304,11 @@ Status HashJoinProbeOperatorX::pull(doris::RuntimeState* state, vectorized::Bloc
                                                                  &temp_block, false));
         temp_block.clear();
         local_state._probe_block.clear_column_data(_child_x->row_desc().num_materialized_slots());
+
+        if (_node_id == 6 && _is_broadcast_join && *eos) {
+            LOG(WARNING) << "=====testlog3 " << print_id(state->fragment_instance_id()) << ' '
+                         << local_state._child_eos << ' ' << local_state._probe_eos;
+        }
         return Status::OK();
     }
 
@@ -354,10 +367,19 @@ Status HashJoinProbeOperatorX::pull(doris::RuntimeState* state, vectorized::Bloc
                         } else {
                             st = Status::InternalError("uninited hash table probe");
                         }
+                        if (_node_id == 6 && _is_broadcast_join && *eos) {
+                            LOG(WARNING) << "=====testlog5 "
+                                         << print_id(state->fragment_instance_id()) << ' '
+                                         << local_state._child_eos << ' ' << local_state._probe_eos;
+                        }
                     },
                     *local_state._shared_state->hash_table_variants,
                     *local_state._process_hashtable_ctx_variants);
         } else {
+            if (_node_id == 6 && _is_broadcast_join) {
+                LOG(WARNING) << "=====testlog4 " << print_id(state->fragment_instance_id()) << ' '
+                             << local_state._child_eos << ' ' << local_state._probe_eos;
+            }
             *eos = true;
             return Status::OK();
         }
@@ -373,6 +395,10 @@ Status HashJoinProbeOperatorX::pull(doris::RuntimeState* state, vectorized::Bloc
     // Here make _join_block release the columns' ptr
     local_state._join_block.set_columns(local_state._join_block.clone_empty_columns());
     mutable_join_block.clear();
+    if (_node_id == 6 && _is_broadcast_join && *eos) {
+        LOG(WARNING) << "=====testlog6 " << print_id(state->fragment_instance_id()) << ' '
+                     << local_state._child_eos << ' ' << local_state._probe_eos;
+    }
     return Status::OK();
 }
 
