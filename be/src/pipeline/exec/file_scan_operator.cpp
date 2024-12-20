@@ -82,7 +82,8 @@ void FileScanLocalState::set_scan_ranges(RuntimeState* state,
             auto split_source = scan_range.split_source;
             RuntimeProfile::Counter* get_split_timer = ADD_TIMER(_runtime_profile, "GetSplitTime");
             _max_scanners = config::doris_scanner_thread_pool_thread_num / 1;
-            _max_scanners = std::max(std::max(_max_scanners, 1), 1);
+            _max_scanners =
+                    std::max(std::max(_max_scanners, state->parallel_scan_max_scanners_count()), 1);
             // For select * from table limit 10; should just use one thread.
             if (should_run_serial()) {
                 _max_scanners = 1;
@@ -97,7 +98,8 @@ void FileScanLocalState::set_scan_ranges(RuntimeState* state,
     if (!_batch_split_mode) {
         _max_scanners =
                 config::doris_scanner_thread_pool_thread_num / state->query_parallel_instance_num();
-        _max_scanners = std::max(std::max(_max_scanners, state->query_parallel_instance_num()), 1);
+        _max_scanners =
+                std::max(std::max(_max_scanners, state->parallel_scan_max_scanners_count()), 1);
         // For select * from table limit 10; should just use one thread.
         if (should_run_serial()) {
             _max_scanners = 1;
