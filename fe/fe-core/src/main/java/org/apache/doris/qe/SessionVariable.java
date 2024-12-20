@@ -624,6 +624,8 @@ public class SessionVariable implements Serializable, Writable {
 
     public static final String IN_LIST_VALUE_COUNT_THRESHOLD = "in_list_value_count_threshold";
 
+    public static final String ENABLE_TEXT_VALIDATE_UTF8 = "enable_text_validate_utf8";
+
     /**
      * If set false, user couldn't submit analyze SQL and FE won't allocate any related resources.
      */
@@ -2040,6 +2042,9 @@ public class SessionVariable implements Serializable, Writable {
                 + " fast_execute will not be used."
     })
     public int inListValueCountThreshold = 10;
+
+    @VariableMgr.VarAttr(name = ENABLE_TEXT_VALIDATE_UTF8, needForward = true)
+    public boolean enableTextValidateUtf8 = true;
 
     public void setEnableEsParallelScroll(boolean enableESParallelScroll) {
         this.enableESParallelScroll = enableESParallelScroll;
@@ -3553,6 +3558,7 @@ public class SessionVariable implements Serializable, Writable {
 
         tResult.setKeepCarriageReturn(keepCarriageReturn);
         tResult.setInListValueCountThreshold(inListValueCountThreshold);
+        tResult.setEnableTextValidateUtf8(enableTextValidateUtf8);
         return tResult;
     }
 

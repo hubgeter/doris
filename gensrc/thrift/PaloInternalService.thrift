@@ -326,6 +326,8 @@ struct TQueryOptions {
   128: optional bool enable_verbose_profile = false;
   129: optional i32 rpc_verbose_profile_max_instance_count = 0;
 
+  144: optional bool enable_text_validate_utf8 = true;
+
   // For cloud, to control if the content would be written into file cache
   1000: optional bool disable_file_cache = false
 }
