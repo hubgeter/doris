@@ -329,9 +329,6 @@ bool validate_utf8(const char* src, size_t len) {
 #endif
 
 bool validate_utf8(RuntimeState* state, const char* src, size_t len) {
-    if (state->query_options().enable_text_validate_utf8) {
-        return validate_utf8(src,len);
-    }
     return true;
 }
 } // namespace doris
