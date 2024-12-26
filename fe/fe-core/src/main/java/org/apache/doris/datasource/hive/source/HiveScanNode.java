@@ -232,6 +232,10 @@ public class HiveScanNode extends FileQueryScanNode {
             if (ConnectContext.get().getExecutor() != null) {
                 ConnectContext.get().getExecutor().getSummaryProfile().setGetPartitionFilesFinishTime();
             }
+            if (allFiles.isEmpty()) {
+                LOG.info("no file found for table: {}.{}, cost: {} ms",
+                        hmsTable.getDbName(), hmsTable.getName(), (System.currentTimeMillis() - start));
+            }
             if (LOG.isDebugEnabled()) {
                 LOG.debug("get #{} files for table: {}.{}, cost: {} ms",
                         allFiles.size(), hmsTable.getDbName(), hmsTable.getName(),
