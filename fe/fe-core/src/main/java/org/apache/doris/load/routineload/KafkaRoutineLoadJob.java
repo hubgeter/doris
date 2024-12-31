@@ -367,6 +367,9 @@ public class KafkaRoutineLoadJob extends RoutineLoadJob {
 
     @Override
     protected void unprotectUpdateProgress() throws UserException {
+        if (Config.isCloudMode()) {
+            updateCloudProgress();
+        }
         updateNewPartitionProgress();
     }
 
