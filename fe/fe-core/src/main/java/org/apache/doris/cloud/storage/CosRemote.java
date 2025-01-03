@@ -176,4 +176,13 @@ public class CosRemote extends DefaultRemote {
     public String toString() {
         return "CosRemote{obj=" + obj + '}';
     }
+
+    @Override
+    public void close() {
+        super.close();
+        if (cosClient != null) {
+            cosClient.shutdown();
+            cosClient = null;
+        }
+    }
 }
