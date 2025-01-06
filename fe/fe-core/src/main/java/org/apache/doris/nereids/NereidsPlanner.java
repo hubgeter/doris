@@ -21,12 +21,10 @@ import org.apache.doris.analysis.DescriptorTable;
 import org.apache.doris.analysis.ExplainOptions;
 import org.apache.doris.analysis.StatementBase;
 import org.apache.doris.catalog.Column;
-import org.apache.doris.catalog.TableIf;
 import org.apache.doris.common.FormatOptions;
 import org.apache.doris.common.NereidsException;
 import org.apache.doris.common.Pair;
 import org.apache.doris.common.profile.SummaryProfile;
-import org.apache.doris.mysql.FieldInfo;
 import org.apache.doris.nereids.CascadesContext.Lock;
 import org.apache.doris.nereids.exceptions.AnalysisException;
 import org.apache.doris.nereids.glue.LogicalPlanAdapter;
@@ -47,7 +45,6 @@ import org.apache.doris.nereids.processor.pre.PlanPreprocessors;
 import org.apache.doris.nereids.properties.PhysicalProperties;
 import org.apache.doris.nereids.rules.exploration.mv.MaterializationContext;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
-import org.apache.doris.nereids.trees.expressions.SlotReference;
 import org.apache.doris.nereids.trees.plans.ComputeResultSet;
 import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.commands.ExplainCommand.ExplainLevel;
@@ -74,6 +71,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Planner to do query plan in Nereids.
@@ -176,7 +174,7 @@ public class NereidsPlanner extends Planner {
                 LogicalSqlCache logicalSqlCache = (LogicalSqlCache) plan;
                 optimizedPlan = physicalPlan = new PhysicalSqlCache(
                         logicalSqlCache.getQueryId(),
-                        logicalSqlCache.getColumnLabels(), logicalSqlCache.getFieldInfos(),
+                        logicalSqlCache.getColumnLabels(),
                         logicalSqlCache.getResultExprs(), logicalSqlCache.getResultSetInFe(),
                         logicalSqlCache.getCacheValues(), logicalSqlCache.getBackendAddress(),
                         logicalSqlCache.getPlanBody()
@@ -351,35 +349,13 @@ public class NereidsPlanner extends Planner {
         }
         // set output exprs
         logicalPlanAdapter.setResultExprs(root.getOutputExprs());
-        ArrayList<String> columnLabels = Lists.newArrayListWithExpectedSize(physicalPlan.getOutput().size());
-        List<FieldInfo> fieldInfos = Lists.newArrayListWithExpectedSize(physicalPlan.getOutput().size());
-        for (NamedExpression output : physicalPlan.getOutput()) {
-            Optional<Column> column = Optional.empty();
-            Optional<TableIf> table = Optional.empty();
-            if (output instanceof SlotReference) {
-                SlotReference slotReference = (SlotReference) output;
-                column = slotReference.getColumn();
-                table = slotReference.getTable();
-            }
-            columnLabels.add(output.getName());
-            FieldInfo fieldInfo = new FieldInfo(
-                    table.isPresent() ? (table.get().getDatabase() != null
-                            ? table.get().getDatabase().getFullName() : "") : "",
-                    !output.getQualifier().isEmpty() ? output.getQualifier().get(output.getQualifier().size() - 1)
-                            : (table.isPresent() ? table.get().getName() : ""),
-                    table.isPresent() ? table.get().getName() : "",
-                    output.getName(),
-                    column.isPresent() ? column.get().getName() : ""
-            );
-            fieldInfos.add(fieldInfo);
-        }
-        logicalPlanAdapter.setColLabels(columnLabels);
-        logicalPlanAdapter.setFieldInfos(fieldInfos);
+        ArrayList<String> columnLabelList = physicalPlan.getOutput().stream().map(NamedExpression::getName)
+                .collect(Collectors.toCollection(ArrayList::new));
+        logicalPlanAdapter.setColLabels(columnLabelList);
         logicalPlanAdapter.setViewDdlSqls(statementContext.getViewDdlSqls());
         if (statementContext.getSqlCacheContext().isPresent()) {
             SqlCacheContext sqlCacheContext = statementContext.getSqlCacheContext().get();
-            sqlCacheContext.setColLabels(columnLabels);
-            sqlCacheContext.setFieldInfos(fieldInfos);
+            sqlCacheContext.setColLabels(columnLabelList);
             sqlCacheContext.setResultExprs(root.getOutputExprs());
             sqlCacheContext.setPhysicalPlan(resultPlan.treeString());
         }

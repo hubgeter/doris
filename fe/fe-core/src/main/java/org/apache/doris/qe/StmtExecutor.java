@@ -125,7 +125,6 @@ import org.apache.doris.load.EtlJobType;
 import org.apache.doris.load.LoadJobRowResult;
 import org.apache.doris.load.loadv2.LoadManager;
 import org.apache.doris.load.loadv2.LoadManagerAdapter;
-import org.apache.doris.mysql.FieldInfo;
 import org.apache.doris.mysql.MysqlChannel;
 import org.apache.doris.mysql.MysqlCommand;
 import org.apache.doris.mysql.MysqlEofPacket;
@@ -1592,8 +1591,7 @@ public class StmtExecutor {
             batch.setEos(true);
             if (!isSend) {
                 // send meta fields before sending first data batch.
-                sendFields(selectStmt.getColLabels(), selectStmt.getFieldInfos(),
-                        exprToType(selectStmt.getResultExprs()));
+                sendFields(selectStmt.getColLabels(), exprToType(selectStmt.getResultExprs()));
                 isSend = true;
             }
             for (ByteBuffer row : batch.getBatch().getRows()) {
@@ -1608,8 +1606,7 @@ public class StmtExecutor {
                         ? null : batch.getQueryStatistics().toBuilder();
             }
             if (!isSend) {
-                sendFields(selectStmt.getColLabels(), selectStmt.getFieldInfos(),
-                        exprToType(selectStmt.getResultExprs()));
+                sendFields(selectStmt.getColLabels(), exprToType(selectStmt.getResultExprs()));
                 isSend = true;
             }
             context.getState().setEof();
@@ -1701,7 +1698,7 @@ public class StmtExecutor {
                     && context.getCommand() != MysqlCommand.COM_STMT_EXECUTE) {
             Optional<ResultSet> resultSet = planner.handleQueryInFe(parsedStmt);
             if (resultSet.isPresent()) {
-                sendResultSet(resultSet.get(), ((Queriable) parsedStmt).getFieldInfos());
+                sendResultSet(resultSet.get());
                 isHandleQueryInFe = true;
                 LOG.info("Query {} finished", DebugUtil.printId(context.queryId));
                 if (context.getSessionVariable().enableProfile()) {
@@ -1751,7 +1748,7 @@ public class StmtExecutor {
                     LOG.debug("ignore handle limit 0 ,sql:{}", parsedSelectStmt.toSql());
                 }
 
-                sendFields(queryStmt.getColLabels(), queryStmt.getFieldInfos(), exprToType(queryStmt.getResultExprs()));
+                sendFields(queryStmt.getColLabels(), exprToType(queryStmt.getResultExprs()));
                 context.getState().setEof();
                 LOG.info("Query {} finished", DebugUtil.printId(context.queryId));
                 return;
@@ -1830,8 +1827,7 @@ public class StmtExecutor {
                     // so We need to send fields after first batch arrived
                     if (!isSendFields) {
                         if (!isOutfileQuery) {
-                            sendFields(queryStmt.getColLabels(), queryStmt.getFieldInfos(),
-                                    exprToType(queryStmt.getResultExprs()));
+                            sendFields(queryStmt.getColLabels(), exprToType(queryStmt.getResultExprs()));
                         } else {
                             if (!Strings.isNullOrEmpty(queryStmt.getOutFileClause().getSuccessFileName())) {
                                 outfileWriteSuccess(queryStmt.getOutFileClause());
@@ -1877,8 +1873,7 @@ public class StmtExecutor {
                         sendResultSet(resultSet);
                         return;
                     } else {
-                        sendFields(queryStmt.getColLabels(), queryStmt.getFieldInfos(),
-                                exprToType(queryStmt.getResultExprs()));
+                        sendFields(queryStmt.getColLabels(), exprToType(queryStmt.getResultExprs()));
                     }
                 } else {
                     sendFields(OutFileClause.RESULT_COL_NAMES, OutFileClause.RESULT_COL_TYPES);
@@ -2490,25 +2485,16 @@ public class StmtExecutor {
     }
 
     private void sendMetaData(ResultSetMetaData metaData) throws IOException {
-        sendMetaData(metaData, null);
-    }
-
-    private void sendMetaData(ResultSetMetaData metaData, List<FieldInfo> fieldInfos) throws IOException {
         Preconditions.checkState(context.getConnectType() == ConnectType.MYSQL);
         // sends how many columns
         serializer.reset();
         serializer.writeVInt(metaData.getColumnCount());
         context.getMysqlChannel().sendOnePacket(serializer.toByteBuffer());
         // send field one by one
-        for (int i = 0; i < metaData.getColumns().size(); i++) {
-            Column col = metaData.getColumn(i);
+        for (Column col : metaData.getColumns()) {
             serializer.reset();
-            if (fieldInfos == null) {
-                // TODO(zhaochun): only support varchar type
-                serializer.writeField(col.getName(), col.getType());
-            } else {
-                serializer.writeField(fieldInfos.get(i), col.getType());
-            }
+            // TODO(zhaochun): only support varchar type
+            serializer.writeField(col.getName(), col.getType());
             context.getMysqlChannel().sendOnePacket(serializer.toByteBuffer());
         }
         // send EOF
@@ -2566,10 +2552,6 @@ public class StmtExecutor {
     }
 
     private void sendFields(List<String> colNames, List<Type> types) throws IOException {
-        sendFields(colNames, null, types);
-    }
-
-    private void sendFields(List<String> colNames, List<FieldInfo> fieldInfos, List<Type> types) throws IOException {
         Preconditions.checkState(context.getConnectType() == ConnectType.MYSQL);
         // sends how many columns
         serializer.reset();
@@ -2587,21 +2569,13 @@ public class StmtExecutor {
                 // we send a field
                 byte[] serializedField = ((PrepareStmt) prepareStmt).getSerializedField(colNames.get(i));
                 if (serializedField == null) {
-                    if (fieldInfos != null) {
-                        serializer.writeField(fieldInfos.get(i), types.get(i));
-                    } else {
-                        serializer.writeField(colNames.get(i), types.get(i));
-                    }
+                    serializer.writeField(colNames.get(i), types.get(i));
                     serializedField = serializer.toArray();
                     ((PrepareStmt) prepareStmt).setSerializedField(colNames.get(i), serializedField);
                 }
                 context.getMysqlChannel().sendOnePacket(ByteBuffer.wrap(serializedField));
             } else {
-                if (fieldInfos != null) {
-                    serializer.writeField(fieldInfos.get(i), types.get(i));
-                } else {
-                    serializer.writeField(colNames.get(i), types.get(i));
-                }
+                serializer.writeField(colNames.get(i), types.get(i));
                 context.getMysqlChannel().sendOnePacket(serializer.toByteBuffer());
             }
         }
@@ -2613,14 +2587,10 @@ public class StmtExecutor {
     }
 
     public void sendResultSet(ResultSet resultSet) throws IOException {
-        sendResultSet(resultSet, null);
-    }
-
-    public void sendResultSet(ResultSet resultSet, List<FieldInfo> fieldInfos) throws IOException {
         if (context.getConnectType().equals(ConnectType.MYSQL)) {
             context.updateReturnRows(resultSet.getResultRows().size());
             // Send meta data.
-            sendMetaData(resultSet.getMetaData(), fieldInfos);
+            sendMetaData(resultSet.getMetaData());
 
             // Send result set.
             for (List<String> row : resultSet.getResultRows()) {

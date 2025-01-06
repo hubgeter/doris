@@ -245,7 +245,7 @@ public class NereidsSqlCacheManager {
 
                 String cachedPlan = sqlCacheContext.getPhysicalPlan();
                 LogicalSqlCache logicalSqlCache = new LogicalSqlCache(
-                        sqlCacheContext.getQueryId(), sqlCacheContext.getColLabels(), sqlCacheContext.getFieldInfos(),
+                        sqlCacheContext.getQueryId(), sqlCacheContext.getColLabels(),
                         sqlCacheContext.getResultExprs(), resultSetInFe, ImmutableList.of(),
                         "none", cachedPlan
                 );
@@ -270,7 +270,7 @@ public class NereidsSqlCacheManager {
                 MetricRepo.COUNTER_CACHE_HIT_SQL.increase(1L);
 
                 LogicalSqlCache logicalSqlCache = new LogicalSqlCache(
-                        sqlCacheContext.getQueryId(), sqlCacheContext.getColLabels(), sqlCacheContext.getFieldInfos(),
+                        sqlCacheContext.getQueryId(), sqlCacheContext.getColLabels(),
                         sqlCacheContext.getResultExprs(), Optional.empty(),
                         cacheValues, backendAddress, cachedPlan
                 );
