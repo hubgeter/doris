@@ -151,10 +151,10 @@ OrcReader::OrcReader(RuntimeProfile* profile, RuntimeState* state,
           _enable_lazy_mat(enable_lazy_mat),
           _enable_filter_by_min_max(
                   state == nullptr ? true : state->query_options().enable_orc_filter_by_min_max),
+          _enable_merge_small_io(
+                  state == nullptr ? true : state->query_options().enable_orc_merge_small_io),
           _dict_cols_has_converted(false),
           _unsupported_pushdown_types(unsupported_pushdown_types) {
-          _enable_merge_small_io(
-                  state == nullptr ? true : state->query_options().enable_orc_merge_small_io) {
     TimezoneUtils::find_cctz_time_zone(ctz, _time_zone);
     VecDateTimeValue t;
     t.from_unixtime(0, ctz);
@@ -247,7 +247,8 @@ Status OrcReader::_create_file_reader() {
                 _profile, _system_properties, _file_description, reader_options, &_file_system,
                 &inner_reader, io::DelegateReader::AccessMode::RANDOM, _io_ctx));
         _file_input_stream.reset(new ORCFileInputStream(_scan_range.path, inner_reader,
-                                                        &_statistics, _io_ctx, _profile, _enable_merge_small_io));
+                                                        &_statistics, _io_ctx, _profile,
+                                                        _enable_merge_small_io));
     }
     if (_file_input_stream->getLength() == 0) {
         return Status::EndOfFile("empty orc file: " + _scan_range.path);
