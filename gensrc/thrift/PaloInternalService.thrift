@@ -328,6 +328,9 @@ struct TQueryOptions {
 
   144: optional bool enable_text_validate_utf8 = true;
 
+  147: optional bool enable_parquet_merge_small_io = true;
+  148: optional bool enable_orc_merge_small_io = true;
+
   // For cloud, to control if the content would be written into file cache
   1000: optional bool disable_file_cache = false
 }

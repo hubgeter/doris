@@ -595,6 +595,7 @@ private:
     io::IOContext* _io_ctx = nullptr;
     bool _enable_lazy_mat = true;
     bool _enable_filter_by_min_max = true;
+    bool _enable_merge_small_io = true;
 
     std::vector<DecimalScaleParams> _decimal_scale_params;
     size_t _decimal_scale_params_index;
@@ -636,13 +637,14 @@ class ORCFileInputStream : public orc::InputStream, public ProfileCollector {
 public:
     ORCFileInputStream(const std::string& file_name, io::FileReaderSPtr inner_reader,
                        OrcReader::Statistics* statistics, const io::IOContext* io_ctx,
-                       RuntimeProfile* profile)
+                       RuntimeProfile* profile, bool enable_merge_small_io)
             : _file_name(file_name),
               _inner_reader(inner_reader),
               _file_reader(inner_reader),
               _statistics(statistics),
               _io_ctx(io_ctx),
-              _profile(profile) {}
+              _profile(profile),
+              _enable_merge_small_io(enable_merge_small_io) {}
 
     ~ORCFileInputStream() override = default;
 
@@ -668,6 +670,7 @@ private:
     OrcReader::Statistics* _statistics = nullptr;
     const io::IOContext* _io_ctx = nullptr;
     RuntimeProfile* _profile = nullptr;
+    bool _enable_merge_small_io = true;
 };
 
 } // namespace doris::vectorized
