@@ -531,8 +531,10 @@ Status RowGroupReader::_do_lazy_read(Block* block, size_t batch_size, size_t* re
         }
     }
     if (_state->is_cancelled()) {
-        LOG(INFO) << fmt::format("[Limit Debug]Cancelled.file path = {}, pre_raw_read_rows = {}",
-                                 _file_reader.get()->path().string(), pre_raw_read_rows);
+        LOG(INFO) << fmt::format(
+                "[Limit Debug] QueryId = {} Cancelled.file path = {}, pre_raw_read_rows = {}",
+                print_id(_state->query_id()), _file_reader.get()->path().string(),
+                pre_raw_read_rows);
         return Status::Cancelled("cancelled");
     }
 

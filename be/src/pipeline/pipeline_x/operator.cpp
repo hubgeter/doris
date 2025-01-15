@@ -320,8 +320,9 @@ void PipelineXLocalStateBase::reached_limit(vectorized::Block* block, bool* eos)
 
     if (block->rows() > 0) {
         LOG(INFO) << fmt::format(
-                "[Limit Debug]parent limit = {}, _num_rows_returned = {},block size = {}",
-                _parent->_limit, _num_rows_returned, block->rows());
+                "[Limit Debug] QueryId = {}, parent limit = {}, _num_rows_returned = {},block size "
+                "= {}",
+                print_id(state()->query_id()), _parent->_limit, _num_rows_returned, block->rows());
     }
 }
 
