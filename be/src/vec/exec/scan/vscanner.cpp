@@ -147,7 +147,7 @@ Status VScanner::get_block(RuntimeState* state, Block* block, bool* eof) {
 
             LOG(INFO) << fmt::format(
                     "[Limit Debug] QueryId = {}  Cancelled = {}, block Rows = {}, should_stop = {}",
-                    print_id(_state->query_id()), state->is_cancelled(), block->rows(),
+                    print_id(state->query_id()), state->is_cancelled(), block->rows(),
                     _should_stop);
             // record rows return (after filter) for _limit check
             _num_rows_return += block->rows();

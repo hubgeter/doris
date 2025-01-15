@@ -263,11 +263,17 @@ void ScannerScheduler::_scanner_scan(std::shared_ptr<ScannerContext> ctx,
             eos = true;
             break;
         }
+        if (state->is_cancelled()) {
+            LOG(INFO) << fmt::format("[Limit Debug] QueryId = {} _scanner_scan is_cancelled",
+                                     print_id(state->query_id()));
+            eos = true;
+        }
         BlockUPtr free_block = ctx->get_free_block(first_read);
         if (free_block == nullptr) {
             break;
         }
         status = scanner->get_block_after_projects(state, free_block.get(), &eos);
+        auto free_block_rows = free_block->rows();
         first_read = false;
         if (!status.ok()) {
             LOG(WARNING) << "Scan thread read VScanner failed: " << status.to_string();
@@ -293,7 +299,7 @@ void ScannerScheduler::_scanner_scan(std::shared_ptr<ScannerContext> ctx,
             scan_task->cached_blocks.push_back(std::move(free_block));
         }
 
-        if (limit > 0 && limit < ctx->batch_size()) {
+        if (limit > 0 && limit < ctx->batch_size() && free_block_rows > 0) {
             break;
         }
     } // end for while
