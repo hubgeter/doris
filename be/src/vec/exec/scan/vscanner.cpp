@@ -144,6 +144,10 @@ Status VScanner::get_block(RuntimeState* state, Block* block, bool* eof) {
                 SCOPED_TIMER(timer);
                 RETURN_IF_ERROR(_filter_output_block(block));
             }
+
+            LOG(INFO) << fmt::format(
+                    "[Limit Debug] Cancelled = {},block Rows = {}, should_stop = {}",
+                    state->is_cancelled(), block->rows(), _should_stop);
             // record rows return (after filter) for _limit check
             _num_rows_return += block->rows();
         } while (!_should_stop && !state->is_cancelled() && block->rows() == 0 && !(*eof) &&

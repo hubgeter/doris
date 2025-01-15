@@ -1500,6 +1500,7 @@ Status ScanOperatorX<LocalStateType>::get_block(RuntimeState* state, vectorized:
     }};
 
     if (state->is_cancelled()) {
+        LOG(INFO) << "[Limit Debug]Scan Operator Cancel.";
         if (local_state._scanner_ctx) {
             local_state._scanner_ctx->stop_scanners(state);
         }

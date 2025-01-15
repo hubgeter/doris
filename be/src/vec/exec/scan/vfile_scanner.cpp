@@ -382,8 +382,10 @@ Status VFileScanner::_get_block_wrapped(RuntimeState* state, Block* block, bool*
                 // or not found in the file column schema.
                 RETURN_IF_ERROR(_truncate_char_or_varchar_columns(block));
             }
-            break;
         }
+        LOG(INFO) << fmt::format("[Limit Debug] Read File {} read_rows = {}", _current_range_path,
+                                 read_rows);
+        break;
     } while (true);
 
     // Update filtered rows and unselected rows for load, reset counter.
@@ -771,7 +773,7 @@ Status VFileScanner::_get_next_reader() {
 
         const TFileRangeDesc& range = _current_range;
         _current_range_path = range.path;
-
+        LOG(INFO) << "[Limit Debug] Read file = " << _current_range_path;
         // create reader for specific format
         Status init_status;
         TFileFormatType::type format_type = _params->format_type;

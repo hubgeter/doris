@@ -449,6 +449,7 @@ Status RowGroupReader::_do_lazy_read(Block* block, size_t batch_size, size_t* re
     for (uint32_t i = 0; i < origin_column_num; ++i) {
         columns_to_filter[i] = i;
     }
+    size_t pre_raw_read_rows = 0;
     IColumn::Filter result_filter;
     while (!_state->is_cancelled()) {
         // read predicate columns
@@ -461,6 +462,7 @@ Status RowGroupReader::_do_lazy_read(Block* block, size_t batch_size, size_t* re
             DCHECK_EQ(pre_eof, true);
             break;
         }
+        pre_raw_read_rows += pre_read_rows;
         RETURN_IF_ERROR(_fill_partition_columns(block, pre_read_rows,
                                                 _lazy_read_ctx.predicate_partition_columns));
         RETURN_IF_ERROR(_fill_missing_columns(block, pre_read_rows,
@@ -529,6 +531,8 @@ Status RowGroupReader::_do_lazy_read(Block* block, size_t batch_size, size_t* re
         }
     }
     if (_state->is_cancelled()) {
+        LOG(INFO) << fmt::format("[Limit Debug]Cancelled.file path = {}, pre_raw_read_rows = {}",
+                                 _file_reader.get()->path().string(), pre_raw_read_rows);
         return Status::Cancelled("cancelled");
     }
 

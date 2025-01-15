@@ -317,6 +317,12 @@ void PipelineXLocalStateBase::reached_limit(vectorized::Block* block, bool* eos)
         COUNTER_UPDATE(_blocks_returned_counter, 1);
         COUNTER_SET(_rows_returned_counter, _num_rows_returned);
     }
+
+    if (block->rows() > 0) {
+        LOG(INFO) << fmt::format(
+                "[Limit Debug]parent limit = {}, _num_rows_returned = {},block size = {}",
+                _parent->_limit, _num_rows_returned, block->rows());
+    }
 }
 
 std::string DataSinkOperatorXBase::debug_string(int indentation_level) const {
