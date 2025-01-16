@@ -126,8 +126,12 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
     ReadStatistics stats;
     auto defer_func = [&](int*) {
         if (io_ctx->file_cache_stats) {
+            // update stats in io_ctx, for query profile
             _update_state(stats, io_ctx->file_cache_stats);
-            io::FileCacheProfile::instance().update(io_ctx->file_cache_stats);
+            // update stats increment in this reading procedure for file cache metrics
+            FileCacheStatistics fcache_stats_increment;
+            _update_state(stats, &fcache_stats_increment);
+            io::FileCacheProfile::instance().update(&fcache_stats_increment);
         }
     };
     std::unique_ptr<int, decltype(defer_func)> defer((int*)0x01, std::move(defer_func));
