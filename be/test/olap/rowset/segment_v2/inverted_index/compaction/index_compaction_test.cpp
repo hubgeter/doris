@@ -355,7 +355,7 @@ TEST_F(IndexCompactionTest, write_index_test) {
     // col url
     EXPECT_TRUE(ctx.columns_to_do_index_compaction.contains(2));
 
-    compaction._stats.rowid_conversion = compaction._rowid_conversion.get();
+    compaction._stats.rowid_conversion = &compaction._rowid_conversion;
     EXPECT_TRUE(Merger::vertical_merge_rowsets(_tablet, compaction.compaction_type(),
                                                *(compaction._cur_tablet_schema), input_rs_readers,
                                                compaction._output_rs_writer.get(), 100000, 5,
