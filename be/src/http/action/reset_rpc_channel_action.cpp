@@ -35,44 +35,48 @@ namespace doris {
 ResetRPCChannelAction::ResetRPCChannelAction(ExecEnv* exec_env, TPrivilegeHier::type hier,
                                              TPrivilegeType::type type)
         : HttpHandlerWithAuth(exec_env, hier, type) {}
-void ResetRPCChannelAction::handle(HttpRequest* req) {
-    std::string endpoints = req->param("endpoints");
-    if (iequal(endpoints, "all")) {
-        int size = _exec_env->brpc_internal_client_cache()->size();
-        if (size > 0) {
-            std::vector<std::string> endpoints;
-            _exec_env->brpc_internal_client_cache()->get_all(&endpoints);
-            _exec_env->brpc_internal_client_cache()->clear();
-            HttpChannel::send_reply(req, HttpStatus::OK,
-                                    fmt::format("reseted: {0}", join(endpoints, ",")));
-            return;
-        } else {
-            HttpChannel::send_reply(req, HttpStatus::OK, "no cached channel.");
-            return;
-        }
-    } else {
-        std::vector<std::string> reseted;
-        for (const std::string& endpoint : split(endpoints, ",")) {
-            if (!_exec_env->brpc_internal_client_cache()->exist(endpoint)) {
-                std::string err = fmt::format("{0}: not found.", endpoint);
-                LOG(WARNING) << err;
-                HttpChannel::send_reply(req, HttpStatus::INTERNAL_SERVER_ERROR, err);
-                return;
-            }
 
-            if (_exec_env->brpc_internal_client_cache()->erase(endpoint)) {
-                reseted.push_back(endpoint);
-            } else {
-                std::string err = fmt::format("{0}: reset failed.", endpoint);
-                LOG(WARNING) << err;
-                HttpChannel::send_reply(req, HttpStatus::INTERNAL_SERVER_ERROR, err);
-                return;
-            }
-        }
-        HttpChannel::send_reply(req, HttpStatus::OK,
-                                fmt::format("reseted: {0}", join(reseted, ",")));
-        return;
-    }
+void ResetRPCChannelAction::handle(HttpRequest* req) {
+    HttpChannel::send_reply(req, HttpStatus::INTERNAL_SERVER_ERROR,
+            "ResetRPCChannelAction is not allowed");
+    return;
+    // std::string endpoints = req->param("endpoints");
+    // if (iequal(endpoints, "all")) {
+    //     int size = _exec_env->brpc_internal_client_cache()->size();
+    //     if (size > 0) {
+    //         std::vector<std::string> endpoints;
+    //         _exec_env->brpc_internal_client_cache()->get_all(&endpoints);
+    //         _exec_env->brpc_internal_client_cache()->clear();
+    //         HttpChannel::send_reply(req, HttpStatus::OK,
+    //                                 fmt::format("reseted: {0}", join(endpoints, ",")));
+    //         return;
+    //     } else {
+    //         HttpChannel::send_reply(req, HttpStatus::OK, "no cached channel.");
+    //         return;
+    //     }
+    // } else {
+    //     std::vector<std::string> reseted;
+    //     for (const std::string& endpoint : split(endpoints, ",")) {
+    //         if (!_exec_env->brpc_internal_client_cache()->exist(endpoint)) {
+    //             std::string err = fmt::format("{0}: not found.", endpoint);
+    //             LOG(WARNING) << err;
+    //             HttpChannel::send_reply(req, HttpStatus::INTERNAL_SERVER_ERROR, err);
+    //             return;
+    //         }
+
+    //         if (_exec_env->brpc_internal_client_cache()->erase(endpoint)) {
+    //             reseted.push_back(endpoint);
+    //         } else {
+    //             std::string err = fmt::format("{0}: reset failed.", endpoint);
+    //             LOG(WARNING) << err;
+    //             HttpChannel::send_reply(req, HttpStatus::INTERNAL_SERVER_ERROR, err);
+    //             return;
+    //         }
+    //     }
+    //     HttpChannel::send_reply(req, HttpStatus::OK,
+    //                             fmt::format("reseted: {0}", join(reseted, ",")));
+    //     return;
+    // }
 }
 
 } // namespace doris
