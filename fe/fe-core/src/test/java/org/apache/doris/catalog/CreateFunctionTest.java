@@ -23,6 +23,7 @@ import org.apache.doris.analysis.CreateTableStmt;
 import org.apache.doris.analysis.Expr;
 import org.apache.doris.analysis.FunctionCallExpr;
 import org.apache.doris.analysis.StringLiteral;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.FeConstants;
 import org.apache.doris.common.jmockit.Deencapsulation;
 import org.apache.doris.planner.PlanFragment;
@@ -60,10 +61,13 @@ public class CreateFunctionTest {
         FeConstants.runningUnitTest = true;
         // create connect context
         connectContext = UtFrameUtils.createDefaultCtx();
+        // for cloud-4.0 which close java_udf by default. Enable the config to test this case
+        Config.enable_java_udf = true;
     }
 
     @AfterClass
     public static void teardown() {
+        Config.enable_java_udf = false;
         File file = new File("fe/mocked/CreateFunctionTest/");
         file.delete();
     }
