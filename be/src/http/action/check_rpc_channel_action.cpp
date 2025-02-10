@@ -42,7 +42,7 @@ CheckRPCChannelAction::CheckRPCChannelAction(ExecEnv* exec_env, TPrivilegeHier::
 
 void CheckRPCChannelAction::handle(HttpRequest* req) {
     HttpChannel::send_reply(req, HttpStatus::INTERNAL_SERVER_ERROR,
-            "CheckRPCChannelAction is not allowed");
+                            "CheckRPCChannelAction is not allowed");
     return;
     // std::string req_ip = req->param("ip");
     // std::string req_port = req->param("port");

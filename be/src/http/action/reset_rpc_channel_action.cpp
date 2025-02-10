@@ -38,7 +38,7 @@ ResetRPCChannelAction::ResetRPCChannelAction(ExecEnv* exec_env, TPrivilegeHier::
 
 void ResetRPCChannelAction::handle(HttpRequest* req) {
     HttpChannel::send_reply(req, HttpStatus::INTERNAL_SERVER_ERROR,
-            "ResetRPCChannelAction is not allowed");
+                            "ResetRPCChannelAction is not allowed");
     return;
     // std::string endpoints = req->param("endpoints");
     // if (iequal(endpoints, "all")) {
