@@ -3,6 +3,7 @@
 echo "Begin to build for selectdb cloud with $*"
 
 export BUILD_JDBC_DRIVER=ON
+export BUILD_TRINO_CONNECTOR=ON
 
 sh build.sh "$@"
 
@@ -100,6 +101,66 @@ function build_jdbc_driver() {
     done
 }
 
+function build_trino_connectors() {
+    echo "Build Trino connectors"
+    # download trino connectors
+    TRINO_CONNECTOR_URL=${TRINO_CONNECTOR_URL:-"https://selectdb-doris-1308700295.cos.ap-beijing.myqcloud.com/release/trino_connectors"}
+    TRINO_CONNECTOR_DIR="${DORIS_THIRDPARTY}/src/trino_connectors/"
+    mkdir -p "${TRINO_CONNECTOR_DIR}"
+
+    # jar names and md5sum
+    local connector_array=( \
+    "trino-kudu-435.tar.gz        2d58bfcac5b84218c5d1055af189e30c" \
+    "trino-tpcds-435.tar.gz       d1216e7060dad621ceeb3480732182ef" \
+    "trino-tpch-435.tar.gz        dffb4aef95c9ebe34a92326528ff14a8" \
+    )
+
+    local i=0
+    for ((i=0; i<${#connector_array[@]}; i++)); do
+        local connector
+        local connector_md5
+        connector=$(echo "${connector_array[i]}" | awk '{print $1}')
+        connector_md5=$(echo "${connector_array[${i}]}" | awk '{print $2}')
+
+        # echo "$i ==== $connector ==== $connector_md5"
+
+        # connector path in local file system
+        local connector_path=${DORIS_THIRDPARTY}/src/trino_connectors/${connector}
+        local connector_url=${TRINO_CONNECTOR_URL}/${connector}
+        echo "index: ${i}, connector: ${connector} md5: ${connector_md5}"
+
+        local status=1
+        for attemp in 1 2; do
+            if [[ -r "${connector_path}" ]]; then
+                if md5sum_func "${connector_path}" "${connector_md5}"; then
+                    echo "Archive ${connector} already exist."
+                    status=0
+                    break
+                fi
+                echo "Archive ${connector} will be removed and download again."
+                rm -f "${connector_path}"
+            else
+                echo "Downloading ${connector} from ${connector_url} to ${connector_path}"
+                if wget --no-check-certificate -q "${connector_url}" -O "${connector_path}"; then
+                     if md5sum_func "${connector_path}" "${connector_md5}"; then
+                        status=0
+                        echo "Success to download ${connector}"
+                        break
+                    fi
+                    echo "Archive ${connector} will be removed and download again."
+                    rm -f "${connector_path}"
+                else
+                    echo "Failed to download ${connector}. attemp: ${attemp}"
+                fi
+            fi
+        done
+
+        if [[ "${status}" -ne 0 ]]; then
+            echo "Failed to download ${connector}"
+            exit 1
+        fi
+    done
+}
 
 # build and copy jdbc drivers
 BUILD_JDBC_DRIVER=${BUILD_JDBC_DRIVER:-"ON"}
@@ -114,6 +175,27 @@ fi
 rm -rf "${DORIS_OUTPUT}/fe/jdbc_drivers"
 if [[ "${BUILD_JDBC_DRIVER}" = "ON" ]]; then
     cp -rf "${DORIS_THIRDPARTY}/src/jdbc_drivers" "${DORIS_OUTPUT}/fe"/
+fi
+
+# build and copy trino connectors
+BUILD_TRINO_CONNECTOR=${BUILD_TRINO_CONNECTOR:-"ON"}
+if [[ "${BUILD_TRINO_CONNECTOR}" = "ON" ]]; then
+    build_trino_connectors
+fi
+export DORIS_OUTPUT=output
+rm -rf "${DORIS_OUTPUT}/be/connectors"
+mkdir "${DORIS_OUTPUT}/be/connectors"
+if [[ "${BUILD_TRINO_CONNECTOR}" = "ON" ]]; then
+    tar xzf "${DORIS_THIRDPARTY}/src/trino_connectors/trino-kudu-435.tar.gz" -C "${DORIS_OUTPUT}/be/connectors"/
+    tar xzf "${DORIS_THIRDPARTY}/src/trino_connectors/trino-tpch-435.tar.gz" -C "${DORIS_OUTPUT}/be/connectors"/
+    tar xzf "${DORIS_THIRDPARTY}/src/trino_connectors/trino-tpcds-435.tar.gz" -C "${DORIS_OUTPUT}/be/connectors"/
+fi
+rm -rf "${DORIS_OUTPUT}/fe/connectors"
+mkdir "${DORIS_OUTPUT}/fe/connectors"
+if [[ "${BUILD_TRINO_CONNECTOR}" = "ON" ]]; then
+    tar xzf "${DORIS_THIRDPARTY}/src/trino_connectors/trino-kudu-435.tar.gz" -C "${DORIS_OUTPUT}/fe/connectors"/
+    tar xzf "${DORIS_THIRDPARTY}/src/trino_connectors/trino-tpch-435.tar.gz" -C "${DORIS_OUTPUT}/fe/connectors"/
+    tar xzf "${DORIS_THIRDPARTY}/src/trino_connectors/trino-tpcds-435.tar.gz" -C "${DORIS_OUTPUT}/fe/connectors"/
 fi
 
 # copy FE audit plugin
