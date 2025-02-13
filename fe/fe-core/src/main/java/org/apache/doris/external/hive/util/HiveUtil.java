@@ -28,7 +28,9 @@ import org.apache.doris.fs.remote.BrokerFileSystem;
 import org.apache.doris.fs.remote.RemoteFileSystem;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import org.apache.hadoop.hive.common.FileUtils;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.ql.io.SymlinkTextInputFormat;
 import org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat;
@@ -44,9 +46,7 @@ import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.io.UnsupportedEncodingException;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -195,16 +195,46 @@ public final class HiveUtil {
         return HMSExternalTable.SUPPORTED_HIVE_FILE_FORMATS.contains(inputFormat);
     }
 
-    public static String getHivePartitionValue(String part) {
-        String[] kv = part.split("=");
-        Preconditions.checkState(kv.length == 2, String.format("Malformed partition name %s", part));
-        try {
-            // hive partition value maybe contains special characters like '=' and '/'
-            return URLDecoder.decode(kv[1], StandardCharsets.UTF_8.name());
-        } catch (UnsupportedEncodingException e) {
-            // It should not be here
-            throw new RuntimeException(e);
+    // "c1=a/c2=b/c3=c" ---> List("a","b","c")
+    public static List<String> toPartitionValues(String partitionName) {
+        ImmutableList.Builder<String> resultBuilder = ImmutableList.builder();
+        int start = 0;
+        while (true) {
+            while (start < partitionName.length() && partitionName.charAt(start) != '=') {
+                start++;
+            }
+            start++;
+            int end = start;
+            while (end < partitionName.length() && partitionName.charAt(end) != '/') {
+                end++;
+            }
+            if (start > partitionName.length()) {
+                break;
+            }
+            //Ref: common/src/java/org/apache/hadoop/hive/common/FileUtils.java
+            //makePartName(List<String> partCols, List<String> vals,String defaultStr)
+            resultBuilder.add(FileUtils.unescapePathName(partitionName.substring(start, end)));
+            start = end + 1;
         }
+        return resultBuilder.build();
+    }
+
+    // "c1=a/c2=b/c3=c" ---> List(["c1","a"], ["c2","b"], ["c3","c"])
+    // Similar to the `toPartitionValues` method, except that it adds the partition column name.
+    public static List<String[]> toPartitionColNameAndValues(String partitionName) {
+
+        String[] parts = partitionName.split("/");
+        List<String[]> result = new ArrayList<>(parts.length);
+        for (String part : parts) {
+            String[] kv = part.split("=");
+            Preconditions.checkState(kv.length == 2, String.format("Malformed partition name %s", part));
+
+            result.add(new String[] {
+                    FileUtils.unescapePathName(kv[0]),
+                    FileUtils.unescapePathName(kv[1])
+            });
+        }
+        return result;
     }
 
 }
