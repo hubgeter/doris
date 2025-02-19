@@ -15,12 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-suite("test_cloud_mow_stream_load_with_timeout", "nonConcurrent") {
+suite("test_cloud_mow_stream_load_with_commit_fail", "nonConcurrent") {
     if (!isCloudMode()) {
         return
     }
     GetDebugPoint().clearDebugPointsForAllFEs()
-    GetDebugPoint().clearDebugPointsForAllBEs()
 
     def backendId_to_backendIP = [:]
     def backendId_to_backendHttpPort = [:]
@@ -74,13 +73,13 @@ suite("test_cloud_mow_stream_load_with_timeout", "nonConcurrent") {
 
     // store the original value
     get_be_param("mow_stream_load_commit_retry_times")
+    // disable retry to make this problem more clear
+    set_be_param("mow_stream_load_commit_retry_times", "1")
+
 
     def tableName = "tbl_basic"
-    // test fe release lock when calculating delete bitmap timeout
     setFeConfigTemporary(customFeConfig) {
         try {
-            // disable retry to make this problem more clear
-            set_be_param("mow_stream_load_commit_retry_times", "1")
             // create table
             sql """ drop table if exists ${tableName}; """
 
@@ -97,8 +96,8 @@ suite("test_cloud_mow_stream_load_with_timeout", "nonConcurrent") {
             "replication_num" = "1"
         );
         """
-            // this streamLoad will fail on calculate delete bitmap timeout
-            GetDebugPoint().enableDebugPointForAllBEs("CloudEngineCalcDeleteBitmapTask.execute.enable_wait")
+            // this streamLoad will fail on fe commit phase
+            GetDebugPoint().enableDebugPointForAllFEs('FE.mow.commit.exception', null)
             streamLoad {
                 table "${tableName}"
 
@@ -112,13 +111,13 @@ suite("test_cloud_mow_stream_load_with_timeout", "nonConcurrent") {
                     log.info("Stream load result: ${result}")
                     def json = parseJson(result)
                     assertEquals("fail", json.Status.toLowerCase())
-                    assertTrue(json.Message.contains("Timeout"))
+                    assertTrue(json.Message.contains("FE.mow.commit.exception"))
                 }
             }
             qt_sql """ select * from ${tableName} order by id"""
 
-            // this streamLoad will success because of removing timeout simulation
-            GetDebugPoint().disableDebugPointForAllBEs("CloudEngineCalcDeleteBitmapTask.execute.enable_wait")
+            // this streamLoad will success because of removing exception injection
+            GetDebugPoint().disableDebugPointForAllFEs('FE.mow.commit.exception')
             streamLoad {
                 table "${tableName}"
 
@@ -137,73 +136,10 @@ suite("test_cloud_mow_stream_load_with_timeout", "nonConcurrent") {
             qt_sql """ select * from ${tableName} order by id"""
         } finally {
             reset_be_param("mow_stream_load_commit_retry_times")
-            GetDebugPoint().disableDebugPointForAllBEs("CloudEngineCalcDeleteBitmapTask.execute.enable_wait")
+            GetDebugPoint().disableDebugPointForAllFEs('FE.mow.commit.exception')
             sql "DROP TABLE IF EXISTS ${tableName};"
-            GetDebugPoint().clearDebugPointsForAllBEs()
+            GetDebugPoint().clearDebugPointsForAllFEs()
         }
 
     }
-
-    //test fe don't send calculating delete bitmap task to be twice when txn is committed or visible
-    GetDebugPoint().clearDebugPointsForAllFEs()
-    GetDebugPoint().enableDebugPointForAllFEs("CloudGlobalTransactionMgr.commitTransaction.timeout")
-    try {
-        // create table
-        sql """ drop table if exists ${tableName}; """
-
-        sql """
-        CREATE TABLE `${tableName}` (
-            `id` int(11) NOT NULL,
-            `name` varchar(1100) NULL,
-            `score` int(11) NULL default "-1"
-        ) ENGINE=OLAP
-        UNIQUE KEY(`id`)
-        DISTRIBUTED BY HASH(`id`) BUCKETS 1
-        PROPERTIES (
-            "enable_unique_key_merge_on_write" = "true",
-            "replication_num" = "1"
-        );
-        """
-        streamLoad {
-            table "${tableName}"
-
-            set 'column_separator', ','
-            set 'columns', 'id, name, score'
-            file "test_stream_load.csv"
-
-            time 10000 // limit inflight 10s
-
-            check { result, exception, startTime, endTime ->
-                log.info("Stream load result: ${result}")
-                def json = parseJson(result)
-                assertEquals("success", json.Status.toLowerCase())
-            }
-        }
-        qt_sql """ select * from ${tableName} order by id"""
-        def now = System.currentTimeMillis()
-        GetDebugPoint().disableDebugPointForAllFEs("CloudGlobalTransactionMgr.commitTransaction.timeout")
-        streamLoad {
-            table "${tableName}"
-
-            set 'column_separator', ','
-            set 'columns', 'id, name, score'
-            file "test_stream_load.csv"
-
-            time 10000 // limit inflight 10s
-
-            check { result, exception, startTime, endTime ->
-                log.info("Stream load result: ${result}")
-                def json = parseJson(result)
-                assertEquals("success", json.Status.toLowerCase())
-
-            }
-        }
-        def time_diff = System.currentTimeMillis() - now
-        assertTrue(time_diff < 10000)
-    } finally {
-        GetDebugPoint().disableDebugPointForAllFEs("CloudGlobalTransactionMgr.commitTransaction.timeout")
-        sql "DROP TABLE IF EXISTS ${tableName};"
-        GetDebugPoint().clearDebugPointsForAllFEs()
-    }
-
 }
