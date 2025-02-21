@@ -405,6 +405,7 @@ Status SegmentIterator::_lazy_init() {
 }
 
 Status SegmentIterator::_get_row_ranges_by_keys() {
+    SCOPED_RAW_TIMER(&_opts.stats->generate_row_ranges_by_keys_ns);
     DorisMetrics::instance()->segment_row_total->increment(num_rows());
 
     // fast path for empty segment or empty key ranges
@@ -497,7 +498,7 @@ Status SegmentIterator::_prepare_seek(const StorageReadOptions::KeyRange& key_ra
 }
 
 Status SegmentIterator::_get_row_ranges_by_column_conditions() {
-    SCOPED_RAW_TIMER(&_opts.stats->generate_row_ranges_ns);
+    SCOPED_RAW_TIMER(&_opts.stats->generate_row_ranges_by_column_conditions_ns);
     if (_row_bitmap.isEmpty()) {
         return Status::OK();
     }

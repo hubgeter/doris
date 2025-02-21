@@ -67,7 +67,10 @@ Status OlapScanLocalState::_init_profile() {
     _block_init_timer = ADD_TIMER(_segment_profile, "BlockInitTime");
     _block_init_seek_timer = ADD_TIMER(_segment_profile, "BlockInitSeekTime");
     _block_init_seek_counter = ADD_COUNTER(_segment_profile, "BlockInitSeekCount", TUnit::UNIT);
-    _segment_generate_row_range_timer = ADD_TIMER(_segment_profile, "GenerateRowRangeTime");
+    _segment_generate_row_range_by_keys_timer =
+            ADD_TIMER(_segment_profile, "GenerateRowRangeByKeysTime");
+    _segment_generate_row_range_by_column_conditions_timer =
+            ADD_TIMER(_segment_profile, "GenerateRowRangeByColumnConditionsTime");
     _segment_generate_row_range_by_bf_timer =
             ADD_TIMER(_segment_profile, "GenerateRowRangeByBloomFilterIndexTime");
     _collect_iterator_merge_next_timer = ADD_TIMER(_segment_profile, "CollectIteratorMergeTime");
@@ -284,15 +287,17 @@ Status OlapScanLocalState::_init_scanners(std::list<vectorized::VScannerSPtr>* s
 
     if (config::is_cloud_mode()) {
         int64_t duration_ns = 0;
-        SCOPED_RAW_TIMER(&duration_ns);
-        std::vector<std::function<Status()>> tasks;
-        tasks.reserve(_scan_ranges.size());
-        for (auto&& [tablet, version] : tablets) {
-            tasks.emplace_back([tablet, version]() {
-                return std::dynamic_pointer_cast<CloudTablet>(tablet)->sync_rowsets(version);
-            });
+        {
+            SCOPED_RAW_TIMER(&duration_ns);
+            std::vector<std::function<Status()>> tasks;
+            tasks.reserve(_scan_ranges.size());
+            for (auto&& [tablet, version] : tablets) {
+                tasks.emplace_back([tablet, version]() {
+                    return std::dynamic_pointer_cast<CloudTablet>(tablet)->sync_rowsets(version);
+                });
+            }
+            RETURN_IF_ERROR(cloud::bthread_fork_join(tasks, 10));
         }
-        RETURN_IF_ERROR(cloud::bthread_fork_join(tasks, 10));
         _sync_rowset_timer->update(duration_ns);
     }
 

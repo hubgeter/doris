@@ -144,7 +144,7 @@ Status MergeIndexDeleteBitmapCalculator::init(RowsetId rowset_id,
     _heap = std::make_unique<Heap>(_comparator);
 
     for (auto& segment : segments) {
-        RETURN_IF_ERROR(segment->load_index());
+        RETURN_IF_ERROR(segment->load_index(nullptr));
         auto pk_idx = segment->get_primary_key_index();
         std::unique_ptr<segment_v2::IndexedColumnIterator> index;
         RETURN_IF_ERROR(pk_idx->new_iterator(&index, nullptr));
