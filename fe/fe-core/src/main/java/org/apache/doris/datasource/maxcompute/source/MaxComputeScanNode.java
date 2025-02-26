@@ -143,10 +143,11 @@ public class MaxComputeScanNode extends FileQueryScanNode {
         List<String> orderedRequiredDataColumns = new ArrayList<>();
 
         List<PartitionSpec> requiredPartitionSpecs = new ArrayList<>();
-        Map<Long, String> idToNameMap = table.getPartitionValues().getPartitionIdToNameMap();
 
         //if requiredPartitionSpecs is empty, get all partition data.
         if (!table.getPartitionColumns().isEmpty() && selectedPartitions != SelectedPartitions.NOT_PRUNED) {
+            Map<Long, String> idToNameMap = table.getPartitionValues().getPartitionIdToNameMap();
+
             this.totalPartitionNum = selectedPartitions.totalPartitionNum;
             this.selectedPartitionNum = selectedPartitions.selectedPartitions.size();
 
