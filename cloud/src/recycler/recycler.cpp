@@ -601,11 +601,15 @@ int InstanceRecycler::do_recycle() {
                                         fmt::format("instance id {}", instance_id_),
                                         [](int r) { return r != 0; });
         sync_executor
-                .add(task_wrapper(
+                .add(task_wrapper( // dropped table and dropped partition need to be recycled in series
+                                   // becase they may both recycle the same set of tablets
+                        // recycle dropped table or idexes(mv, rollup)
                         [this]() -> int { return InstanceRecycler::recycle_indexes(); },
-                        [this]() -> int { return InstanceRecycler::recycle_partitions(); },
-                        [this]() -> int { return InstanceRecycler::recycle_tmp_rowsets(); },
-                        [this]() -> int { return InstanceRecycler::recycle_rowsets(); }))
+                        // recycle dropped partitions
+                        [this]() -> int { return InstanceRecycler::recycle_partitions(); }))
+                .add(task_wrapper(
+                        [this]() -> int { return InstanceRecycler::recycle_tmp_rowsets(); }))
+                .add(task_wrapper([this]() -> int { return InstanceRecycler::recycle_rowsets(); }))
                 .add(task_wrapper(
                         [this]() { return InstanceRecycler::abort_timeout_txn(); },
                         [this]() { return InstanceRecycler::recycle_expired_txn_label(); }))
