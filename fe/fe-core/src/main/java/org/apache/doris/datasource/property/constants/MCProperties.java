@@ -56,6 +56,10 @@ public class MCProperties extends BaseProperties {
     public static final String SPLIT_ROW_COUNT = "mc.split_row_count";
     public static final String DEFAULT_SPLIT_ROW_COUNT = "1048576"; // 256 * 4096
 
+    public static final String DATETIME_PREDICATE_PUSH_DOWN =
+            "mc.datetime_predicate_push_down";
+    public static final String DEFAULT_DATETIME_PREDICATE_PUSH_DOWN = "true";
+
     public static CloudCredential getCredential(Map<String, String> props) {
         return getCloudCredential(props, ACCESS_KEY, SECRET_KEY, SESSION_TOKEN);
     }
