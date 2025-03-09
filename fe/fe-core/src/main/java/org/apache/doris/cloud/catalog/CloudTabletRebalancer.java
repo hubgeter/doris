@@ -570,7 +570,7 @@ public class CloudTabletRebalancer extends MasterDaemon {
                             try {
                                 beId = ((CloudReplica) replica).hashReplicaToBe(cluster, true);
                             } catch (ComputeGroupException e) {
-                                LOG.warn("failed to hash replica to be {}", cluster, e);
+                                // LOG.warn("failed to hash replica to be {}", cluster, e);
                                 beId = -1;
                             }
                         }
