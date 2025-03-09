@@ -71,6 +71,8 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
     private long splitRowCount;
     private long splitByteSize;
 
+    public boolean dateTimePredicatePushDown;
+
     private static final Map<String, ZoneId> REGION_ZONE_MAP;
     private static final List<String> REQUIRED_PROPERTIES = ImmutableList.of(
             MCProperties.PROJECT,
@@ -183,7 +185,9 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
         accessKey = credential.getAccessKey();
         secretKey = credential.getSecretKey();
 
-
+        dateTimePredicatePushDown = Boolean.parseBoolean(
+                props.getOrDefault(MCProperties.DATETIME_PREDICATE_PUSH_DOWN,
+                        MCProperties.DEFAULT_DATETIME_PREDICATE_PUSH_DOWN));
 
         Account account = new AliyunAccount(accessKey, secretKey);
         this.odps = new Odps(account);
@@ -302,6 +306,10 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
     public String getDefaultProject() {
         makeSureInitialized();
         return defaultProject;
+    }
+
+    public boolean getDateTimePredicatePushDown() {
+        return dateTimePredicatePushDown;
     }
 
     public ZoneId getProjectDateTimeZone() {
