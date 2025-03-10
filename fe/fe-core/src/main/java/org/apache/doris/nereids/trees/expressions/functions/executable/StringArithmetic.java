@@ -50,6 +50,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * executable functions:
@@ -514,7 +515,7 @@ public class StringArithmetic {
     }
 
     private static int findStringInSet(String target, String input) {
-        String[] split = input.split(",");
+        String[] split = input.split(",", -1);
         for (int i = 0; i < split.length; i++) {
             if (split[i].equals(target)) {
                 return i + 1;
@@ -583,35 +584,34 @@ public class StringArithmetic {
      */
     @ExecFunction(name = "split_part")
     public static Expression splitPart(StringLikeLiteral first, StringLikeLiteral chr, IntegerLiteral number) {
+        if (number.getValue() == 0) {
+            return new NullLiteral(first.getDataType());
+        }
+        if (chr.getValue().isEmpty()) {
+            return castStringLikeLiteral(first, "");
+        }
+        if (first.getValue().isEmpty()) {
+            return new NullLiteral(first.getDataType());
+        }
         if (first.getValue().equals(chr.getValue())) {
             if (Math.abs(number.getValue()) == 1 || Math.abs(number.getValue()) == 2) {
                 return castStringLikeLiteral(first, "");
+            } else {
+                return new NullLiteral(first.getDataType());
             }
         }
         String separator = chr.getValue();
-        String[] parts = null;
+        String[] parts;
         if (number.getValue() < 0) {
             StringBuilder sb = new StringBuilder(first.getValue());
-            StringBuilder seperatorBuilder = new StringBuilder(separator);
-            separator = seperatorBuilder.reverse().toString();
-            if (".$|()[{^?*+\\".contains(separator) || separator.startsWith("\\")) {
-                separator = "\\" + separator;
-            }
-            parts = sb.reverse().toString().split(separator);
+            StringBuilder separatorBuilder = new StringBuilder(separator);
+            separator = separatorBuilder.reverse().toString();
+            parts = sb.reverse().toString().split(Pattern.quote(separator), -1);
         } else {
-            if (".$|()[{^?*+\\".contains(separator) || separator.startsWith("\\")) {
-                separator = "\\" + separator;
-            }
-            parts = first.getValue().split(separator);
+            parts = first.getValue().split(Pattern.quote(separator), -1);
         }
 
-        if (parts.length < Math.abs(number.getValue()) || number.getValue() == 0) {
-            if (parts.length == Math.abs(number.getValue()) - 1) {
-                if (number.getValue() < 0 && first.getValue().startsWith(chr.getValue())
-                        || number.getValue() > 0 && first.getValue().endsWith(chr.getValue())) {
-                    return castStringLikeLiteral(first, "");
-                }
-            }
+        if (parts.length < Math.abs(number.getValue())) {
             return new NullLiteral(first.getDataType());
         } else if (number.getValue() < 0) {
             StringBuilder result = new StringBuilder(parts[Math.abs(number.getValue()) - 1]);
@@ -626,7 +626,10 @@ public class StringArithmetic {
      */
     @ExecFunction(name = "substring_index")
     public static Expression substringIndex(StringLikeLiteral first, StringLikeLiteral chr, IntegerLiteral number) {
-        String[] parts = first.getValue().split(chr.getValue());
+        if (chr.getValue().isEmpty()) {
+            return chr;
+        }
+        String[] parts = first.getValue().split(Pattern.quote(chr.getValue()), -1);
         if (Math.abs(number.getValue()) >= parts.length) {
             return first;
         }
@@ -835,13 +838,13 @@ public class StringArithmetic {
             return castStringLikeLiteral(first, "");
         }
 
-        String[] urlParts = first.getValue().split("\\?");
+        String[] urlParts = first.getValue().split("\\?", -1);
         if (urlParts.length > 1) {
             String query = urlParts[1];
-            String[] pairs = query.split("&");
+            String[] pairs = query.split("&", -1);
 
             for (String pair : pairs) {
-                String[] keyValue = pair.split("=");
+                String[] keyValue = pair.split("=", -1);
                 if (second.getValue().equals(keyValue[0])) {
                     return castStringLikeLiteral(first, keyValue[1]);
                 }
