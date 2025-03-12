@@ -90,7 +90,7 @@ public class PruneFileScanPartition extends OneRewriteRuleFactory {
 
         Map<Long, PartitionItem> idToPartitionItem = scan.getSelectedPartitions().selectedPartitions;
         List<Long> prunedPartitions = new ArrayList<>(PartitionPruner.prune(
-                partitionSlots, filter.getPredicate(), idToPartitionItem, ctx, PartitionTableType.HIVE));
+                partitionSlots, filter.getPredicate(), idToPartitionItem, ctx, PartitionTableType.EXTERNAL));
 
         for (Long id : prunedPartitions) {
             selectedPartitionItems.put(id, idToPartitionItem.get(id));
