@@ -119,10 +119,8 @@ Status SchemaScanner::get_next_block_async(RuntimeState* state) {
     auto task_ctx = state->get_task_execution_context();
     RETURN_IF_ERROR(ExecEnv::GetInstance()->fragment_mgr()->get_thread_pool()->submit_func(
             [this, task_ctx, state]() {
-                DCHECK(_async_thread_running == false);
                 auto task_lock = task_ctx.lock();
                 if (task_lock == nullptr) {
-                    _scanner_status.update(Status::InternalError("Task context not exists!"));
                     return;
                 }
                 SCOPED_ATTACH_TASK(state);
