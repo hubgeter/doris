@@ -521,7 +521,7 @@ public class StatsCalculator extends DefaultPlanVisitor<Statistics, Void> {
                     selectedPartitionNames.add(olapScan.getTable().getPartition(id).getName());
                 });
                 for (SlotReference slot : visibleOutputSlots) {
-                    ColumnStatistic cache = getColumnStatsFromPartitionCache(olapScan, slot, selectedPartitionNames);
+                    ColumnStatistic cache = getColumnStatsFromTableCache((CatalogRelation) olapScan, slot);
                     ColumnStatisticBuilder colStatsBuilder = new ColumnStatisticBuilder(cache,
                             selectedPartitionsRowCount);
                     colStatsBuilder.normalizeAvgSizeByte(slot);
