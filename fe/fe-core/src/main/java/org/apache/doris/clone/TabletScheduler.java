@@ -1090,8 +1090,9 @@ public class TabletScheduler extends MasterDaemon {
         double maxScore = 0;
         long debugHighBeId = DebugPointUtil.getDebugParamOrDefault("FE.HIGH_LOAD_BE_ID", -1L);
         for (Replica replica : replicas) {
+            long beId = replica.getBackendIdWithoutException();
             BackendLoadStatistic beStatistic = statistic
-                    .getBackendLoadStatistic(replica.getBackendIdWithoutException());
+                    .getBackendLoadStatistic(beId);
             if (beStatistic == null) {
                 continue;
             }
@@ -1115,7 +1116,7 @@ public class TabletScheduler extends MasterDaemon {
                 chosenReplica = replica;
             }
 
-            if (debugHighBeId > 0 && replica.getBackendIdWithoutException() == debugHighBeId) {
+            if (debugHighBeId > 0 && beId == debugHighBeId) {
                 chosenReplica = replica;
                 break;
             }
@@ -1202,6 +1203,7 @@ public class TabletScheduler extends MasterDaemon {
          *      If all are finished, which means this replica is
          *      safe to be deleted.
          */
+        long beId = replica.getBackendIdWithoutException();
         if (!force && !Config.enable_force_drop_redundant_replica
                 && !FeConstants.runningUnitTest
                 && (replica.getState().canLoad() || replica.getState() == ReplicaState.DECOMMISSION)) {
@@ -1211,7 +1213,7 @@ public class TabletScheduler extends MasterDaemon {
                 // Remain it as VERY_HIGH may block other task.
                 tabletCtx.setPriority(Priority.NORMAL);
                 LOG.info("set replica {} on backend {} of tablet {} state to DECOMMISSION due to reason {}",
-                        replica.getId(), replica.getBackendIdWithoutException(), tabletCtx.getTabletId(), reason);
+                        replica.getId(), beId, tabletCtx.getTabletId(), reason);
             }
             try {
                 long preWatermarkTxnId = replica.getPreWatermarkTxnId();
@@ -1220,7 +1222,7 @@ public class TabletScheduler extends MasterDaemon {
                             .getTransactionIDGenerator().getNextTransactionId();
                     replica.setPreWatermarkTxnId(preWatermarkTxnId);
                     LOG.info("set decommission replica {} on backend {} of tablet {} pre watermark txn id {}",
-                            replica.getId(), replica.getBackendId(), tabletCtx.getTabletId(), preWatermarkTxnId);
+                            replica.getId(), beId, tabletCtx.getTabletId(), preWatermarkTxnId);
                 }
 
                 long postWatermarkTxnId = replica.getPostWatermarkTxnId();
@@ -1234,7 +1236,7 @@ public class TabletScheduler extends MasterDaemon {
 
                     replica.setPostWatermarkTxnId(postWatermarkTxnId);
                     LOG.info("set decommission replica {} on backend {} of tablet {} post watermark txn id {}",
-                            replica.getId(), replica.getBackendId(), tabletCtx.getTabletId(), postWatermarkTxnId);
+                            replica.getId(), beId, tabletCtx.getTabletId(), postWatermarkTxnId);
                 }
 
                 if (!Env.getCurrentGlobalTransactionMgr().isPreviousTransactionsFinished(postWatermarkTxnId,
@@ -1259,7 +1261,7 @@ public class TabletScheduler extends MasterDaemon {
             // NOTICE: only delete the replica from meta may not work. sometimes we can depend on tablet report
             // deleting these replicas, but in FORCE_REDUNDANT case, replica may be added to meta again in report
             // process.
-            sendDeleteReplicaTask(replica.getBackendIdWithoutException(), tabletCtx.getTabletId(), replica.getId(),
+            sendDeleteReplicaTask(beId, tabletCtx.getTabletId(), replica.getId(),
                     tabletCtx.getSchemaHash());
         }
 
@@ -1269,12 +1271,12 @@ public class TabletScheduler extends MasterDaemon {
                 tabletCtx.getPartitionId(),
                 tabletCtx.getIndexId(),
                 tabletCtx.getTabletId(),
-                replica.getBackendIdWithoutException());
+                beId);
 
         Env.getCurrentEnv().getEditLog().logDeleteReplica(info);
 
         LOG.info("delete replica. tablet id: {}, backend id: {}. reason: {}, force: {}",
-                tabletCtx.getTabletId(), replica.getBackendIdWithoutException(), reason, force);
+                tabletCtx.getTabletId(), beId, reason, force);
     }
 
     private void sendDeleteReplicaTask(long backendId, long tabletId, long replicaId, int schemaHash) {
