@@ -40,6 +40,7 @@ import org.apache.doris.datasource.maxcompute.MaxComputeExternalCatalog;
 import org.apache.doris.datasource.maxcompute.MaxComputeExternalTable;
 import org.apache.doris.datasource.maxcompute.source.MaxComputeSplit.SplitType;
 import org.apache.doris.datasource.property.constants.MCProperties;
+import org.apache.doris.nereids.trees.plans.logical.LogicalFileScan.SelectedPartitions;
 import org.apache.doris.nereids.util.DateUtils;
 import org.apache.doris.planner.PlanNodeId;
 import org.apache.doris.spi.Split;
@@ -50,6 +51,7 @@ import org.apache.doris.thrift.TMaxComputeFileDesc;
 import org.apache.doris.thrift.TTableFormatFileDesc;
 
 import com.aliyun.odps.OdpsType;
+import com.aliyun.odps.PartitionSpec;
 import com.aliyun.odps.table.TableIdentifier;
 import com.aliyun.odps.table.configuration.ArrowOptions;
 import com.aliyun.odps.table.configuration.ArrowOptions.TimestampUnit;
@@ -60,6 +62,7 @@ import com.aliyun.odps.table.read.split.InputSplitAssigner;
 import com.aliyun.odps.table.read.split.impl.IndexedInputSplit;
 import com.google.common.collect.Maps;
 import jline.internal.Log;
+import lombok.Setter;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -79,6 +82,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 public class MaxComputeScanNode extends FileQueryScanNode {
+    static final DateTimeFormatter dateTime3Formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
+    static final DateTimeFormatter dateTime6Formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS");
 
     private final MaxComputeExternalTable table;
     private TableBatchReadSession tableBatchReadSession;
@@ -86,14 +91,28 @@ public class MaxComputeScanNode extends FileQueryScanNode {
     private static final LocationPath ROW_OFFSET_PATH = new LocationPath("/row_offset", Maps.newHashMap());
     private static final LocationPath BYTE_SIZE_PATH = new LocationPath("/byte_size", Maps.newHashMap());
 
-    public MaxComputeScanNode(PlanNodeId id, TupleDescriptor desc, boolean needCheckColumnPriv) {
-        this(id, desc, "MCScanNode", StatisticalType.MAX_COMPUTE_SCAN_NODE, needCheckColumnPriv);
+    @Setter
+    private SelectedPartitions selectedPartitions = null;
+
+    // For new planner
+    public MaxComputeScanNode(PlanNodeId id, TupleDescriptor desc,
+            SelectedPartitions selectedPartitions, boolean needCheckColumnPriv) {
+        this(id, desc, "MCScanNode", StatisticalType.MAX_COMPUTE_SCAN_NODE,
+                selectedPartitions, needCheckColumnPriv);
     }
 
-    public MaxComputeScanNode(PlanNodeId id, TupleDescriptor desc, String planNodeName,
-                              StatisticalType statisticalType, boolean needCheckColumnPriv) {
+    // For old planner
+    public MaxComputeScanNode(PlanNodeId id, TupleDescriptor desc, boolean needCheckColumnPriv) {
+        this(id, desc, "MCScanNode", StatisticalType.MAX_COMPUTE_SCAN_NODE,
+                SelectedPartitions.NOT_PRUNED, needCheckColumnPriv);
+    }
+
+    private MaxComputeScanNode(PlanNodeId id, TupleDescriptor desc, String planNodeName,
+            StatisticalType statisticalType, SelectedPartitions selectedPartitions,
+            boolean needCheckColumnPriv) {
         super(id, desc, planNodeName, statisticalType, needCheckColumnPriv);
         table = (MaxComputeExternalTable) desc.getTable();
+        this.selectedPartitions = selectedPartitions;
     }
 
     @Override
@@ -117,9 +136,30 @@ public class MaxComputeScanNode extends FileQueryScanNode {
         rangeDesc.setSize(maxComputeSplit.getLength());
     }
 
-    void createTableBatchReadSession() throws UserException {
+    // Return false if no need to read any partition data.
+    // Return true if need to read partition data.
+    boolean createTableBatchReadSession() throws UserException {
         List<String> requiredPartitionColumns = new ArrayList<>();
         List<String> orderedRequiredDataColumns = new ArrayList<>();
+
+        List<PartitionSpec> requiredPartitionSpecs = new ArrayList<>();
+
+        //if requiredPartitionSpecs is empty, get all partition data.
+        if (!table.getPartitionColumns().isEmpty() && selectedPartitions != SelectedPartitions.NOT_PRUNED) {
+            Map<Long, String> idToNameMap = table.getPartitionValues().getPartitionIdToNameMap();
+
+            this.totalPartitionNum = selectedPartitions.totalPartitionNum;
+            this.selectedPartitionNum = selectedPartitions.selectedPartitions.size();
+
+            if (selectedPartitions.selectedPartitions.isEmpty()) {
+                //no need read any partition data.
+                return false;
+            }
+
+            selectedPartitions.selectedPartitions.forEach(
+                    (key, value) -> requiredPartitionSpecs.add(new PartitionSpec(idToNameMap.get(key)))
+            );
+        }
 
         Set<String> requiredSlots =
                 desc.getSlots().stream().map(e -> e.getColumn().getName()).collect(Collectors.toSet());
@@ -150,6 +190,7 @@ public class MaxComputeScanNode extends FileQueryScanNode {
                             .withSettings(mcCatalog.getSettings())
                             .withSplitOptions(mcCatalog.getSplitOption())
                             .requiredPartitionColumns(requiredPartitionColumns)
+                            .requiredPartitions(requiredPartitionSpecs)
                             .requiredDataColumns(orderedRequiredDataColumns)
                             .withArrowOptions(
                                     ArrowOptions.newBuilder()
@@ -162,7 +203,7 @@ public class MaxComputeScanNode extends FileQueryScanNode {
         } catch (java.io.IOException e) {
             throw new RuntimeException(e);
         }
-
+        return true;
     }
 
     @Override
@@ -368,16 +409,40 @@ public class MaxComputeScanNode extends FileQueryScanNode {
                 return  " \"" + dateLiteral.getStringValue(dstType) + "\" ";
             }
             case DATETIME: {
-                DateLiteral dateLiteral = (DateLiteral) literalExpr;
-                ScalarType dstType = ScalarType.createDatetimeV2Type(3);
+                MaxComputeExternalCatalog  mcCatalog = (MaxComputeExternalCatalog) table.getCatalog();
+                if (mcCatalog.getDateTimePredicatePushDown()) {
+                    DateLiteral dateLiteral = (DateLiteral) literalExpr;
+                    ScalarType dstType = ScalarType.createDatetimeV2Type(3);
 
-                return  " \"" + convertDateTimezone(dateLiteral.getStringValue(dstType),
-                                    ((MaxComputeExternalCatalog) table.getCatalog()).getProjectDateTimeZone()) + "\" ";
+                    return " \"" + convertDateTimezone(dateLiteral.getStringValue(dstType), dateTime3Formatter,
+                            ZoneId.of("UTC")) + "\" ";
+                }
+                break;
+            }
+            /**
+             * Disable the predicate pushdown to the odps API because the timestamp precision of odps is 9 and the
+             * mapping precision of Doris is 6. If we insert `2023-02-02 00:00:00.123456789` into odps, doris reads
+             * it as `2023-02-02 00:00:00.123456`. Since "789" is missing, we cannot push it down correctly.
+             */
+            case TIMESTAMP: {
+                MaxComputeExternalCatalog  mcCatalog = (MaxComputeExternalCatalog) table.getCatalog();
+                if (mcCatalog.getDateTimePredicatePushDown()) {
+                    DateLiteral dateLiteral = (DateLiteral) literalExpr;
+                    ScalarType dstType = ScalarType.createDatetimeV2Type(6);
+
+                    return  " \"" + convertDateTimezone(dateLiteral.getStringValue(dstType), dateTime6Formatter,
+                            ZoneId.of("UTC")) + "\" ";
+                }
+                break;
             }
             case TIMESTAMP_NTZ: {
-                DateLiteral dateLiteral = (DateLiteral) literalExpr;
-                ScalarType dstType = ScalarType.createDatetimeV2Type(6);
-                return  " \"" + dateLiteral.getStringValue(dstType) + "\" ";
+                MaxComputeExternalCatalog  mcCatalog = (MaxComputeExternalCatalog) table.getCatalog();
+                if (mcCatalog.getDateTimePredicatePushDown()) {
+                    DateLiteral dateLiteral = (DateLiteral) literalExpr;
+                    ScalarType dstType = ScalarType.createDatetimeV2Type(6);
+                    return " \"" + dateLiteral.getStringValue(dstType) + "\" ";
+                }
+                break;
             }
             default: {
                 break;
@@ -387,12 +452,11 @@ public class MaxComputeScanNode extends FileQueryScanNode {
     }
 
 
-    public static String convertDateTimezone(String dateTimeStr, ZoneId toZone) {
+    public static String convertDateTimezone(String dateTimeStr, DateTimeFormatter formatter, ZoneId toZone) {
         if (DateUtils.getTimeZone().equals(toZone)) {
             return dateTimeStr;
         }
 
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
         LocalDateTime localDateTime = LocalDateTime.parse(dateTimeStr, formatter);
 
         ZonedDateTime sourceZonedDateTime = localDateTime.atZone(DateUtils.getTimeZone());
@@ -430,7 +494,10 @@ public class MaxComputeScanNode extends FileQueryScanNode {
         if (desc.getSlots().isEmpty() || odpsTable.getFileNum() <= 0) {
             return result;
         }
-        createTableBatchReadSession();
+
+        if (!createTableBatchReadSession()) {
+            return result;
+        }
 
         try {
             String scanSessionSerialize =  serializeSession(tableBatchReadSession);

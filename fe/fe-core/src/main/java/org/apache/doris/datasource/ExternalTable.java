@@ -20,6 +20,7 @@ package org.apache.doris.datasource;
 import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.DatabaseIf;
 import org.apache.doris.catalog.Env;
+import org.apache.doris.catalog.PartitionItem;
 import org.apache.doris.catalog.TableAttributes;
 import org.apache.doris.catalog.TableIf;
 import org.apache.doris.catalog.TableIndexes;
@@ -30,6 +31,7 @@ import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.common.util.PropertyAnalyzer;
 import org.apache.doris.common.util.Util;
+import org.apache.doris.nereids.trees.plans.logical.LogicalFileScan.SelectedPartitions;
 import org.apache.doris.persist.gson.GsonPostProcessable;
 import org.apache.doris.persist.gson.GsonUtils;
 import org.apache.doris.statistics.AnalysisInfo;
@@ -41,6 +43,7 @@ import org.apache.doris.thrift.TTableDescriptor;
 import com.google.common.collect.Sets;
 import com.google.gson.annotations.SerializedName;
 import lombok.Getter;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -48,6 +51,7 @@ import org.apache.logging.log4j.Logger;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -363,5 +367,30 @@ public class ExternalTable implements TableIf, Writable, GsonPostProcessable {
     @Override
     public TableIndexes getTableIndexes() {
         return new TableIndexes();
+    }
+
+    public SelectedPartitions initSelectedPartitions() {
+        if (!supportInternalPartitionPruned()) {
+            return SelectedPartitions.NOT_PRUNED;
+        }
+        if (CollectionUtils.isEmpty(this.getPartitionColumns())) {
+            return SelectedPartitions.NOT_PRUNED;
+        }
+        Map<Long, PartitionItem> nameToPartitionItems = getNameToPartitionItems();
+        return new SelectedPartitions(nameToPartitionItems.size(), nameToPartitionItems, false);
+    }
+
+
+    public Map<Long, PartitionItem> getNameToPartitionItems() {
+        return Collections.emptyMap();
+    }
+
+
+    public List<Column> getPartitionColumns() {
+        return Collections.emptyList();
+    }
+
+    public boolean supportInternalPartitionPruned() {
+        return false;
     }
 }
