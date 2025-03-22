@@ -340,17 +340,23 @@ Status CloudSchemaChangeJob::_convert_historical_rowsets(const SchemaChangeParam
         int64_t num_output_rows = 0;
         int64_t size_output_rowsets = 0;
         int64_t num_output_segments = 0;
+        int64_t index_size_output_rowsets = 0;
+        int64_t segment_size_output_rowsets = 0;
         for (auto& rs : _output_rowsets) {
             sc_job->add_txn_ids(rs->txn_id());
             sc_job->add_output_versions(rs->end_version());
             num_output_rows += rs->num_rows();
             size_output_rowsets += rs->total_disk_size();
             num_output_segments += rs->num_segments();
+            index_size_output_rowsets += rs->index_disk_size();
+            segment_size_output_rowsets += rs->data_disk_size();
         }
         sc_job->set_num_output_rows(num_output_rows);
         sc_job->set_size_output_rowsets(size_output_rowsets);
         sc_job->set_num_output_segments(num_output_segments);
         sc_job->set_num_output_rowsets(_output_rowsets.size());
+        sc_job->set_index_size_output_rowsets(index_size_output_rowsets);
+        sc_job->set_segment_size_output_rowsets(segment_size_output_rowsets);
     }
     _output_cumulative_point = std::min(_output_cumulative_point, sc_job->alter_version() + 1);
     sc_job->set_output_cumulative_point(_output_cumulative_point);
@@ -363,13 +369,21 @@ Status CloudSchemaChangeJob::_convert_historical_rowsets(const SchemaChangeParam
         // If there are historical versions of rowsets, we need to recalculate their delete
         // bitmaps, otherwise we will miss the delete bitmaps of incremental rowsets
         int64_t start_calc_delete_bitmap_version =
-                already_exist_any_version ? 0 : sc_job->alter_version() + 1;
+                // [0-1] is a placeholder rowset, start from 2.
+                already_exist_any_version ? 2 : sc_job->alter_version() + 1;
         RETURN_IF_ERROR(_process_delete_bitmap(sc_job->alter_version(),
                                                start_calc_delete_bitmap_version, initiator));
         sc_job->set_delete_bitmap_lock_initiator(initiator);
     }
 
     cloud::FinishTabletJobResponse finish_resp;
+    DBUG_EXECUTE_IF("CloudSchemaChangeJob::_convert_historical_rowsets.test_conflict", {
+        std::srand(static_cast<unsigned int>(std::time(nullptr)));
+        int random_value = std::rand() % 100;
+        if (random_value < 20) {
+            return Status::Error<ErrorCode::DELETE_BITMAP_LOCK_ERROR>("test txn conflict");
+        }
+    });
     auto st = _cloud_storage_engine.meta_mgr().commit_tablet_job(job, &finish_resp);
     if (!st.ok()) {
         if (finish_resp.status().code() == cloud::JOB_ALREADY_SUCCESS) {

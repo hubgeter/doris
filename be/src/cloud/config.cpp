@@ -20,6 +20,7 @@
 #include "common/status.h"
 
 namespace doris::config {
+#include "common/compile_check_begin.h"
 
 DEFINE_String(deploy_mode, "");
 DEFINE_mString(cloud_unique_id, "");
@@ -71,11 +72,16 @@ DEFINE_Bool(enable_cloud_txn_lazy_commit, "false");
 
 DEFINE_mInt32(remove_expired_tablet_txn_info_interval_seconds, "300");
 
-DEFINE_mInt32(tablet_txn_info_min_expired_seconds, "120");
+DEFINE_mInt32(tablet_txn_info_min_expired_seconds, "1800");
 
 DEFINE_mBool(enable_use_cloud_unique_id_from_fe, "true");
 
 DEFINE_mInt32(delete_bitmap_rpc_retry_times, "25");
 
 DEFINE_mBool(enable_cloud_tablet_report, "false");
+
+DEFINE_mInt32(delete_bitmap_rpc_retry_times, "25");
+
+DEFINE_mInt64(meta_service_rpc_reconnect_interval_ms, "5000");
+#include "common/compile_check_end.h"
 } // namespace doris::config

@@ -34,6 +34,7 @@
 
 #include "cloud/config.h"
 #include "common/config.h"
+#include "common/exception.h"
 #include "common/logging.h"
 #include "common/status.h"
 #include "io/fs/stream_load_pipe.h"
@@ -493,8 +494,8 @@ Status PipelineFragmentContext::_build_pipeline_tasks(const doris::TPipelineFrag
             if (pipeline_id_to_task.contains(_pipelines[pip_idx]->id())) {
                 auto* task = pipeline_id_to_task[_pipelines[pip_idx]->id()];
                 DCHECK(pipeline_id_to_profile[pip_idx]);
-                RETURN_IF_ERROR(task->prepare(local_params, request.fragment.output_sink,
-                                              _query_ctx.get()));
+                RETURN_IF_ERROR_OR_CATCH_EXCEPTION(task->prepare(
+                        local_params, request.fragment.output_sink, _query_ctx.get()));
             }
         }
         {
@@ -648,7 +649,9 @@ Status PipelineFragmentContext::_create_tree_helper(ObjectPool* pool,
     RETURN_IF_ERROR(_create_operator(pool, tnodes[*node_idx], request, descs, op, cur_pipe,
                                      parent == nullptr ? -1 : parent->node_id(), child_idx,
                                      followed_by_shuffled_operator));
-
+    // Initialization must be done here. For example, group by expressions in agg will be used to
+    // decide if a local shuffle should be planed, so it must be initialized here.
+    RETURN_IF_ERROR(op->init(tnode, _runtime_state.get()));
     // assert(parent != nullptr || (node_idx == 0 && root_expr != nullptr));
     if (parent != nullptr) {
         // add to parent's child(s)
@@ -691,8 +694,6 @@ Status PipelineFragmentContext::_create_tree_helper(ObjectPool* pool,
                     *node_idx, tnodes.size());
         }
     }
-
-    RETURN_IF_ERROR(op->init(tnode, _runtime_state.get()));
 
     return Status::OK();
 }
@@ -747,7 +748,7 @@ Status PipelineFragmentContext::_add_local_exchange_impl(
     switch (data_distribution.distribution_type) {
     case ExchangeType::HASH_SHUFFLE:
         shared_state->exchanger = ShuffleExchanger::create_unique(
-                std::max(cur_pipe->num_tasks(), _num_instances),
+                std::max(cur_pipe->num_tasks(), _num_instances), _num_instances,
                 use_global_hash_shuffle ? _total_instances : _num_instances,
                 _runtime_state->query_options().__isset.local_exchange_free_blocks_limit
                         ? _runtime_state->query_options().local_exchange_free_blocks_limit
@@ -807,7 +808,7 @@ Status PipelineFragmentContext::_add_local_exchange_impl(
     }
     case ExchangeType::ADAPTIVE_PASSTHROUGH:
         shared_state->exchanger = AdaptivePassthroughExchanger::create_unique(
-                cur_pipe->num_tasks(), _num_instances,
+                std::max(cur_pipe->num_tasks(), _num_instances), _num_instances,
                 _runtime_state->query_options().__isset.local_exchange_free_blocks_limit
                         ? _runtime_state->query_options().local_exchange_free_blocks_limit
                         : 0);
@@ -907,9 +908,13 @@ Status PipelineFragmentContext::_add_local_exchange(
             << " cur_pipe->operators().size(): " << cur_pipe->operators().size()
             << " new_pip->operators().size(): " << new_pip->operators().size();
 
-    // Add passthrough local exchanger if necessary
+    // There are some local shuffles with relatively heavy operations on the sink.
+    // If the local sink concurrency is 1 and the local source concurrency is n, the sink becomes a bottleneck.
+    // Therefore, local passthrough is used to increase the concurrency of the sink.
+    // op -> local sink(1) -> local source (n)
+    // op -> local passthrough(1) -> local passthrough(n) ->  local sink(n) -> local source (n)
     if (cur_pipe->num_tasks() > 1 && new_pip->num_tasks() == 1 &&
-        Pipeline::is_hash_exchange(data_distribution.distribution_type)) {
+        Pipeline::heavy_operations_on_the_sink(data_distribution.distribution_type)) {
         RETURN_IF_ERROR(_add_local_exchange_impl(
                 new_pip->operators().size(), pool, new_pip, add_pipeline(new_pip, pip_idx + 2),
                 DataDistribution(ExchangeType::PASSTHROUGH), do_local_exchange, num_buckets,
@@ -938,9 +943,9 @@ Status PipelineFragmentContext::_plan_local_exchange(
         // if 'num_buckets == 0' means the fragment is colocated by exchange node not the
         // scan node. so here use `_num_instance` to replace the `num_buckets` to prevent dividing 0
         // still keep colocate plan after local shuffle
-        RETURN_IF_ERROR(_plan_local_exchange(
-                _use_serial_source || num_buckets == 0 ? _num_instances : num_buckets, pip_idx,
-                _pipelines[pip_idx], bucket_seq_to_instance_idx, shuffle_idx_to_instance_idx));
+        RETURN_IF_ERROR(_plan_local_exchange(num_buckets, pip_idx, _pipelines[pip_idx],
+                                             bucket_seq_to_instance_idx,
+                                             shuffle_idx_to_instance_idx));
     }
     return Status::OK();
 }

@@ -38,7 +38,7 @@ class BloomFilterIndexIterator;
 class BloomFilter;
 class BloomFilterIndexPB;
 
-class BloomFilterIndexReader {
+class BloomFilterIndexReader : public MetadataAdder<BloomFilterIndexReader> {
 public:
     explicit BloomFilterIndexReader(io::FileReaderSPtr file_reader,
                                     const BloomFilterIndexPB& bloom_filter_index_meta)
@@ -60,6 +60,11 @@ public:
 
 private:
     Status _load(bool use_page_cache, bool kept_in_memory, OlapReaderStatistics* index_load_stats);
+<<<<<<< HEAD
+=======
+
+    int64_t get_metadata_size() const override;
+>>>>>>> 514b1ac39f
 
 private:
     friend class BloomFilterIndexIterator;

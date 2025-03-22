@@ -2645,7 +2645,7 @@ public class Env {
     }
 
     public void replayGlobalVariableV2(GlobalVarPersistInfo info) throws IOException, DdlException {
-        VariableMgr.replayGlobalVariableV2(info);
+        VariableMgr.replayGlobalVariableV2(info, false);
     }
 
     public long saveLoadJobsV2(CountingDataOutputStream dos, long checksum) throws IOException {
@@ -3172,6 +3172,13 @@ public class Env {
     }
 
     private void removeDroppedFrontends(ConcurrentLinkedQueue<String> removedFrontends) {
+        if (!Strings.isNullOrEmpty(System.getProperty(FeConstants.METADATA_FAILURE_RECOVERY_KEY))) {
+            // metadata recovery mode
+            LOG.info("Metadata failure recovery({}), ignore removing dropped frontends",
+                    System.getProperty(FeConstants.METADATA_FAILURE_RECOVERY_KEY));
+            return;
+        }
+
         if (haProtocol != null && haProtocol instanceof BDBHA) {
             BDBHA bdbha = (BDBHA) haProtocol;
             bdbha.removeDroppedMember(removedFrontends);
@@ -3414,25 +3421,33 @@ public class Env {
                 hidePassword, false, specificVersion, false, true);
     }
 
-    public static String getMTMVDdl(MTMV mtmv) {
-        StringBuilder sb = new StringBuilder("CREATE MATERIALIZED VIEW ");
-        sb.append(mtmv.getName());
-        addMTMVCols(mtmv, sb);
-        sb.append("\n");
-        sb.append(mtmv.getRefreshInfo());
-        addMTMVKeyInfo(mtmv, sb);
-        addTableComment(mtmv, sb);
-        addMTMVPartitionInfo(mtmv, sb);
-        DistributionInfo distributionInfo = mtmv.getDefaultDistributionInfo();
-        sb.append("\n").append(distributionInfo.toSql());
-        // properties
-        sb.append("\nPROPERTIES (\n");
-        addOlapTablePropertyInfo(mtmv, sb, false, false, null);
-        addMTMVPropertyInfo(mtmv, sb);
-        sb.append("\n)");
-        sb.append("\nAS ");
-        sb.append(mtmv.getQuerySql());
-        return sb.toString();
+    public static String getMTMVDdl(MTMV mtmv) throws AnalysisException {
+        if (!mtmv.tryReadLock(1, TimeUnit.MINUTES)) {
+            throw new AnalysisException(
+                    "get table read lock timeout, database=" + mtmv.getDBName() + ",table=" + mtmv.getName());
+        }
+        try {
+            StringBuilder sb = new StringBuilder("CREATE MATERIALIZED VIEW ");
+            sb.append(mtmv.getName());
+            addMTMVCols(mtmv, sb);
+            sb.append("\n");
+            sb.append(mtmv.getRefreshInfo());
+            addMTMVKeyInfo(mtmv, sb);
+            addTableComment(mtmv, sb);
+            addMTMVPartitionInfo(mtmv, sb);
+            DistributionInfo distributionInfo = mtmv.getDefaultDistributionInfo();
+            sb.append("\n").append(distributionInfo.toSql());
+            // properties
+            sb.append("\nPROPERTIES (\n");
+            addOlapTablePropertyInfo(mtmv, sb, false, false, null);
+            addMTMVPropertyInfo(mtmv, sb);
+            sb.append("\n)");
+            sb.append("\nAS ");
+            sb.append(mtmv.getQuerySql());
+            return sb.toString();
+        } finally {
+            mtmv.readUnlock();
+        }
     }
 
     private static void addMTMVKeyInfo(MTMV mtmv, StringBuilder sb) {
@@ -3631,6 +3646,12 @@ public class Env {
             sb.append(olapTable.rowStorePageSize()).append("\"");
         }
 
+        // storage page size
+        if (olapTable.storagePageSize() != PropertyAnalyzer.STORAGE_PAGE_SIZE_DEFAULT_VALUE) {
+            sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_STORAGE_PAGE_SIZE).append("\" = \"");
+            sb.append(olapTable.storagePageSize()).append("\"");
+        }
+
         // skip inverted index on load
         if (olapTable.skipWriteIndexOnLoad()) {
             sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_SKIP_WRITE_INDEX_ON_LOAD).append("\" = \"");
@@ -3685,7 +3706,10 @@ public class Env {
         }
 
         // Storage Vault
-        if (!olapTable.getStorageVaultName().isEmpty()) {
+        if (!Strings.isNullOrEmpty(olapTable.getStorageVaultId())) {
+            sb.append(",\n\"").append(PropertyAnalyzer
+                    .PROPERTIES_STORAGE_VAULT_ID).append("\" = \"");
+            sb.append(olapTable.getStorageVaultId()).append("\"");
             sb.append(",\n\"").append(PropertyAnalyzer
                     .PROPERTIES_STORAGE_VAULT_NAME).append("\" = \"");
             sb.append(olapTable.getStorageVaultName()).append("\"");
@@ -4655,7 +4679,7 @@ public class Env {
                     }
                     break;
                 }
-                if (column.getType().isFloatingPointType()) {
+                if (!column.getType().couldBeShortKey()) {
                     break;
                 }
                 if (column.getDataType() == PrimitiveType.VARCHAR) {
@@ -4839,6 +4863,9 @@ public class Env {
                     LOG.warn("modify table[{}] group name same as old group name,skip.", table.getName());
                     return;
                 }
+            }
+            if (!isReplay && table.isAutoBucket()) {
+                throw new DdlException("table " + table.getName() + " is auto buckets");
             }
             ColocateGroupSchema groupSchema = colocateTableIndex.getGroupSchema(fullAssignedGroupName);
             if (groupSchema == null) {
@@ -5167,7 +5194,8 @@ public class Env {
         }
 
         // 5. modify sequence map col
-        if (table.hasSequenceCol() && table.getSequenceMapCol().equalsIgnoreCase(colName)) {
+        if (table.hasSequenceCol() && table.getSequenceMapCol() != null
+                && table.getSequenceMapCol().equalsIgnoreCase(colName)) {
             table.setSequenceMapCol(newColName);
         }
 
@@ -5635,13 +5663,6 @@ public class Env {
             newView.setComment(stmt.getComment());
             newView.setInlineViewDefWithSqlMode(stmt.getInlineViewDef(),
                     ConnectContext.get().getSessionVariable().getSqlMode());
-            // init here in case the stmt string from view.toSql() has some syntax error.
-            try {
-                newView.init();
-            } catch (UserException e) {
-                throw new DdlException("failed to init view stmt, reason=" + e.getMessage());
-            }
-
             if (!((Database) db).createTableWithLock(newView, false, stmt.isSetIfNotExists()).first) {
                 throw new DdlException("Failed to create view[" + tableName + "].");
             }
@@ -6445,6 +6466,7 @@ public class Env {
         try {
             tableMeta.setId(olapTable.getId());
             tableMeta.setName(olapTable.getName());
+            tableMeta.setType(olapTable.getType().name());
 
             PartitionInfo tblPartitionInfo = olapTable.getPartitionInfo();
 
@@ -6454,11 +6476,7 @@ public class Env {
                 long partitionId = partition.getId();
                 partitionMeta.setId(partitionId);
                 partitionMeta.setName(partition.getName());
-                String partitionRange = "";
-                if (tblPartitionInfo.getType() == PartitionType.RANGE
-                        || tblPartitionInfo.getType() == PartitionType.LIST) {
-                    partitionRange = tblPartitionInfo.getItem(partitionId).getItems().toString();
-                }
+                String partitionRange = tblPartitionInfo.getPartitionRangeString(partitionId);
                 partitionMeta.setRange(partitionRange);
                 partitionMeta.setVisibleVersion(partition.getVisibleVersion());
                 // partitionMeta.setTemp（partition.isTemp());

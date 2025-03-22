@@ -43,6 +43,7 @@
 #include "io/fs/file_system.h"
 #include "olap/binlog_config.h"
 #include "olap/lru_cache.h"
+#include "olap/metadata_adder.h"
 #include "olap/olap_common.h"
 #include "olap/rowset/rowset_meta.h"
 #include "olap/tablet_schema.h"
@@ -50,6 +51,7 @@
 #include "util/uid_util.h"
 
 namespace json2pb {
+#include "common/compile_check_begin.h"
 struct Pb2JsonOptions;
 } // namespace json2pb
 
@@ -90,7 +92,7 @@ class TBinlogConfig;
 
 // Class encapsulates meta of tablet.
 // The concurrency control is handled in Tablet Class, not in this class.
-class TabletMeta {
+class TabletMeta : public MetadataAdder<TabletMeta> {
 public:
     static TabletMetaSharedPtr create(
             const TCreateTabletReq& request, const TabletUid& tablet_uid, uint64_t shard_id,
@@ -98,8 +100,9 @@ public:
             const std::unordered_map<uint32_t, uint32_t>& col_ordinal_to_unique_id);
 
     TabletMeta();
+    ~TabletMeta() override;
     TabletMeta(int64_t table_id, int64_t partition_id, int64_t tablet_id, int64_t replica_id,
-               int32_t schema_hash, uint64_t shard_id, const TTabletSchema& tablet_schema,
+               int32_t schema_hash, int32_t shard_id, const TTabletSchema& tablet_schema,
                uint32_t next_unique_id,
                const std::unordered_map<uint32_t, uint32_t>& col_ordinal_to_unique_id,
                TabletUid tablet_uid, TTabletType::type tabletType,
@@ -139,10 +142,6 @@ public:
 
     void to_meta_pb(TabletMetaPB* tablet_meta_pb);
     void to_json(std::string* json_string, json2pb::Pb2JsonOptions& options);
-    // Don't use.
-    // TODO: memory size of TabletSchema cannot be accurately tracked.
-    // In some places, temporarily use num_columns() as TabletSchema size.
-    int64_t mem_size() const;
     size_t tablet_columns_num() const { return _schema->num_columns(); }
 
     TabletTypePB tablet_type() const { return _tablet_type; }
@@ -155,7 +154,7 @@ public:
     int64_t replica_id() const;
     void set_replica_id(int64_t replica_id) { _replica_id = replica_id; }
     int32_t schema_hash() const;
-    int16_t shard_id() const;
+    int32_t shard_id() const;
     void set_shard_id(int32_t shard_id);
     int64_t creation_time() const;
     void set_creation_time(int64_t creation_time);
@@ -169,6 +168,12 @@ public:
     size_t tablet_local_size() const;
     // Remote disk space occupied by tablet.
     size_t tablet_remote_size() const;
+
+    size_t tablet_local_index_size() const;
+    size_t tablet_local_segment_size() const;
+    size_t tablet_remote_index_size() const;
+    size_t tablet_remote_segment_size() const;
+
     size_t version_count() const;
     size_t stale_version_count() const;
     size_t version_count_cross_with_range(const Version& range) const;
@@ -316,6 +321,7 @@ private:
     // the reference of _schema may use in tablet, so here need keep
     // the lifetime of tablemeta and _schema is same with tablet
     TabletSchemaSPtr _schema;
+    Cache::Handle* _handle = nullptr;
 
     std::vector<RowsetMetaSharedPtr> _rs_metas;
     // This variable _stale_rs_metas is used to record these rowsets‘ meta which are be compacted.
@@ -495,6 +501,14 @@ public:
                 DeleteBitmap* subset_delete_map) const;
 
     /**
+     * Gets count of delete_bitmap with given range [start, end)
+     *
+     * @parma start start
+     * @parma end end
+     */
+    size_t get_count_with_range(const BitmapKey& start, const BitmapKey& end) const;
+
+    /**
      * Merges the given segment delete bitmap into *this
      *
      * @param bmk
@@ -608,7 +622,7 @@ inline int32_t TabletMeta::schema_hash() const {
     return _schema_hash;
 }
 
-inline int16_t TabletMeta::shard_id() const {
+inline int32_t TabletMeta::shard_id() const {
     return _shard_id;
 }
 
@@ -663,6 +677,46 @@ inline size_t TabletMeta::tablet_remote_size() const {
     for (auto& rs : _rs_metas) {
         if (!rs->is_local()) {
             total_size += rs->total_disk_size();
+        }
+    }
+    return total_size;
+}
+
+inline size_t TabletMeta::tablet_local_index_size() const {
+    size_t total_size = 0;
+    for (auto& rs : _rs_metas) {
+        if (rs->is_local()) {
+            total_size += rs->index_disk_size();
+        }
+    }
+    return total_size;
+}
+
+inline size_t TabletMeta::tablet_local_segment_size() const {
+    size_t total_size = 0;
+    for (auto& rs : _rs_metas) {
+        if (rs->is_local()) {
+            total_size += rs->data_disk_size();
+        }
+    }
+    return total_size;
+}
+
+inline size_t TabletMeta::tablet_remote_index_size() const {
+    size_t total_size = 0;
+    for (auto& rs : _rs_metas) {
+        if (!rs->is_local()) {
+            total_size += rs->index_disk_size();
+        }
+    }
+    return total_size;
+}
+
+inline size_t TabletMeta::tablet_remote_segment_size() const {
+    size_t total_size = 0;
+    for (auto& rs : _rs_metas) {
+        if (!rs->is_local()) {
+            total_size += rs->data_disk_size();
         }
     }
     return total_size;
@@ -732,4 +786,5 @@ std::string tablet_state_name(TabletState state);
 bool operator==(const TabletMeta& a, const TabletMeta& b);
 bool operator!=(const TabletMeta& a, const TabletMeta& b);
 
+#include "common/compile_check_end.h"
 } // namespace doris

@@ -115,7 +115,7 @@ public class StringArithmetic {
      */
     @ExecFunction(name = "length")
     public static Expression lengthVarchar(StringLikeLiteral first) {
-        return new IntegerLiteral(first.getValue().length());
+        return new IntegerLiteral(first.getValue().getBytes(StandardCharsets.UTF_8).length);
     }
 
     /**
@@ -150,6 +150,27 @@ public class StringArithmetic {
             } while (!afterReplace.equals(result));
         }
         return result;
+    }
+
+    private static String trimInImpl(String first, String second, boolean left, boolean right) {
+        StringBuilder result = new StringBuilder(first);
+
+        if (left) {
+            int start = 0;
+            while (start < result.length() && second.indexOf(result.charAt(start)) != -1) {
+                start++;
+            }
+            result.delete(0, start);
+        }
+        if (right) {
+            int end = result.length();
+            while (end > 0 && second.indexOf(result.charAt(end - 1)) != -1) {
+                end--;
+            }
+            result.delete(end, result.length());
+        }
+
+        return result.toString();
     }
 
     /**
@@ -198,6 +219,54 @@ public class StringArithmetic {
     @ExecFunction(name = "rtrim")
     public static Expression rtrimVarcharVarchar(StringLikeLiteral first, StringLikeLiteral second) {
         return castStringLikeLiteral(first, trimImpl(first.getValue(), second.getValue(), false, true));
+    }
+
+    /**
+     * Executable arithmetic functions Trim_In
+     */
+    @ExecFunction(name = "trim_in")
+    public static Expression trimInVarchar(StringLikeLiteral first) {
+        return castStringLikeLiteral(first, trimInImpl(first.getValue(), " ", true, true));
+    }
+
+    /**
+     * Executable arithmetic functions Trim_In
+     */
+    @ExecFunction(name = "trim_in")
+    public static Expression trimInVarcharVarchar(StringLikeLiteral first, StringLikeLiteral second) {
+        return castStringLikeLiteral(first, trimInImpl(first.getValue(), second.getValue(), true, true));
+    }
+
+    /**
+     * Executable arithmetic functions ltrim_in
+     */
+    @ExecFunction(name = "ltrim_in")
+    public static Expression ltrimInVarchar(StringLikeLiteral first) {
+        return castStringLikeLiteral(first, trimInImpl(first.getValue(), " ", true, false));
+    }
+
+    /**
+     * Executable arithmetic functions ltrim_in
+     */
+    @ExecFunction(name = "ltrim_in")
+    public static Expression ltrimInVarcharVarchar(StringLikeLiteral first, StringLikeLiteral second) {
+        return castStringLikeLiteral(first, trimInImpl(first.getValue(), second.getValue(), true, false));
+    }
+
+    /**
+     * Executable arithmetic functions rtrim_in
+     */
+    @ExecFunction(name = "rtrim_in")
+    public static Expression rtrimInVarchar(StringLikeLiteral first) {
+        return castStringLikeLiteral(first, trimInImpl(first.getValue(), " ", false, true));
+    }
+
+    /**
+     * Executable arithmetic functions rtrim_in
+     */
+    @ExecFunction(name = "rtrim_in")
+    public static Expression rtrimInVarcharVarchar(StringLikeLiteral first, StringLikeLiteral second) {
+        return castStringLikeLiteral(first, trimInImpl(first.getValue(), second.getValue(), false, true));
     }
 
     /**
@@ -250,7 +319,20 @@ public class StringArithmetic {
      */
     @ExecFunction(name = "locate")
     public static Expression locate(StringLikeLiteral first, StringLikeLiteral second) {
-        return new IntegerLiteral(second.getValue().trim().indexOf(first.getValue()) + 1);
+        return new IntegerLiteral(second.getValue().indexOf(first.getValue()) + 1);
+    }
+
+    /**
+     * Executable arithmetic functions Locate
+     */
+    @ExecFunction(name = "locate")
+    public static Expression locate(StringLikeLiteral first, StringLikeLiteral second, IntegerLiteral third) {
+        int result = second.getValue().indexOf(first.getValue()) + 1;
+        if (third.getValue() <= 0 || !substringImpl(second.getValue(), third.getValue(),
+                second.getValue().length()).contains(first.getValue())) {
+            result = 0;
+        }
+        return new IntegerLiteral(result);
     }
 
     /**
@@ -265,12 +347,14 @@ public class StringArithmetic {
      * Executable arithmetic functions Ascii
      */
     @ExecFunction(name = "ascii")
-    public static Expression ascii(StringLikeLiteral first) {
+    public static Expression ascii(StringLikeLiteral first) throws UnsupportedEncodingException {
         if (first.getValue().length() == 0) {
             return new IntegerLiteral(0);
         }
-        char firstChar = first.getValue().charAt(0);
-        return new IntegerLiteral(firstChar);
+        String character = first.getValue();
+        byte[] utf8Bytes = character.getBytes("UTF-8");
+        int firstByteAscii = utf8Bytes[0] & 0xFF;
+        return new IntegerLiteral(firstByteAscii);
     }
 
     /**
@@ -537,6 +621,10 @@ public class StringArithmetic {
      */
     @ExecFunction(name = "repeat")
     public static Expression repeat(StringLikeLiteral first, IntegerLiteral second) {
+        // when it is too large for fe to make result string, do not folding on fe, limit 1 MB
+        if ((first.getValue().length() * second.getValue()) > 1000000) {
+            throw new AnalysisException("repeat too large to fold const by fe");
+        }
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < second.getValue(); i++) {
             sb.append(first.getValue());
@@ -559,6 +647,10 @@ public class StringArithmetic {
      */
     @ExecFunction(name = "space")
     public static Expression space(IntegerLiteral first) {
+        // when it is too large for fe to make result string, do not folding on fe, limit 1 MB
+        if (first.getValue() > 1000000) {
+            throw new AnalysisException("space too large to fold const by fe");
+        }
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < first.getValue(); i++) {
             sb.append(' ');
@@ -571,7 +663,7 @@ public class StringArithmetic {
      */
     @ExecFunction(name = "split_by_char")
     public static Expression splitByChar(StringLikeLiteral first, StringLikeLiteral second) {
-        String[] result = first.getValue().split(second.getValue());
+        String[] result = first.getValue().split(second.getValue(), -1);
         List<Literal> items = new ArrayList<>();
         for (int i = 1; i < result.length; i++) {
             items.add((Literal) castStringLikeLiteral(first, result[i]));
@@ -607,6 +699,7 @@ public class StringArithmetic {
         String[] parts;
         if (number.getValue() < 0) {
             StringBuilder sb = new StringBuilder(first.getValue());
+<<<<<<< HEAD
             StringBuilder separatorBuilder = new StringBuilder(separator);
             separator = separatorBuilder.reverse().toString();
             parts = sb.reverse().toString().split(Pattern.quote(separator), -1);
@@ -615,6 +708,28 @@ public class StringArithmetic {
         }
 
         if (parts.length < Math.abs(number.getValue())) {
+=======
+            StringBuilder seperatorBuilder = new StringBuilder(separator);
+            separator = seperatorBuilder.reverse().toString();
+            if (".$|()[{^?*+\\".contains(separator) || separator.startsWith("\\")) {
+                separator = "\\" + separator;
+            }
+            parts = sb.reverse().toString().split(separator, -1);
+        } else {
+            if (".$|()[{^?*+\\".contains(separator) || separator.startsWith("\\")) {
+                separator = "\\" + separator;
+            }
+            parts = first.getValue().split(separator, -1);
+        }
+
+        if (parts.length < Math.abs(number.getValue()) || number.getValue() == 0) {
+            if (parts.length == Math.abs(number.getValue())) {
+                if (number.getValue() < 0 && first.getValue().startsWith(chr.getValue())
+                        || number.getValue() > 0 && first.getValue().endsWith(chr.getValue())) {
+                    return castStringLikeLiteral(first, "");
+                }
+            }
+>>>>>>> 514b1ac39f
             return new NullLiteral(first.getDataType());
         } else if (number.getValue() < 0) {
             StringBuilder result = new StringBuilder(parts[Math.abs(number.getValue()) - 1]);
@@ -632,7 +747,11 @@ public class StringArithmetic {
         if (chr.getValue().isEmpty()) {
             return chr;
         }
+<<<<<<< HEAD
         String[] parts = first.getValue().split(Pattern.quote(chr.getValue()), -1);
+=======
+        String[] parts = first.getValue().split(chr.getValue(), -1);
+>>>>>>> 514b1ac39f
         if (Math.abs(number.getValue()) >= parts.length) {
             return first;
         }
@@ -813,6 +932,9 @@ public class StringArithmetic {
      */
     @ExecFunction(name = "append_trailing_char_if_absent")
     public static Expression appendTrailingCharIfAbsent(StringLikeLiteral first, StringLikeLiteral second) {
+        if (second.getValue().length() != 1) {
+            return new NullLiteral(first.getDataType());
+        }
         if (first.getValue().endsWith(second.getValue())) {
             return first;
         } else {

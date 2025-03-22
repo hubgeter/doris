@@ -433,6 +433,10 @@ public class SqlCacheContext {
         public String toString() {
             return catalog + "." + db + "." + table;
         }
+
+        public List<String> toList() {
+            return Lists.newArrayList(catalog, db, table);
+        }
     }
 
     /** FullColumnName */

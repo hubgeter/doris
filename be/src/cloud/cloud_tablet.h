@@ -92,7 +92,7 @@ public:
     void clear_cache() override;
 
     // Return number of deleted stale rowsets
-    int delete_expired_stale_rowsets();
+    uint64_t delete_expired_stale_rowsets();
 
     bool has_stale_rowsets() const { return !_stale_rs_version_map.empty(); }
 
@@ -209,11 +209,11 @@ public:
 
     void build_tablet_report_info(TTabletInfo* tablet_info);
 
+    static void recycle_cached_data(const std::vector<RowsetSharedPtr>& rowsets);
+
 private:
     // FIXME(plat1ko): No need to record base size if rowsets are ordered by version
     void update_base_size(const Rowset& rs);
-
-    static void recycle_cached_data(const std::vector<RowsetSharedPtr>& rowsets);
 
     Status sync_if_not_running();
 

@@ -64,7 +64,7 @@ private:
 
 class OrdinalPageIndexIterator;
 
-class OrdinalIndexReader {
+class OrdinalIndexReader : public MetadataAdder<OrdinalIndexReader> {
 public:
     explicit OrdinalIndexReader(io::FileReaderSPtr file_reader, ordinal_t num_values,
                                 const OrdinalIndexPB& meta_pb)
@@ -96,6 +96,11 @@ private:
     Status _load(bool use_page_cache, bool kept_in_memory,
                  std::unique_ptr<OrdinalIndexPB> index_meta,
                  OlapReaderStatistics* index_load_stats);
+<<<<<<< HEAD
+=======
+
+    int64_t get_metadata_size() const override;
+>>>>>>> 514b1ac39f
 
 private:
     friend OrdinalPageIndexIterator;

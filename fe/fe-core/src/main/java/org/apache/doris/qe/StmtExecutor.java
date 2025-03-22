@@ -237,6 +237,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -339,6 +340,10 @@ public class StmtExecutor {
                             context.getSessionVariable().enableProfile(),
                             context.getSessionVariable().getProfileLevel(),
                             context.getSessionVariable().getAutoProfileThresholdMs());
+    }
+
+    public boolean isProxy() {
+        return isProxy;
     }
 
     public static InternalService.PDataRow getRowStringValue(List<Expr> cols,
@@ -626,6 +631,8 @@ public class StmtExecutor {
                 }
                 parsedStmt = null;
                 planner = null;
+                isForwardedToMaster = null;
+                redirectStatus = null;
                 // Attention: currently exception from nereids does not mean an Exception to user terminal
                 // unless user does not allow fallback to lagency planner. But state of query
                 // has already been set to Error in this case, it will have some side effect on profile result
@@ -719,7 +726,11 @@ public class StmtExecutor {
         }
         if (logicalPlan instanceof Command) {
             if (logicalPlan instanceof Forward) {
+<<<<<<< HEAD
                 OlapGroupCommitInsertExecutor.analyzeGroupCommit(logicalPlan);
+=======
+                OlapGroupCommitInsertExecutor.analyzeGroupCommit(context, logicalPlan);
+>>>>>>> 514b1ac39f
                 redirectStatus = ((Forward) logicalPlan).toRedirectStatus();
                 if (isForwardToMaster()) {
                     // before forward to master, we also need to set profileType in this node
@@ -886,7 +897,8 @@ public class StmtExecutor {
     private void handleQueryWithRetry(TUniqueId queryId) throws Exception {
         // queue query here
         int retryTime = Config.max_query_retry_time;
-        for (int i = 0; i <= retryTime; i++) {
+        retryTime = retryTime <= 0 ? 1 : retryTime + 1;
+        for (int i = 0; i < retryTime; i++) {
             try {
                 // reset query id for each retry
                 if (i > 0) {
@@ -1347,10 +1359,11 @@ public class StmtExecutor {
             }
             // table id in tableList is in ascending order because that table map is a sorted map
             List<TableIf> tables = Lists.newArrayList(tableMap.values());
+            tables.sort((Comparator.comparing(TableIf::getId)));
             int analyzeTimes = 2;
             if (Config.isCloudMode()) {
                 // be core and be restarted, need retry more times
-                analyzeTimes = Config.max_query_retry_time / 2;
+                analyzeTimes = Math.max(Config.max_query_retry_time / 2, 2);
             }
             for (int i = 1; i <= analyzeTimes; i++) {
                 MetaLockUtils.readLockTables(tables);
@@ -1574,7 +1587,7 @@ public class StmtExecutor {
     }
 
     // Because this is called by other thread
-    public void cancel(Status cancelReason) {
+    public void cancel(Status cancelReason, boolean needWaitCancelComplete) {
         if (masterOpExecutor != null) {
             try {
                 masterOpExecutor.cancel();
@@ -1598,10 +1611,14 @@ public class StmtExecutor {
         if (parsedStmt instanceof AnalyzeTblStmt || parsedStmt instanceof AnalyzeDBStmt) {
             Env.getCurrentEnv().getAnalysisManager().cancelSyncTask(context);
         }
-        if (insertOverwriteTableCommand.isPresent()) {
+        if (insertOverwriteTableCommand.isPresent() && needWaitCancelComplete) {
             // Wait for the command to run or cancel completion
             insertOverwriteTableCommand.get().waitNotRunning();
         }
+    }
+
+    public void cancel(Status cancelReason) {
+        cancel(cancelReason, true);
     }
 
     private Optional<InsertOverwriteTableCommand> getInsertOverwriteTableCommand() {
@@ -1884,7 +1901,8 @@ public class StmtExecutor {
         // TODO support arrow flight sql
         // NOTE: If you want to add another condition about SessionVariable, please consider whether
         // add to CacheAnalyzer.commonCacheCondition
-        if (channel != null && !isOutfileQuery && CacheAnalyzer.canUseCache(context.getSessionVariable())) {
+        if (channel != null && !isOutfileQuery && CacheAnalyzer.canUseCache(context.getSessionVariable())
+                && parsedStmt.getOrigStmt() != null && parsedStmt.getOrigStmt().originStmt != null) {
             if (queryStmt instanceof QueryStmt || queryStmt instanceof LogicalPlanAdapter) {
                 handleCacheStmt(cacheAnalyzer, channel);
                 LOG.info("Query {} finished", DebugUtil.printId(context.queryId));
@@ -2373,10 +2391,11 @@ public class StmtExecutor {
                     LOG.info("group commit insert failed. stmt: {}, query_id: {}, db_id: {}, table_id: {}"
                                     + ", schema version: {}, backend_id: {}, status: {}, retry: {}",
                             insertStmt.getOrigStmt().originStmt, DebugUtil.printId(context.queryId()), dbId, tableId,
-                            nativeInsertStmt.getBaseSchemaVersion(), groupCommitPlanner.getBackend().getId(),
+                            nativeInsertStmt.getBaseSchemaVersion(), groupCommitPlanner.getBackendId(),
                             response.getStatus(), i);
                     if (i < maxRetry) {
                         List<TableIf> tables = Lists.newArrayList(insertStmt.getTargetTable());
+                        tables.sort((Comparator.comparing(TableIf::getId)));
                         MetaLockUtils.readLockTables(tables);
                         try {
                             insertStmt.reset();
@@ -2389,15 +2408,15 @@ public class StmtExecutor {
                     } else {
                         errMsg = "group commit insert failed. db_id: " + dbId + ", table_id: " + tableId
                                 + ", query_id: " + DebugUtil.printId(context.queryId()) + ", backend_id: "
-                                + groupCommitPlanner.getBackend().getId() + ", status: " + response.getStatus();
+                                + groupCommitPlanner.getBackendId() + ", status: " + response.getStatus();
                         if (response.hasErrorUrl()) {
                             errMsg += ", error url: " + response.getErrorUrl();
                         }
                     }
                 } else if (code != TStatusCode.OK) {
                     errMsg = "group commit insert failed. db_id: " + dbId + ", table_id: " + tableId + ", query_id: "
-                            + DebugUtil.printId(context.queryId()) + ", backend_id: " + groupCommitPlanner.getBackend()
-                            .getId() + ", status: " + response.getStatus();
+                            + DebugUtil.printId(context.queryId()) + ", backend_id: "
+                            + groupCommitPlanner.getBackendId() + ", status: " + response.getStatus();
                     if (response.hasErrorUrl()) {
                         errMsg += ", error url: " + response.getErrorUrl();
                     }
@@ -3603,7 +3622,7 @@ public class StmtExecutor {
         try {
             try {
                 // disable shuffle for http stream (only 1 sink)
-                sessionVariable.disableStrictConsistencyDmlOnce();
+                sessionVariable.setVarOnce(SessionVariable.ENABLE_STRICT_CONSISTENCY_DML, "false");
                 httpStreamParams = generateHttpStreamNereidsPlan(queryId);
             } catch (NereidsException | ParseException e) {
                 if (context.getMinidump() != null && context.getMinidump().toString(4) != null) {

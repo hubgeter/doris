@@ -176,6 +176,7 @@ import org.apache.doris.nereids.DorisParser.ShowConstraintContext;
 import org.apache.doris.nereids.DorisParser.ShowCreateMTMVContext;
 import org.apache.doris.nereids.DorisParser.ShowCreateProcedureContext;
 import org.apache.doris.nereids.DorisParser.ShowProcedureStatusContext;
+import org.apache.doris.nereids.DorisParser.ShowViewContext;
 import org.apache.doris.nereids.DorisParser.SimpleColumnDefContext;
 import org.apache.doris.nereids.DorisParser.SimpleColumnDefsContext;
 import org.apache.doris.nereids.DorisParser.SingleStatementContext;
@@ -399,6 +400,7 @@ import org.apache.doris.nereids.trees.plans.commands.ShowConstraintsCommand;
 import org.apache.doris.nereids.trees.plans.commands.ShowCreateMTMVCommand;
 import org.apache.doris.nereids.trees.plans.commands.ShowCreateProcedureCommand;
 import org.apache.doris.nereids.trees.plans.commands.ShowProcedureStatusCommand;
+import org.apache.doris.nereids.trees.plans.commands.ShowViewCommand;
 import org.apache.doris.nereids.trees.plans.commands.UnsupportedCommand;
 import org.apache.doris.nereids.trees.plans.commands.UpdateCommand;
 import org.apache.doris.nereids.trees.plans.commands.info.AlterMTMVInfo;
@@ -636,7 +638,8 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
             command = new InsertOverwriteTableCommand(sink, labelName, cte);
         } else {
             if (ConnectContext.get() != null && ConnectContext.get().isTxnModel()
-                    && sink.child() instanceof LogicalInlineTable) {
+                    && sink.child() instanceof LogicalInlineTable
+                    && sink.child().getExpressions().stream().allMatch(Expression::isConstant)) {
                 // FIXME: In legacy, the `insert into select 1` is handled as `insert into values`.
                 //  In nereids, the original way is throw an AnalysisException and fallback to legacy.
                 //  Now handle it as `insert into select`(a separate load job), should fix it as the legacy.
@@ -3411,10 +3414,16 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
             Expression outExpression;
             switch (ctx.kind.getType()) {
                 case DorisParser.BETWEEN:
-                    outExpression = new And(
-                            new GreaterThanEqual(valueExpression, getExpression(ctx.lower)),
-                            new LessThanEqual(valueExpression, getExpression(ctx.upper))
-                    );
+                    Expression lower = getExpression(ctx.lower);
+                    Expression upper = getExpression(ctx.upper);
+                    if (lower.equals(upper)) {
+                        outExpression = new EqualTo(valueExpression, lower);
+                    } else {
+                        outExpression = new And(
+                                new GreaterThanEqual(valueExpression, getExpression(ctx.lower)),
+                                new LessThanEqual(valueExpression, getExpression(ctx.upper))
+                        );
+                    }
                     break;
                 case DorisParser.LIKE:
                     outExpression = new Like(
@@ -3785,5 +3794,15 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
             command.setBackendId(backendId);
         }
         return command;
+    }
+
+    @Override
+    public ShowViewCommand visitShowView(ShowViewContext ctx) {
+        List<String> tableNameParts = visitMultipartIdentifier(ctx.tableName);
+        String databaseName = null;
+        if (ctx.database != null) {
+            databaseName = stripQuotes(ctx.database.getText());
+        }
+        return new ShowViewCommand(databaseName, new TableNameInfo(tableNameParts));
     }
 }

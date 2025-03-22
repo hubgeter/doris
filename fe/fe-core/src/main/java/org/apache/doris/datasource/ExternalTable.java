@@ -31,6 +31,11 @@ import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.common.util.PropertyAnalyzer;
 import org.apache.doris.common.util.Util;
+<<<<<<< HEAD
+=======
+import org.apache.doris.datasource.ExternalSchemaCache.SchemaCacheKey;
+import org.apache.doris.datasource.mvcc.MvccSnapshot;
+>>>>>>> 514b1ac39f
 import org.apache.doris.nereids.trees.plans.logical.LogicalFileScan.SelectedPartitions;
 import org.apache.doris.persist.gson.GsonPostProcessable;
 import org.apache.doris.persist.gson.GsonUtils;
@@ -69,10 +74,13 @@ public class ExternalTable implements TableIf, Writable, GsonPostProcessable {
     protected long id;
     @SerializedName(value = "name")
     protected String name;
+    @SerializedName(value = "remoteName")
+    protected String remoteName;
     @SerializedName(value = "type")
     protected TableType type = null;
     @SerializedName(value = "timestamp")
     protected long timestamp;
+    // dbName is temporarily retained and will be deleted later. To use dbName, please use db.getFullName()
     @SerializedName(value = "dbName")
     protected String dbName;
     @SerializedName(value = "ta")
@@ -84,6 +92,7 @@ public class ExternalTable implements TableIf, Writable, GsonPostProcessable {
     protected long dbId;
     protected boolean objectCreated;
     protected ExternalCatalog catalog;
+    protected ExternalDatabase db;
 
     /**
      * No args constructor for persist.
@@ -97,21 +106,33 @@ public class ExternalTable implements TableIf, Writable, GsonPostProcessable {
      *
      * @param id Table id.
      * @param name Table name.
+     * @param remoteName Remote table name.
      * @param catalog ExternalCatalog this table belongs to.
-     * @param dbName Name of the db the this table belongs to.
+     * @param db ExternalDatabase this table belongs to.
      * @param type Table type.
      */
-    public ExternalTable(long id, String name, ExternalCatalog catalog, String dbName, TableType type) {
+    public ExternalTable(long id, String name, String remoteName, ExternalCatalog catalog, ExternalDatabase db,
+            TableType type) {
         this.id = id;
         this.name = name;
+        this.remoteName = remoteName;
         this.catalog = catalog;
-        this.dbName = dbName;
+        this.db = db;
+        this.dbName = db.getFullName();
         this.type = type;
         this.objectCreated = false;
     }
 
     public void setCatalog(ExternalCatalog catalog) {
         this.catalog = catalog;
+    }
+
+    public void setDb(ExternalDatabase db) {
+        this.db = db;
+    }
+
+    public void setRemoteName(String remoteName) {
+        this.remoteName = remoteName;
     }
 
     public boolean isView() {
@@ -137,6 +158,10 @@ public class ExternalTable implements TableIf, Writable, GsonPostProcessable {
     @Override
     public String getName() {
         return name;
+    }
+
+    public String getRemoteName() {
+        return remoteName;
     }
 
     @Override
@@ -239,6 +264,11 @@ public class ExternalTable implements TableIf, Writable, GsonPostProcessable {
     }
 
     @Override
+    public long getIndexLength() {
+        return 0;
+    }
+
+    @Override
     public long getCreateTime() {
         return 0;
     }
@@ -281,7 +311,7 @@ public class ExternalTable implements TableIf, Writable, GsonPostProcessable {
 
     @Override
     public DatabaseIf getDatabase() {
-        return catalog.getDbNullable(dbName);
+        return this.db;
     }
 
     @Override
@@ -311,8 +341,12 @@ public class ExternalTable implements TableIf, Writable, GsonPostProcessable {
      *
      * @return
      */
-    public Optional<SchemaCacheValue> initSchemaAndUpdateTime() {
+    public Optional<SchemaCacheValue> initSchemaAndUpdateTime(SchemaCacheKey key) {
         schemaUpdateTime = System.currentTimeMillis();
+        return initSchema(key);
+    }
+
+    public Optional<SchemaCacheValue> initSchema(SchemaCacheKey key) {
         return initSchema();
     }
 
@@ -369,6 +403,7 @@ public class ExternalTable implements TableIf, Writable, GsonPostProcessable {
         return new TableIndexes();
     }
 
+<<<<<<< HEAD
     public SelectedPartitions initSelectedPartitions() {
         if (!supportInternalPartitionPruned()) {
             return SelectedPartitions.NOT_PRUNED;
@@ -390,6 +425,53 @@ public class ExternalTable implements TableIf, Writable, GsonPostProcessable {
         return Collections.emptyList();
     }
 
+=======
+    /**
+     * Retrieve all partitions and initialize SelectedPartitions
+     *
+     * @param snapshot if not support mvcc, ignore this
+     * @return
+     */
+    public SelectedPartitions initSelectedPartitions(Optional<MvccSnapshot> snapshot) {
+        if (!supportInternalPartitionPruned()) {
+            return SelectedPartitions.NOT_PRUNED;
+        }
+        if (CollectionUtils.isEmpty(this.getPartitionColumns(snapshot))) {
+            return SelectedPartitions.NOT_PRUNED;
+        }
+        Map<String, PartitionItem> nameToPartitionItems = getNameToPartitionItems(snapshot);
+        return new SelectedPartitions(nameToPartitionItems.size(), nameToPartitionItems, false);
+    }
+
+    /**
+     * get partition map
+     * If partition related operations are supported, this method needs to be implemented in the subclass
+     *
+     * @param snapshot if not support mvcc, ignore this
+     * @return partitionName ==> PartitionItem
+     */
+    public Map<String, PartitionItem> getNameToPartitionItems(Optional<MvccSnapshot> snapshot) {
+        return Collections.emptyMap();
+    }
+
+    /**
+     * get partition column list
+     * If partition related operations are supported, this method needs to be implemented in the subclass
+     *
+     * @param snapshot if not support mvcc, ignore this
+     * @return
+     */
+    public List<Column> getPartitionColumns(Optional<MvccSnapshot> snapshot) {
+        return Collections.emptyList();
+    }
+
+    /**
+     * Does it support Internal partition pruned, If so, this method needs to be overridden in subclasses
+     * Internal partition pruned : Implement partition pruning logic without relying on external APIs.
+     *
+     * @return
+     */
+>>>>>>> 514b1ac39f
     public boolean supportInternalPartitionPruned() {
         return false;
     }

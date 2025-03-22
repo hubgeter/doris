@@ -18,13 +18,21 @@
 package org.apache.doris.datasource.jdbc.client;
 
 import org.apache.doris.catalog.ArrayType;
+<<<<<<< HEAD
 import org.apache.doris.catalog.PrimitiveType;
+=======
+>>>>>>> 514b1ac39f
 import org.apache.doris.catalog.ScalarType;
 import org.apache.doris.catalog.Type;
 import org.apache.doris.common.util.Util;
 import org.apache.doris.datasource.jdbc.util.JdbcFieldSchema;
 
 import com.google.common.collect.Lists;
+<<<<<<< HEAD
+=======
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+>>>>>>> 514b1ac39f
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -37,6 +45,13 @@ import java.util.List;
 import java.util.Optional;
 
 public class JdbcPostgreSQLClient extends JdbcClient {
+    private static final Logger LOG = LogManager.getLogger(JdbcPostgreSQLClient.class);
+
+    private static final String[] supportedInnerType = new String[] {
+            "int2", "int4", "int8", "smallserial", "serial",
+            "bigserial", "float4", "float8", "timestamp", "timestamptz",
+            "date", "bool", "bpchar", "varchar", "text"
+    };
 
     private static final String[] supportedInnerType = new String[] {
             "int2", "int4", "int8", "smallserial", "serial",
@@ -49,12 +64,19 @@ public class JdbcPostgreSQLClient extends JdbcClient {
     }
 
     @Override
+<<<<<<< HEAD
     public List<JdbcFieldSchema> getJdbcColumnsInfo(String localDbName, String localTableName) {
         Connection conn = null;
         ResultSet rs = null;
         List<JdbcFieldSchema> tableSchema = Lists.newArrayList();
         String remoteDbName = getRemoteDatabaseName(localDbName);
         String remoteTableName = getRemoteTableName(localDbName, localTableName);
+=======
+    public List<JdbcFieldSchema> getJdbcColumnsInfo(String remoteDbName, String remoteTableName) {
+        Connection conn = null;
+        ResultSet rs = null;
+        List<JdbcFieldSchema> tableSchema = Lists.newArrayList();
+>>>>>>> 514b1ac39f
         try {
             conn = getConnection();
             DatabaseMetaData databaseMetaData = conn.getMetaData();
@@ -114,9 +136,7 @@ public class JdbcPostgreSQLClient extends JdbcClient {
             case "float8":
                 return Type.DOUBLE;
             case "bpchar":
-                ScalarType charType = ScalarType.createType(PrimitiveType.CHAR);
-                charType.setLength(fieldSchema.getColumnSize().orElse(0));
-                return charType;
+                return ScalarType.createCharType(fieldSchema.requiredColumnSize());
             case "timestamp":
             case "timestamptz": {
                 // postgres can support microsecond
@@ -170,6 +190,10 @@ public class JdbcPostgreSQLClient extends JdbcClient {
     private Type convertArrayType(JdbcFieldSchema fieldSchema) {
         int arrayDimensions = fieldSchema.getArrayDimensions().orElse(0);
         if (arrayDimensions == 0) {
+<<<<<<< HEAD
+=======
+            LOG.warn("postgres array type without dimensions");
+>>>>>>> 514b1ac39f
             return Type.UNSUPPORTED;
         }
 

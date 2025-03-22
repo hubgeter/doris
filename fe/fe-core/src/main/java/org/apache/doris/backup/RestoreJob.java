@@ -1354,7 +1354,8 @@ public class RestoreJob extends AbstractJob implements GsonPostProcessable {
                             localTbl.getRowStoreColumnsUniqueIds(rowStoreColumns),
                             objectPool,
                             localTbl.rowStorePageSize(),
-                            localTbl.variantEnableFlattenNested());
+                            localTbl.variantEnableFlattenNested(),
+                            localTbl.storagePageSize());
                     task.setInvertedIndexFileStorageFormat(localTbl.getInvertedIndexFileStorageFormat());
                     task.setInRestoreMode(true);
                     if (baseTabletRef != null) {
@@ -1687,16 +1688,10 @@ public class RestoreJob extends AbstractJob implements GsonPostProcessable {
                 for (Long beId : beToSnapshots.keySet()) {
                     List<SnapshotInfo> beSnapshotInfos = beToSnapshots.get(beId);
                     int totalNum = beSnapshotInfos.size();
-                    int batchNum = totalNum;
-                    if (Config.restore_download_task_num_per_be > 0) {
-                        batchNum = Math.min(totalNum, Config.restore_download_task_num_per_be);
-                    }
                     // each task contains several upload sub tasks
-                    int taskNumPerBatch = Math.max(totalNum / batchNum, 1);
-                    if (LOG.isDebugEnabled()) {
-                        LOG.debug("backend {} has {} batch, total {} tasks, {}",
-                                  beId, batchNum, totalNum, this);
-                    }
+                    int taskNumPerBatch = Config.restore_download_snapshot_batch_size;
+                    LOG.info("backend {} has total {} snapshots, per task batch size {}, {}",
+                            beId, totalNum, taskNumPerBatch, this);
 
                     List<FsBroker> brokerAddrs = null;
                     brokerAddrs = Lists.newArrayList();
@@ -1708,12 +1703,10 @@ public class RestoreJob extends AbstractJob implements GsonPostProcessable {
                     Preconditions.checkState(brokerAddrs.size() == 1);
 
                     // allot tasks
-                    int index = 0;
-                    for (int batch = 0; batch < batchNum; batch++) {
+                    for (int index = 0; index < totalNum; index += taskNumPerBatch) {
                         Map<String, String> srcToDest = Maps.newHashMap();
-                        int currentBatchTaskNum = (batch == batchNum - 1) ? totalNum - index : taskNumPerBatch;
-                        for (int j = 0; j < currentBatchTaskNum; j++) {
-                            SnapshotInfo info = beSnapshotInfos.get(index++);
+                        for (int j = 0; j < taskNumPerBatch && index + j < totalNum; j++) {
+                            SnapshotInfo info = beSnapshotInfos.get(index + j);
                             Table tbl = db.getTableNullable(info.getTblId());
                             if (tbl == null) {
                                 status = new Status(ErrCode.NOT_FOUND, "restored table "
@@ -1847,22 +1840,17 @@ public class RestoreJob extends AbstractJob implements GsonPostProcessable {
                 for (Long beId : beToSnapshots.keySet()) {
                     List<SnapshotInfo> beSnapshotInfos = beToSnapshots.get(beId);
                     int totalNum = beSnapshotInfos.size();
-                    int batchNum = totalNum;
-                    if (Config.restore_download_task_num_per_be > 0) {
-                        batchNum = Math.min(totalNum, Config.restore_download_task_num_per_be);
-                    }
                     // each task contains several upload sub tasks
-                    int taskNumPerBatch = Math.max(totalNum / batchNum, 1);
+                    int taskNumPerBatch = Config.restore_download_snapshot_batch_size;
+                    LOG.info("backend {} has total {} snapshots, per task batch size {}, {}",
+                            beId, totalNum, taskNumPerBatch, this);
 
                     // allot tasks
-                    int index = 0;
-                    for (int batch = 0; batch < batchNum; batch++) {
+                    for (int index = 0; index < totalNum; index += taskNumPerBatch) {
                         List<TRemoteTabletSnapshot> remoteTabletSnapshots = Lists.newArrayList();
-                        int currentBatchTaskNum = (batch == batchNum - 1) ? totalNum - index : taskNumPerBatch;
-                        for (int j = 0; j < currentBatchTaskNum; j++) {
+                        for (int j = 0; j < taskNumPerBatch && index + j < totalNum; j++) {
                             TRemoteTabletSnapshot remoteTabletSnapshot = new TRemoteTabletSnapshot();
-
-                            SnapshotInfo info = beSnapshotInfos.get(index++);
+                            SnapshotInfo info = beSnapshotInfos.get(index + j);
                             Table tbl = db.getTableNullable(info.getTblId());
                             if (tbl == null) {
                                 status = new Status(ErrCode.NOT_FOUND, "restored table "
@@ -2114,8 +2102,8 @@ public class RestoreJob extends AbstractJob implements GsonPostProcessable {
             restoredTbls.clear();
             restoredResources.clear();
 
-            // release snapshot before clearing snapshotInfos
-            releaseSnapshots();
+            com.google.common.collect.Table<Long, Long, SnapshotInfo> savedSnapshotInfos = snapshotInfos;
+            snapshotInfos = HashBasedTable.create();
 
             snapshotInfos.clear();
             fileMapping.clear();
@@ -2125,6 +2113,9 @@ public class RestoreJob extends AbstractJob implements GsonPostProcessable {
             state = RestoreJobState.FINISHED;
 
             env.getEditLog().logRestoreJob(this);
+
+            // Only send release snapshot tasks after the job is finished.
+            releaseSnapshots(savedSnapshotInfos);
         }
 
         LOG.info("job is finished. is replay: {}. {}", isReplay, this);
@@ -2192,7 +2183,7 @@ public class RestoreJob extends AbstractJob implements GsonPostProcessable {
         }
     }
 
-    private void releaseSnapshots() {
+    private void releaseSnapshots(com.google.common.collect.Table<Long, Long, SnapshotInfo> snapshotInfos) {
         if (snapshotInfos.isEmpty()) {
             return;
         }
@@ -2221,6 +2212,11 @@ public class RestoreJob extends AbstractJob implements GsonPostProcessable {
     }
 
     public synchronized List<String> getInfo(boolean isBrief) {
+        String unfinishedTaskIdsStr = unfinishedSignatureToId.entrySet().stream()
+                .map(e -> "[" + e.getKey() + "=" + e.getValue() + "]")
+                .limit(100)
+                .collect(Collectors.joining(", "));
+
         List<String> info = Lists.newArrayList();
         info.add(String.valueOf(jobId));
         info.add(label);
@@ -2240,13 +2236,18 @@ public class RestoreJob extends AbstractJob implements GsonPostProcessable {
         info.add(TimeUtils.longToTimeString(snapshotFinishedTime));
         info.add(TimeUtils.longToTimeString(downloadFinishedTime));
         info.add(TimeUtils.longToTimeString(finishedTime));
-        info.add(Joiner.on(", ").join(unfinishedSignatureToId.entrySet()));
+        info.add(unfinishedTaskIdsStr);
         if (!isBrief) {
-            info.add(Joiner.on(", ").join(taskProgress.entrySet().stream().map(
-                    e -> "[" + e.getKey() + ": " + e.getValue().first + "/" + e.getValue().second + "]").collect(
-                    Collectors.toList())));
-            info.add(Joiner.on(", ").join(taskErrMsg.entrySet().stream().map(n -> "[" + n.getKey() + ": "
-                    + n.getValue() + "]").collect(Collectors.toList())));
+            String taskProgressStr = taskProgress.entrySet().stream()
+                    .map(e -> "[" + e.getKey() + ": " + e.getValue().first + "/" + e.getValue().second + "]")
+                    .limit(100)
+                    .collect(Collectors.joining(", "));
+            String taskErrMsgStr = taskErrMsg.entrySet().stream()
+                    .map(n -> "[" + n.getKey() + ": " + n.getValue() + "]")
+                    .limit(100)
+                    .collect(Collectors.joining(", "));
+            info.add(taskProgressStr);
+            info.add(taskErrMsgStr);
         }
         info.add(status.toString());
         info.add(String.valueOf(timeoutMs / 1000));
@@ -2376,9 +2377,8 @@ public class RestoreJob extends AbstractJob implements GsonPostProcessable {
             // backupMeta is useless
             backupMeta = null;
 
-            releaseSnapshots();
-
-            snapshotInfos.clear();
+            com.google.common.collect.Table<Long, Long, SnapshotInfo> savedSnapshotInfos = snapshotInfos;
+            snapshotInfos = HashBasedTable.create();
             fileMapping.clear();
             jobInfo.releaseSnapshotInfo();
 
@@ -2390,6 +2390,10 @@ public class RestoreJob extends AbstractJob implements GsonPostProcessable {
 
             LOG.info("finished to cancel restore job. current state: {}. is replay: {}. {}",
                      curState.name(), isReplay, this);
+
+            // Send release snapshot tasks after log restore job, so that the snapshot won't be released
+            // before the cancelled restore job is persisted.
+            releaseSnapshots(savedSnapshotInfos);
             return;
         }
 

@@ -170,6 +170,10 @@ public class CloudClusterChecker extends MasterDaemon {
             String endpoint = addr + ":" + node.getHeartbeatPort();
             Cloud.NodeStatusPB status = node.getStatus();
             Backend be = currentMap.get(endpoint);
+            if (be == null) {
+                LOG.warn("cant get valid be {} from fe mem, ignore it checker will add this be at next", endpoint);
+                continue;
+            }
 
             if (status == Cloud.NodeStatusPB.NODE_STATUS_DECOMMISSIONING) {
                 if (!be.isDecommissioned()) {
@@ -179,8 +183,21 @@ public class CloudClusterChecker extends MasterDaemon {
                     } catch (UserException e) {
                         LOG.warn("failed to register water shed txn id, decommission be {}", be.getId(), e);
                     }
-                    be.setDecommissioned(true);
+                    be.setDecommissioning(true);
                 }
+            }
+
+            if (status == Cloud.NodeStatusPB.NODE_STATUS_DECOMMISSIONED) {
+                // When the synchronization status of the node is "NODE_STATUS_DECOMMISSIONED",
+                // it indicates that the conditions for decommissioning have
+                // already been checked in CloudTabletRebalancer.java,
+                // such as the tablets having been successfully migrated and no remnants of WAL on the backend (BE).
+                if (!be.isDecommissioned()) {
+                    LOG.warn("impossible status, somewhere has bug,  backend: {} status: {}", be, status);
+                }
+                be.setDecommissioned(true);
+                // edit log
+                Env.getCurrentEnv().getEditLog().logBackendStateChange(be);
             }
         }
     }

@@ -702,6 +702,8 @@ public:
 
     size_t get_number_of_arguments() const override { return 0; }
 
+    ColumnNumbers get_arguments_that_are_always_constant() const override { return {1, 2, 3}; }
+
     bool is_variadic() const override { return true; }
 
     Status execute_impl(FunctionContext* context, Block& block, const ColumnNumbers& arguments,
@@ -1524,6 +1526,9 @@ public:
     static FunctionPtr create() { return std::make_shared<FunctionStringRepeat>(); }
     String get_name() const override { return name; }
     size_t get_number_of_arguments() const override { return 2; }
+    // should set NULL value of nested data to default,
+    // as iff it's not inited and invalid, the repeat result of length is so large cause overflow
+    bool need_replace_null_data_to_default() const override { return true; }
 
     DataTypePtr get_return_type_impl(const DataTypes& arguments) const override {
         return make_nullable(std::make_shared<DataTypeString>());
@@ -3648,9 +3653,10 @@ public:
         auto& res_offset = col_res->get_offsets();
         auto& res_chars = col_res->get_chars();
         res_offset.resize(input_rows_count);
-        // max pinyin size is 6, double of utf8 chinese word 3, add one char to set '~'
-        ColumnString::check_chars_length(str_chars.size() * 2 + input_rows_count, 0);
-        res_chars.resize(str_chars.size() * 2 + input_rows_count);
+        // max pinyin size is 6 + 1 (first '~') for utf8 chinese word 3
+        size_t pinyin_size = (str_chars.size() + 2) / 3 * 7;
+        ColumnString::check_chars_length(pinyin_size, 0);
+        res_chars.resize(pinyin_size);
 
         size_t in_len = 0, out_len = 0;
         for (int i = 0; i < input_rows_count; ++i) {
@@ -3691,7 +3697,11 @@ public:
                     }
 
                     auto end = strchr(buf, ' ');
-                    auto len = end != nullptr ? end - buf : MAX_PINYIN_LEN;
+                    // max len for pinyin is 6
+                    int len = MAX_PINYIN_LEN;
+                    if (end != nullptr && end - buf < MAX_PINYIN_LEN) {
+                        len = end - buf;
+                    }
                     // set first char '~' just make sure all english word lower than chinese word
                     *dest = 126;
                     memcpy(dest + 1, buf, len);

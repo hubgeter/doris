@@ -49,6 +49,7 @@ import org.apache.doris.regression.action.HttpCliAction
 import org.apache.doris.regression.util.DataUtils
 import org.apache.doris.regression.util.JdbcUtils
 import org.apache.doris.regression.util.Hdfs
+import org.apache.doris.regression.util.Http
 import org.apache.doris.regression.util.SuiteUtils
 import org.apache.doris.regression.util.DebugPoint
 import org.apache.doris.regression.RunMode
@@ -402,6 +403,10 @@ class Suite implements GroovyInterceptable {
         }
     }
 
+    List<List<Object>> master_sql(String sqlStr, boolean isOrder = false) {
+        return sql_impl(context.getMasterConnection(), sqlStr, isOrder)
+    }
+
     List<List<Object>> multi_sql(String sqlStr, boolean isOrder = false) {
         String[] sqls = sqlStr.split(";")
         def result = new ArrayList<Object>();
@@ -454,7 +459,25 @@ class Suite implements GroovyInterceptable {
         // get all column names as list
         List<String> columnNames = new ArrayList<>()
         for (int i = 0; i < meta.getColumnCount(); i++) {
-            columnNames.add(meta.getColumnName(i + 1))
+            columnNames.add(meta.getColumnLabel(i + 1))
+        }
+
+        // Check if there are duplicates column names.
+        // SQL may return multiple columns with the same name.
+        // which cannot be handled by maps and will result in an error directly.
+        Set<String> uniqueSet = new HashSet<>()
+        Set<String> duplicates = new HashSet<>()
+    
+        for (String str : columnNames) {
+            if (uniqueSet.contains(str)) {
+                duplicates.add(str)
+            } else {
+                uniqueSet.add(str)
+            }
+        }
+        if (!duplicates.isEmpty()) {
+            def errorMessage = "${sqlStr} returns duplicates headers: ${duplicates}"   
+            throw new Exception(errorMessage)
         }
 
         // add result to res map list, each row is a map with key is column name
@@ -511,6 +534,10 @@ class Suite implements GroovyInterceptable {
 
     def jdbc_sql_return_maparray(String sqlStr) {
         return sql_return_maparray_impl(sqlStr, context.getConnection())
+    }
+
+    def master_sql_return_maparray(String sqlStr) {
+        return sql_return_maparray_impl(sqlStr, context.getMasterConnection())
     }
 
     def arrow_flight_sql_return_maparray(String sqlStr) {
@@ -723,10 +750,22 @@ class Suite implements GroovyInterceptable {
         runAction(new ProfileAction(context, tag), actionSupplier)
     }
 
+    void checkNereidsExecute(String sqlString) {
+        sql (sqlString)
+    }
+
+    String checkNereidsExecuteWithResult(String sqlString) {
+        String result = sql (sqlString);
+        return result
+    }
+
     void createMV(String sql) {
         (new CreateMVAction(context, sql)).run()
     }
 
+    // Should use create_sync_mv, this method only check the sync mv in current db
+    // If has multi sync mv in db, may make mistake
+    @Deprecated
     void createMV(String sql, String expection) {
         (new CreateMVAction(context, sql, expection)).run()
     }
@@ -743,6 +782,8 @@ class Suite implements GroovyInterceptable {
         runAction(new WaitForAction(context), actionSupplier)
         if (ObjectUtils.isNotEmpty(insertSql)){
             sql insertSql
+        } else {
+            sql "SYNC"
         }
         if (cleanOperator==true){
             if (ObjectUtils.isEmpty(tbName)) throw new RuntimeException("tbName cloud not be null")
@@ -792,11 +833,11 @@ class Suite implements GroovyInterceptable {
         return randomBoolean ? "true" : "false"
     }
 
-    void expectExceptionLike(Closure userFunction, String errorMessage = null) {
+    void expectExceptionLike(Closure userFunction, String errMsg = null) {
         try {
             userFunction()
         } catch (Exception e) {
-            if (!e.getMessage().contains(errorMessage)) {
+            if (!Strings.isNullOrEmpty(errMsg) && !e.getMessage().contains(errMsg)) {
                 throw e
             }
         }
@@ -816,6 +857,10 @@ class Suite implements GroovyInterceptable {
         String host = context.config.otherConfigs.get("extHiveHmsHost")
         String port = context.config.otherConfigs.get("extHdfsPort")
         return "hdfs://" + host + ":" + port;
+    }
+
+    String getHmsUser() {
+        return context.config.otherConfigs.get("extHiveHmsUser")
     }
 
     String getHdfsUser() {
@@ -864,6 +909,11 @@ class Suite implements GroovyInterceptable {
         def localFile = file.canonicalPath
         log.info("Set stream load input: ${file.canonicalPath}".toString())
         return localFile;
+    }
+
+    boolean enableJdbcTest() {
+        String enable = context.config.otherConfigs.get("enableJdbcTest")
+        return enable != null && enable.equalsIgnoreCase("true")
     }
 
     boolean enableBrokerLoad() {
@@ -1113,7 +1163,7 @@ class Suite implements GroovyInterceptable {
     Connection getTargetConnection() {
         return context.getTargetConnection(this)
     }
-    
+
     boolean deleteFile(String filePath) {
         def file = new File(filePath)
         file.delete()
@@ -1227,6 +1277,8 @@ class Suite implements GroovyInterceptable {
                     tupleResult = JdbcUtils.executeToStringList(context.getArrowFlightSqlConnection(), (PreparedStatement) arg)
                 } else if (tag.contains("target_sql")) {
                     tupleResult = JdbcUtils.executeToStringList(context.getTargetConnection(this), (PreparedStatement) arg)
+                } else if (tag.contains("master_sql")) {
+                    tupleResult = JdbcUtils.executeToStringList(context.getMasterConnection(), (PreparedStatement) arg)
                 } else {
                     tupleResult = JdbcUtils.executeToStringList(context.getConnection(),  (PreparedStatement) arg)
                 }
@@ -1240,6 +1292,8 @@ class Suite implements GroovyInterceptable {
                             (String) ("USE ${context.dbName};" + (String) arg))
                 } else if (tag.contains("target_sql")) {
                     tupleResult = JdbcUtils.executeToStringList(context.getTargetConnection(this), (String) arg)
+                } else if (tag.contains("master_sql")) {
+                    tupleResult = JdbcUtils.executeToStringList(context.getMasterConnection(), (String) arg)
                 } else {
                     tupleResult = JdbcUtils.executeToStringList(context.getConnection(),  (String) arg)
                 }
@@ -1272,6 +1326,8 @@ class Suite implements GroovyInterceptable {
                     tupleResult = JdbcUtils.executeToStringList(context.getArrowFlightSqlConnection(), (PreparedStatement) arg)
                 } else if (tag.contains("target_sql")) {
                     tupleResult = JdbcUtils.executeToStringList(context.getTargetConnection(this), (PreparedStatement) arg)
+                } else if (tag.contains("master_sql")) {
+                    tupleResult = JdbcUtils.executeToStringList(context.getMasterConnection(), (PreparedStatement) arg)
                 } else {
                     tupleResult = JdbcUtils.executeToStringList(context.getConnection(),  (PreparedStatement) arg)
                 }
@@ -1285,6 +1341,8 @@ class Suite implements GroovyInterceptable {
                             (String) ("USE ${context.dbName};" + (String) arg))
                 } else if (tag.contains("target_sql")) {
                     tupleResult = JdbcUtils.executeToStringList(context.getTargetConnection(this), (String) arg)
+                } else if (tag.contains("master_sql")) {
+                    tupleResult = JdbcUtils.executeToStringList(context.getMasterConnection(), (String) arg)
                 } else {
                     tupleResult = JdbcUtils.executeToStringList(context.getConnection(),  (String) arg)
                 }
@@ -1406,71 +1464,101 @@ class Suite implements GroovyInterceptable {
         return debugPoint
     }
 
-    void waitingMTMVTaskFinishedByMvName(String mvName) {
+    def waitingMTMVTaskFinishedByMvName = { mvName, dbName = context.dbName ->
         Thread.sleep(2000);
-        String showTasks = "select TaskId,JobId,JobName,MvId,Status,MvName,MvDatabaseName,ErrorMsg from tasks('type'='mv') where MvName = '${mvName}' order by CreateTime ASC"
+        String showTasks = "select TaskId,JobId,JobName,MvId,Status,MvName,MvDatabaseName,ErrorMsg from tasks('type'='mv') where MvDatabaseName = '${dbName}' and MvName = '${mvName}' order by CreateTime ASC"
         String status = "NULL"
         List<List<Object>> result
         long startTime = System.currentTimeMillis()
         long timeoutTimestamp = startTime + 5 * 60 * 1000 // 5 min
-        do {
+        List<String> toCheckTaskRow = new ArrayList<>();
+        while (timeoutTimestamp > System.currentTimeMillis() && (status == 'PENDING' || status == 'RUNNING' || status == 'NULL')) {
             result = sql(showTasks)
-            logger.info("result: " + result.toString())
-            if (!result.isEmpty()) {
-                status = result.last().get(4)
+            logger.info("current db is " + dbName + ", showTasks is " + result.toString())
+            if (result.isEmpty()) {
+                logger.info("waitingMTMVTaskFinishedByMvName toCheckTaskRow is empty")
+                Thread.sleep(1000);
+                continue;
             }
+            toCheckTaskRow = result.last();
+            status = toCheckTaskRow.get(4)
             logger.info("The state of ${showTasks} is ${status}")
             Thread.sleep(1000);
-        } while (timeoutTimestamp > System.currentTimeMillis() && (status == 'PENDING' || status == 'RUNNING'  || status == 'NULL'))
+        }
         if (status != "SUCCESS") {
             logger.info("status is not success")
         }
         Assert.assertEquals("SUCCESS", status)
-        logger.info("waitingMTMVTaskFinished analyze mv name is " + result.last().get(5))
-        sql "analyze table ${result.last().get(6)}.${mvName} with sync;"
+        def show_tables = sql """
+        show tables from ${toCheckTaskRow.get(6)};
+        """
+        def db_id = getDbId(toCheckTaskRow.get(6))
+        def table_id = getTableId(toCheckTaskRow.get(6), mvName)
+        logger.info("waitingMTMVTaskFinished analyze mv name is " + mvName
+                + ", db name is " + toCheckTaskRow.get(6)
+                + ", show_tables are " + show_tables
+                + ", db_id is " + db_id
+                + ", table_id " + table_id)
+        sql "analyze table ${toCheckTaskRow.get(6)}.${mvName} with sync;"
     }
 
-    void waitingMTMVTaskFinishedByMvNameAllowCancel(String mvName) {
+    def waitingMTMVTaskFinishedByMvNameAllowCancel = {mvName, dbName = context.dbName ->
         Thread.sleep(2000);
-        String showTasks = "select TaskId,JobId,JobName,MvId,Status,MvName,MvDatabaseName,ErrorMsg from tasks('type'='mv') where MvName = '${mvName}' order by CreateTime ASC"
+        String showTasks = "select TaskId,JobId,JobName,MvId,Status,MvName,MvDatabaseName,ErrorMsg from tasks('type'='mv') where MvDatabaseName = '${dbName}' and MvName = '${mvName}' order by CreateTime ASC"
+
         String status = "NULL"
         List<List<Object>> result
         long startTime = System.currentTimeMillis()
         long timeoutTimestamp = startTime + 5 * 60 * 1000 // 5 min
-        do {
+        List<String> toCheckTaskRow = new ArrayList<>();
+        while (timeoutTimestamp > System.currentTimeMillis() && (status == 'PENDING' || status == 'RUNNING'  || status == 'NULL' || status == 'CANCELED')) {
             result = sql(showTasks)
-            logger.info("result: " + result.toString())
-            if (!result.isEmpty()) {
-                status = result.last().get(4)
+            logger.info("current db is " + dbName + ", showTasks result: " + result.toString())
+            if (result.isEmpty()) {
+                logger.info("waitingMTMVTaskFinishedByMvName toCheckTaskRow is empty")
+                Thread.sleep(1000);
+                continue;
             }
+            toCheckTaskRow = result.last()
+            status = toCheckTaskRow.get(4)
             logger.info("The state of ${showTasks} is ${status}")
             Thread.sleep(1000);
-        } while (timeoutTimestamp > System.currentTimeMillis() && (status == 'PENDING' || status == 'RUNNING'  || status == 'NULL' || status == 'CANCELED'))
+        }
         if (status != "SUCCESS") {
             logger.info("status is not success")
             assertTrue(result.toString().contains("same table"))
         }
         // Need to analyze materialized view for cbo to choose the materialized view accurately
-        logger.info("waitingMTMVTaskFinished analyze mv name is " + result.last().get(5))
-        sql "analyze table ${result.last().get(6)}.${mvName} with sync;"
+        logger.info("waitingMTMVTaskFinished analyze mv name is " + toCheckTaskRow.get(5))
+        sql "analyze table ${toCheckTaskRow.get(6)}.${mvName} with sync;"
     }
 
-    void waitingMVTaskFinishedByMvName(String dbName, String tableName) {
+    void waitingMVTaskFinishedByMvName(String dbName, String tableName, String indexName) {
         Thread.sleep(2000)
-        String showTasks = "SHOW ALTER TABLE MATERIALIZED VIEW from ${dbName} where TableName='${tableName}' ORDER BY CreateTime ASC"
+        String showTasks = "SHOW ALTER TABLE MATERIALIZED VIEW from ${dbName} where TableName='${tableName}' ORDER BY CreateTime DESC"
         String status = "NULL"
         List<List<Object>> result
         long startTime = System.currentTimeMillis()
         long timeoutTimestamp = startTime + 5 * 60 * 1000 // 5 min
-        do {
+        List<String> toCheckTaskRow = new ArrayList<>();
+        while (timeoutTimestamp > System.currentTimeMillis() && (status != 'FINISHED')) {
             result = sql(showTasks)
-            logger.info("result: " + result.toString())
-            if (!result.isEmpty()) {
-                status = result.last().get(8)
+            logger.info("crrent db is " + dbName + ", showTasks result: " + result.toString())
+            // just consider current db
+            for (List<String> taskRow : result) {
+                if (taskRow.get(5).equals(indexName)) {
+                    toCheckTaskRow = taskRow;
+                }
             }
+            if (toCheckTaskRow.isEmpty()) {
+                logger.info("waitingMVTaskFinishedByMvName toCheckTaskRow is empty")
+                Thread.sleep(1000);
+                continue;
+            }
+            status = toCheckTaskRow.get(8)
             logger.info("The state of ${showTasks} is ${status}")
             Thread.sleep(1000);
-        } while (timeoutTimestamp > System.currentTimeMillis() && (status != 'FINISHED'))
+        }
         if (status != "FINISHED") {
             logger.info("status is not success")
         }
@@ -1524,8 +1612,23 @@ class Suite implements GroovyInterceptable {
         }
         Assert.assertEquals("SUCCESS", status)
         // Need to analyze materialized view for cbo to choose the materialized view accurately
-        logger.info("waitingMTMVTaskFinished analyze mv name is " + result.last().get(5))
+        def show_tables = sql """
+        show tables from ${result.last().get(6)};
+        """
+        def db_id = getDbId(result.last().get(6))
+        def table_id = getTableId(result.last().get(6), result.last().get(5))
+        logger.info("waitingMTMVTaskFinished analyze mv name is " + result.last().get(5)
+                + ", db name is " + result.last().get(6)
+                + ", show_tables are " + show_tables
+                + ", db_id is " + db_id
+                + ", table_id " + table_id)
         sql "analyze table ${result.last().get(6)}.${result.last().get(5)} with sync;"
+        String db = result.last().get(6)
+        String table = result.last().get(5)
+        result = sql("show table stats ${db}.${table}")
+        logger.info("table stats: " + result.toString())
+        result = sql("show index stats ${db}.${table} ${table}")
+        logger.info("index stats: " + result.toString())
     }
 
     void waitingMTMVTaskFinishedNotNeedSuccess(String jobName) {
@@ -1549,48 +1652,24 @@ class Suite implements GroovyInterceptable {
         }
     }
 
-    def getMVJobState = { tableName  ->
-        def jobStateResult = sql """ SHOW ALTER TABLE ROLLUP WHERE TableName='${tableName}' ORDER BY CreateTime DESC limit 1"""
-        if (jobStateResult == null || jobStateResult.isEmpty()) {
-            logger.info("show alter table roll is empty" + jobStateResult)
-            return "NOT_READY"
-        }
-        logger.info("getMVJobState jobStateResult is " + jobStateResult.toString())
-        if (!jobStateResult[0][8].equals("FINISHED")) {
-            return "NOT_READY"
-        }
-        return "FINISHED";
-    }
-    def waitForRollUpJob =  (tbName, timeoutMillisecond) -> {
-
-        long startTime = System.currentTimeMillis()
-        long timeoutTimestamp = startTime + timeoutMillisecond
-
-        String result
-        while (timeoutTimestamp > System.currentTimeMillis()){
-            result = getMVJobState(tbName)
-            if (result == "FINISHED") {
-                sleep(200)
-                return
-            } else {
-                sleep(200)
-            }
-        }
-        Assert.assertEquals("FINISHED", result)
-    }
-
     void testFoldConst(String foldSql) {
         String openFoldConstant = "set debug_skip_fold_constant=false";
         sql(openFoldConstant)
         logger.info(foldSql)
-        List<List<Object>> resultByFoldConstant = sql(foldSql)
+        Tuple2<List<List<Object>>, ResultSetMetaData> tupleResult = null
+        tupleResult = JdbcUtils.executeToStringList(context.getConnection(), foldSql)
+        def (resultByFoldConstant, meta) = tupleResult
         logger.info("result by fold constant: " + resultByFoldConstant.toString())
         String closeFoldConstant = "set debug_skip_fold_constant=true";
         sql(closeFoldConstant)
         logger.info(foldSql)
         List<List<Object>> resultExpected = sql(foldSql)
         logger.info("result expected: " + resultExpected.toString())
-        Assert.assertEquals(resultExpected, resultByFoldConstant)
+
+        String errorMsg = OutputUtils.checkOutput(resultExpected.iterator(), resultByFoldConstant.iterator(),
+                    { row -> OutputUtils.toCsvString(row as List<Object>) },
+                    { row ->  OutputUtils.toCsvString(row) },
+                    "check output failed", meta)
     }
 
     String getJobName(String dbName, String mtmvName) {
@@ -1666,6 +1745,24 @@ class Suite implements GroovyInterceptable {
             actionSupplier()
         } finally {
             updateConfig oldConfig
+        }
+    }
+
+    void setBeConfigTemporary(Map<String, Object> tempConfig, Closure actionSupplier) {
+        Map<String, Map<String, String>> originConf = Maps.newHashMap()
+        tempConfig.each{ k, v ->
+            originConf.put(k, get_be_param(k))
+        }
+        try {
+            tempConfig.each{ k, v -> set_be_param(k, v)}
+            actionSupplier()
+        } catch (Exception e) {
+            logger.info(e.getMessage())
+            throw e
+        } finally {
+            originConf.each { k, confs ->
+                set_original_be_param(k, confs)
+            }
         }
     }
 
@@ -1828,6 +1925,15 @@ class Suite implements GroovyInterceptable {
         return isReady
     }
 
+    def create_sync_mv = { db, table_name, mv_name, mv_sql ->
+        sql """DROP MATERIALIZED VIEW IF EXISTS ${mv_name} ON ${table_name};"""
+        sql"""
+        CREATE MATERIALIZED VIEW ${mv_name} 
+        AS ${mv_sql}
+        """
+        waitingMVTaskFinishedByMvName(db, table_name, mv_name)
+    }
+
     def create_async_mv = { db, mv_name, mv_sql ->
 
         sql """DROP MATERIALIZED VIEW IF EXISTS ${db}.${mv_name}"""
@@ -1836,6 +1942,22 @@ class Suite implements GroovyInterceptable {
         BUILD IMMEDIATE REFRESH COMPLETE ON MANUAL
         DISTRIBUTED BY RANDOM BUCKETS 2
         PROPERTIES ('replication_num' = '1') 
+        AS ${mv_sql}
+        """
+        def job_name = getJobName(db, mv_name);
+        waitingMTMVTaskFinished(job_name)
+        sql "analyze table ${db}.${mv_name} with sync;"
+    }
+
+    def create_async_partition_mv = { db, mv_name, mv_sql, partition_col ->
+
+        sql """DROP MATERIALIZED VIEW IF EXISTS ${db}.${mv_name}"""
+        sql"""
+        CREATE MATERIALIZED VIEW ${db}.${mv_name} 
+        BUILD IMMEDIATE REFRESH COMPLETE ON MANUAL 
+        PARTITION BY ${partition_col} 
+        DISTRIBUTED BY RANDOM BUCKETS 2 
+        PROPERTIES ('replication_num' = '1')  
         AS ${mv_sql}
         """
         def job_name = getJobName(db, mv_name);
@@ -1940,6 +2062,9 @@ class Suite implements GroovyInterceptable {
                     for (String mv_name : mv_names) {
                         success = success && result.contains("(${mv_name})")
                     }
+                    if (!success) {
+                        logger.info("mv_rewrite_all_success fail =" + result)
+                    }
                     Assert.assertEquals(true, success)
                 }
             }
@@ -1950,9 +2075,12 @@ class Suite implements GroovyInterceptable {
             check { result ->
                 boolean success = true;
                 for (String mv_name : mv_names) {
-                    success = success && result.contains("${mv_name} chose")
+                    def contains = result.contains("${mv_name} chose")
+                    if (!contains) {
+                        logger.info("mv_rewrite_all_success fail =" + result)
+                    }
+                    Assert.assertEquals(true, contains)
                 }
-                Assert.assertEquals(true, success)
             }
         }
     }
@@ -1978,6 +2106,9 @@ class Suite implements GroovyInterceptable {
                     for (String mv_name : mv_names) {
                         success = success || result.contains("(${mv_name})")
                     }
+                    if (!success) {
+                        logger.info("mv_rewrite_any_success fail =" + result)
+                    }
                     Assert.assertEquals(true, success)
                 }
             }
@@ -1989,6 +2120,9 @@ class Suite implements GroovyInterceptable {
                 boolean success = false;
                 for (String mv_name : mv_names) {
                     success = success || result.contains("${mv_name} chose")
+                }
+                if (!success) {
+                    logger.info("mv_rewrite_any_success fail =" + result)
                 }
                 Assert.assertEquals(true, success)
             }
@@ -2010,6 +2144,9 @@ class Suite implements GroovyInterceptable {
                         def each_result =  splitResult.length == 2 ? splitResult[0].contains(mv_name) : false
                         success = success && (result.contains("(${mv_name})") || each_result)
                     }
+                    if (!success) {
+                        logger.info("mv_rewrite_all_success_without_check_chosen fail =" + result)
+                    }
                     Assert.assertEquals(true, success)
                 }
             }
@@ -2022,6 +2159,9 @@ class Suite implements GroovyInterceptable {
                 for (String mv_name : mv_names) {
                     boolean stepSuccess = result.contains("${mv_name} chose") || result.contains("${mv_name} not chose")
                     success = success && stepSuccess
+                }
+                if (!success) {
+                    logger.info("mv_rewrite_all_success_without_check_chosen fail =" + result)
                 }
                 Assert.assertEquals(true, success)
             }
@@ -2043,6 +2183,9 @@ class Suite implements GroovyInterceptable {
                         def each_result =  splitResult.length == 2 ? splitResult[0].contains(mv_name) : false
                         success = success || (result.contains("(${mv_name})") || each_result)
                     }
+                    if (!success) {
+                        logger.info("mv_rewrite_any_success_without_check_chosen fail =" + result)
+                    }
                     Assert.assertEquals(true, success)
                 }
             }
@@ -2054,6 +2197,9 @@ class Suite implements GroovyInterceptable {
                 boolean success = false
                 for (String mv_name : mv_names) {
                     success = success || result.contains("${mv_name} chose") || result.contains("${mv_name} not chose")
+                }
+                if (!success) {
+                    logger.info("mv_rewrite_any_success_without_check_chosen fail =" + result)
                 }
                 Assert.assertEquals(true, success)
             }
@@ -2113,6 +2259,9 @@ class Suite implements GroovyInterceptable {
                         boolean stepFail = !result.contains("(${mv_name})")
                         fail = fail && stepFail
                     }
+                    if (!fail) {
+                        logger.info("mv_rewrite_all_fail =" + result)
+                    }
                     Assert.assertEquals(true, fail)
                 }
             }
@@ -2125,6 +2274,9 @@ class Suite implements GroovyInterceptable {
                 for (String mv_name : mv_names) {
                     boolean stepFail = result.contains("${mv_name} fail")
                     fail = fail && stepFail
+                }
+                if (!fail) {
+                    logger.info("mv_rewrite_all_fail =" + result)
                 }
                 Assert.assertEquals(true, fail)
             }
@@ -2143,6 +2295,9 @@ class Suite implements GroovyInterceptable {
                     for (String mv_name : mv_names) {
                         fail = fail || !result.contains("(${mv_name})")
                     }
+                    if (!fail) {
+                        logger.info("mv_rewrite_any_fail =" + result)
+                    }
                     Assert.assertEquals(true, fail)
                 }
             }
@@ -2154,6 +2309,9 @@ class Suite implements GroovyInterceptable {
                 boolean fail = false
                 for (String mv_name : mv_names) {
                     fail = fail || result.contains("${mv_name} fail")
+                }
+                if (!fail) {
+                    logger.info("mv_rewrite_any_fail =" + result)
                 }
                 Assert.assertEquals(true, fail)
             }
@@ -2206,6 +2364,20 @@ class Suite implements GroovyInterceptable {
         def job_name = getJobName(db, mv_name);
         waitingMTMVTaskFinished(job_name)
         mv_rewrite_fail(query_sql, mv_name, true)
+    }
+
+    def async_create_mv = { db, mv_sql, mv_name ->
+        sql """DROP MATERIALIZED VIEW IF EXISTS ${mv_name}"""
+        sql"""
+        CREATE MATERIALIZED VIEW ${mv_name} 
+        BUILD IMMEDIATE REFRESH COMPLETE ON MANUAL
+        DISTRIBUTED BY RANDOM BUCKETS 2
+        PROPERTIES ('replication_num' = '1') 
+        AS ${mv_sql}
+        """
+
+        def job_name = getJobName(db, mv_name);
+        waitingMTMVTaskFinished(job_name)
     }
 
     def token = context.config.metaServiceToken
@@ -2275,7 +2447,7 @@ class Suite implements GroovyInterceptable {
         }
     }
 
-    def get_cluster = { be_unique_id ->
+    def get_cluster = { be_unique_id , MetaService ms=null->
         def jsonOutput = new JsonOutput()
         def map = [instance_id: "${instance_id}", cloud_unique_id: "${be_unique_id}" ]
         def js = jsonOutput.toJson(map)
@@ -2283,7 +2455,11 @@ class Suite implements GroovyInterceptable {
 
         def add_cluster_api = { request_body, check_func ->
             httpTest {
-                endpoint context.config.metaServiceHttpAddress
+                if (ms) {
+                    endpoint ms.host+':'+ms.httpPort
+                } else {
+                    endpoint context.config.metaServiceHttpAddress
+                }
                 uri "/MetaService/http/get_cluster?token=${token}"
                 body request_body
                 check check_func
@@ -2456,7 +2632,7 @@ class Suite implements GroovyInterceptable {
         }
     }
 
-    def d_node = { be_unique_id, ip, port, cluster_name, cluster_id ->
+    def d_node = { be_unique_id, ip, port, cluster_name, cluster_id, MetaService ms=null ->
         def jsonOutput = new JsonOutput()
         def clusterInfo = [
                      type: "COMPUTE",
@@ -2476,7 +2652,11 @@ class Suite implements GroovyInterceptable {
 
         def d_cluster_api = { request_body, check_func ->
             httpTest {
-                endpoint context.config.metaServiceHttpAddress
+                if (ms) {
+                    endpoint ms.host+':'+ms.httpPort
+                } else {
+                    endpoint context.config.metaServiceHttpAddress
+                }
                 uri "/MetaService/http/decommission_node?token=${token}"
                 body request_body
                 check check_func
@@ -2668,4 +2848,103 @@ class Suite implements GroovyInterceptable {
             scpFiles("root", be_ip, udf_file_path, udf_file_path, false)
         }
     }
+
+    def check_fold_consistency = { test_sql ->
+        def re_fe = order_sql "select /*+SET_VAR(enable_fold_constant_by_be=false)*/ ${test_sql}"
+        def re_be = order_sql "select /*+SET_VAR(enable_fold_constant_by_be=true)*/ ${test_sql}"
+        def re_no_fold = order_sql "select /*+SET_VAR(debug_skip_fold_constant=true)*/ ${test_sql}"
+        logger.info("check sql: ${test_sql}")
+        assertEquals(re_fe, re_be)
+        assertEquals(re_fe, re_no_fold)
+    }
+
+    def backendIdToHost = { ->
+        def spb = sql_return_maparray """SHOW BACKENDS"""
+        def beIdToHost = [:]
+        spb.each {
+            beIdToHost[it.BackendId] = it.Host
+        }
+        beIdToHost 
+    }
+
+    def getTabletAndBeHostFromBe = { bes ->
+        def ret = [:]
+        bes.each { be ->
+            // {"msg":"OK","code":0,"data":{"host":"128.2.51.2","tablets":[{"tablet_id":10560},{"tablet_id":10554},{"tablet_id":10552}]},"count":3}
+            def data = Http.GET("http://${be.host}:${be.httpPort}/tablets_json?limit=all", true).data
+            def tablets = data.tablets.collect { it.tablet_id as String }
+            tablets.each{
+                ret[it] = data.host
+            }
+        }
+        ret
+    }
+
+    def getTabletAndBeHostFromFe = { table ->
+        def result = sql_return_maparray """SHOW TABLETS FROM $table"""
+        def bes = backendIdToHost.call()
+        // tablet : [backendId, host]
+        def ret = [:]
+        result.each {
+            ret[it.TabletId] = [it.BackendId, bes[it.BackendId]]
+        }
+        ret
+    }
+
+    // get rowset_id segment_id from ms
+    // curl '175.40.101.1:5000/MetaService/http/get_value?token=greedisgood9999&unicode&key_type=MetaRowsetKey&instance_id=default_instance_id&tablet_id=27700&version=2'
+    def getSegmentFilesFromMs = { msHttpPort, tabletId, version, check_func ->
+        httpTest {
+            endpoint msHttpPort
+            op "get"
+            uri "/MetaService/http/get_value?token=greedisgood9999&unicode&key_type=MetaRowsetKey&instance_id=default_instance_id&tablet_id=${tabletId}&version=${version}"
+            check check_func
+        }
+    }
+
+    def getRowsetFileCacheDirFromBe = { beHttpPort, msHttpPort, tabletId, version -> 
+        def hashValues = []
+        def segmentFiles = []
+        getSegmentFilesFromMs(msHttpPort, tabletId, version) {
+            respCode, body ->
+                def json = parseJson(body)
+                logger.info("get tablet {} version {} from ms, response {}", tabletId, version, json)
+                // {"rowset_id":"0","partition_id":"27695","tablet_id":"27700","txn_id":"7057526525952","tablet_schema_hash":0,"rowset_type":"BETA_ROWSET","rowset_state":"COMMITTED","start_version":"3","end_version":"3","version_hash":"0","num_rows":"1","total_disk_size":"895","data_disk_size":"895","index_disk_size":"0","empty":false,"load_id":{"hi":"-1646598626735601581","lo":"-6677682539881484579"},"delete_flag":false,"creation_time":"1736153402","num_segments":"1","rowset_id_v2":"0200000000000004694889e84c76391cfd52ec7db0a483ba","resource_id":"1","newest_write_timestamp":"1736153402","segments_key_bounds":[{"min_key":"AoAAAAAAAAAC","max_key":"AoAAAAAAAAAC"}],"txn_expiration":"1736167802","segments_overlap_pb":"NONOVERLAPPING","compaction_level":"0","segments_file_size":["895"],"index_id":"27697","schema_version":0,"enable_segments_file_size":true,"has_variant_type_in_schema":false,"enable_inverted_index_file_info":false}
+                def segmentNum = json.num_segments as int
+                def rowsetId = json.rowset_id_v2 as String
+                segmentFiles = (0..<segmentNum).collect { i -> "${rowsetId}_${i}.dat" }
+        }
+
+        segmentFiles.each {
+            // curl '175.40.51.3:8040/api/file_cache?op=hash&value=0200000000000004694889e84c76391cfd52ec7db0a483ba_0.dat'
+            def data = Http.GET("http://${beHttpPort}/api/file_cache?op=hash&value=${it}", true)
+            // {"hash":"2b79c649a1766dad371054ee168f0574"}
+            logger.info("get tablet {} segmentFile {}, response {}", tabletId, it, data)
+            hashValues << data.hash
+        }
+        hashValues
+    }
+
+    // get table's tablet file cache
+    def getTabletFileCacheDirFromBe = { msHttpPort, table, version ->
+        // beHost HashFile
+        def beHostToHashFile = [:]
+
+        def getTabletsAndHostFromFe = getTabletAndBeHostFromFe(table)
+        getTabletsAndHostFromFe.each {
+            def beHost = it.Value[1]
+            def tabletId = it.Key
+            def hashRet = getRowsetFileCacheDirFromBe(beHost + ":8040", msHttpPort, tabletId, version)
+            hashRet.each {
+                def hashFile = it
+                if (beHostToHashFile.containsKey(beHost)) {
+                    beHostToHashFile[beHost].add(hashFile)
+                } else {
+                    beHostToHashFile[beHost] = [hashFile]
+                }
+            }
+        }
+        beHostToHashFile
+    }
+
 }

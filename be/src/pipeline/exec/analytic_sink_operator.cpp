@@ -33,6 +33,7 @@ Status AnalyticSinkLocalState::init(RuntimeState* state, LocalSinkStateInfo& inf
     _compute_agg_data_timer = ADD_TIMER(profile(), "ComputeAggDataTime");
     _compute_partition_by_timer = ADD_TIMER(profile(), "ComputePartitionByTime");
     _compute_order_by_timer = ADD_TIMER(profile(), "ComputeOrderByTime");
+    _blocks_memory_usage = ADD_COUNTER_WITH_LEVEL(_profile, "MemoryUsageBlocks", TUnit::BYTES, 1);
     return Status::OK();
 }
 
@@ -317,9 +318,16 @@ Status AnalyticSinkOperatorX::sink(doris::RuntimeState* state, vectorized::Block
             local_state._shared_state->ordey_by_column_idxs[i] = result_col_id;
         }
     }
+<<<<<<< HEAD
     vectorized::Block::erase_useless_column(input_block, column_to_keep);
     COUNTER_UPDATE(local_state._memory_used_counter, input_block->allocated_bytes());
     COUNTER_SET(local_state._peak_memory_usage_counter, local_state._memory_used_counter->value());
+=======
+
+    int64_t block_mem_usage = input_block->allocated_bytes();
+    COUNTER_UPDATE(local_state._memory_used_counter, block_mem_usage);
+    COUNTER_UPDATE(local_state._blocks_memory_usage, block_mem_usage);
+>>>>>>> 514b1ac39f
 
     //TODO: if need improvement, the is a tips to maintain a free queue,
     //so the memory could reuse, no need to new/delete again;
