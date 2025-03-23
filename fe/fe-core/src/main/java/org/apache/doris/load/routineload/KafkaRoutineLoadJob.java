@@ -366,11 +366,8 @@ public class KafkaRoutineLoadJob extends RoutineLoadJob {
 
     @Override
     protected void unprotectUpdateProgress() throws UserException {
-<<<<<<< HEAD
-=======
         // For cloud mode, should update cloud progress from meta service,
         // then update progress with default offset from Kafka if necessary.
->>>>>>> 514b1ac39f
         if (Config.isCloudMode()) {
             updateCloudProgress();
         }

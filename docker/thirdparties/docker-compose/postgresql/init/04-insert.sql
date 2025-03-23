@@ -2940,9 +2940,6 @@ INSERT INTO catalog_pg_test.test_all_support_types_array_2d (
     ARRAY[ARRAY[5.5, 6.6], ARRAY[NULL::double precision, NULL::double precision]]
 );
 
-<<<<<<< HEAD
-=======
 
 INSERT INTO doris_test.TEST_LOWER(k2) VALUES ('a');
 analyze doris_test.TEST_LOWER;
->>>>>>> 514b1ac39f

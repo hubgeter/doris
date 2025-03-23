@@ -689,10 +689,7 @@ void internal_get_tablet(MetaServiceCode& code, std::string& msg, const std::str
         tablet_meta->schema().column_size() > 0) { // tablet meta saved before detach schema kv
         tablet_meta->set_schema_version(tablet_meta->schema().schema_version());
     }
-<<<<<<< HEAD
-=======
 
->>>>>>> 514b1ac39f
     if ((!tablet_meta->has_schema() ||
          (tablet_meta->has_schema() && tablet_meta->schema().column_size() <= 0)) &&
         !skip_schema) {

@@ -1121,11 +1121,7 @@ public:
     ObjectStorageUploadResponse upload_part(const ObjectStoragePathOptions& opts,
                                             std::string_view stream, int part_num) override {
         upload_part_count++;
-<<<<<<< HEAD
-        upload_part_params.push_back({opts, std::string(stream), part_num});
-=======
         // upload_part_params.push_back({opts, std::string(stream), part_num});
->>>>>>> 514b1ac39f
         last_opts = opts;
         last_stream = std::string(stream);
         last_part_num = part_num;
@@ -1236,11 +1232,7 @@ public:
     // Vectors to store parameters from each call
     std::vector<ObjectStoragePathOptions> create_multipart_params;
     std::vector<std::pair<ObjectStoragePathOptions, std::string>> put_object_params;
-<<<<<<< HEAD
-    std::vector<UploadPartParams> upload_part_params;
-=======
     // std::vector<UploadPartParams> upload_part_params;
->>>>>>> 514b1ac39f
     std::vector<CompleteMultipartParams> complete_multipart_params;
     std::map<std::string, std::string> objects;
     std::map<std::string, std::string> complete;
@@ -1264,11 +1256,7 @@ public:
 
         create_multipart_params.clear();
         put_object_params.clear();
-<<<<<<< HEAD
-        upload_part_params.clear();
-=======
         // upload_part_params.clear();
->>>>>>> 514b1ac39f
         complete_multipart_params.clear();
         objects.clear();
         complete.clear();

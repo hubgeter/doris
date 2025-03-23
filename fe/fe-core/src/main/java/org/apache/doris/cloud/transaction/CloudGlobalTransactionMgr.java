@@ -350,12 +350,8 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrIface {
             throws UserException {
         List<OlapTable> mowTableList = getMowTableList(tableList, tabletCommitInfos);
         try {
-<<<<<<< HEAD
-            LOG.info("try to commit transaction, transactionId: {}", transactionId);
-=======
             LOG.info("try to commit transaction, transactionId: {}, tableIds: {}", transactionId,
                     tableList.stream().map(Table::getId).collect(Collectors.toList()));
->>>>>>> 514b1ac39f
             Map<Long, List<TCalcDeleteBitmapPartitionInfo>> backendToPartitionInfos = null;
             if (!mowTableList.isEmpty()) {
                 if (!checkTransactionStateBeforeCommit(dbId, transactionId)) {

@@ -93,19 +93,6 @@ public class CloudSchemaChangeHandler extends SchemaChangeHandler {
     @Override
     public void updateTableProperties(Database db, String tableName, Map<String, String> properties)
             throws UserException {
-<<<<<<< HEAD
-        Preconditions.checkState(properties.containsKey(PropertyAnalyzer.PROPERTIES_GROUP_COMMIT_INTERVAL_MS)
-                || properties.containsKey(PropertyAnalyzer.PROPERTIES_GROUP_COMMIT_DATA_BYTES)
-                || properties.containsKey(PropertyAnalyzer.PROPERTIES_FILE_CACHE_TTL_SECONDS)
-                || properties.containsKey(PropertyAnalyzer.PROPERTIES_COMPACTION_POLICY)
-                || properties.containsKey(PropertyAnalyzer.PROPERTIES_TIME_SERIES_COMPACTION_GOAL_SIZE_MBYTES)
-                || properties.containsKey(PropertyAnalyzer.PROPERTIES_TIME_SERIES_COMPACTION_FILE_COUNT_THRESHOLD)
-                || properties.containsKey(PropertyAnalyzer.PROPERTIES_TIME_SERIES_COMPACTION_TIME_THRESHOLD_SECONDS)
-                || properties.containsKey(PropertyAnalyzer.PROPERTIES_TIME_SERIES_COMPACTION_EMPTY_ROWSETS_THRESHOLD)
-                || properties.containsKey(PropertyAnalyzer.PROPERTIES_TIME_SERIES_COMPACTION_LEVEL_THRESHOLD)
-                || properties.containsKey(PropertyAnalyzer.PROPERTIES_ENABLE_MOW_LIGHT_DELETE)
-                || properties.containsKey(PropertyAnalyzer.PROPERTIES_AUTO_ANALYZE_POLICY));
-=======
         final Set<String> allowedProps = new HashSet<String>() {
             {
                 add(PropertyAnalyzer.PROPERTIES_GROUP_COMMIT_INTERVAL_MS);
@@ -127,7 +114,6 @@ public class CloudSchemaChangeHandler extends SchemaChangeHandler {
         if (!notAllowedProps.isEmpty()) {
             throw new UserException("modifying property " + notAllowedProps + " is forbidden");
         }
->>>>>>> 514b1ac39f
 
         if (properties.size() != 1) {
             throw new UserException("Can only set one table property at a time");

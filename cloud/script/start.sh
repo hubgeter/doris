@@ -70,9 +70,6 @@ while read -r line; do
     fi
 done <"${DORIS_HOME}/conf/selectdb_cloud.conf"
 
-<<<<<<< HEAD
-process=selectdb_cloud
-=======
 role=''
 if [[ ${RUN_METASERVICE} -eq 0 ]] && [[ ${RUN_RECYCLYER} -eq 0 ]]; then
     role='MetaService and Recycler'
@@ -83,8 +80,7 @@ elif [[ ${RUN_METASERVICE} -eq 0 ]] && [[ ${RUN_RECYCLYER} -eq 1 ]]; then
 elif [[ ${RUN_METASERVICE} -eq 1 ]] && [[ ${RUN_RECYCLYER} -eq 1 ]]; then
     role='MetaService and Recycler'
 fi
-process=doris_cloud
->>>>>>> 514b1ac39f
+process=selectdb_cloud
 
 if [[ ${RUN_VERSION} -eq 0 ]] && [[ -f "${DORIS_HOME}/bin/${process}.pid" ]]; then
     pid=$(cat "${DORIS_HOME}/bin/${process}.pid")
@@ -102,46 +98,7 @@ lib_path="${DORIS_HOME}/lib"
 bin="${DORIS_HOME}/lib/${process}"
 export LD_LIBRARY_PATH="${lib_path}:${LD_LIBRARY_PATH}"
 
-<<<<<<< HEAD
 chmod 550 "${DORIS_HOME}/lib/${process}"
-=======
-chmod 550 "${DORIS_HOME}/lib/doris_cloud"
-
-if [[ -z "${JAVA_HOME}" ]]; then
-    echo "The JAVA_HOME environment variable is not defined correctly"
-    echo "This environment variable is needed to run this program"
-    echo "NB: JAVA_HOME should point to a JDK not a JRE"
-    echo "You can set it in doris_cloud.conf"
-    exit 1
-fi
-
-if [[ -d "${DORIS_HOME}/lib/hadoop_hdfs/" ]]; then
-    # add hadoop libs
-    for f in "${DORIS_HOME}/lib/hadoop_hdfs/common"/*.jar; do
-        DORIS_CLASSPATH="${DORIS_CLASSPATH}:${f}"
-    done
-    for f in "${DORIS_HOME}/lib/hadoop_hdfs/common/lib"/*.jar; do
-        DORIS_CLASSPATH="${DORIS_CLASSPATH}:${f}"
-    done
-    for f in "${DORIS_HOME}/lib/hadoop_hdfs/hdfs"/*.jar; do
-        DORIS_CLASSPATH="${DORIS_CLASSPATH}:${f}"
-    done
-    for f in "${DORIS_HOME}/lib/hadoop_hdfs/hdfs/lib"/*.jar; do
-        DORIS_CLASSPATH="${DORIS_CLASSPATH}:${f}"
-    done
-fi
-
-export CLASSPATH="${DORIS_CLASSPATH}"
-
-export LD_LIBRARY_PATH="${JAVA_HOME}/lib/server:${LD_LIBRARY_PATH}"
-
-## set libhdfs3 conf
-if [[ -f "${DORIS_HOME}/conf/hdfs-site.xml" ]]; then
-    export LIBHDFS3_CONF="${DORIS_HOME}/conf/hdfs-site.xml"
-fi
-
-# echo "LIBHDFS3_CONF=${LIBHDFS3_CONF}"
->>>>>>> 514b1ac39f
 
 # to enable dump jeprof heap stats prodigally, change `prof_active:false` to `prof_active:true` or curl http://be_host:be_webport/jeheap/prof/true
 # to control the dump interval change `lg_prof_interval` to a specific value, it is pow/exponent of 2 in size of bytes, default 34 means 2 ** 34 = 16GB

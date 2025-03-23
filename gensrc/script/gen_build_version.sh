@@ -30,25 +30,17 @@ set -eo pipefail
 build_version_prefix="selectdb"
 build_version_major=4
 build_version_minor=0
-build_version_patch=4
-<<<<<<< HEAD
-build_version_hotfix=4
+build_version_patch=5
+build_version_hotfix=0
 build_version_rc_version=""
-
-build_version="${build_version_prefix}-${build_version_major}.${build_version_minor}.${build_version_patch}"
-if [[ ${build_version_hotfix} > 0 ]]; then
-    build_version+=".${build_version_hotfix}"
-fi
-=======
-build_version_hotfix=1
-build_version_rc_version="rc01"
 
 build_version="${build_version_prefix}-${build_version_major}.${build_version_minor}.${build_version_patch}"
 if [[ ${build_version_hotfix} -gt 0 ]]; then
     build_version+=".${build_version_hotfix}"
 fi
-build_version+="-${build_version_rc_version}"
->>>>>>> 514b1ac39f
+if [[ ${build_version_rc_version} != "" ]]; then
+    build_version+="-${build_version_rc_version}"
+fi
 
 # This version is used to check FeMetaVersion is not changed during release
 build_fe_meta_version=0
@@ -223,13 +215,8 @@ EOF
 # build_version_prefix="selectdb"
 # build_version_major=4
 # build_version_minor=0
-<<<<<<< HEAD
-# build_version_patch=1
-# build_version_hotfix=1
-=======
 # build_version_patch=0
 # build_version_hotfix=0
->>>>>>> 514b1ac39f
 # build_version_rc_version=""
 
 if [[ -f /etc/os-release ]]; then
@@ -240,11 +227,7 @@ fi
 
 build_version="${build_version_prefix}-${build_version_major}.${build_version_minor}.${build_version_patch}"
 
-<<<<<<< HEAD
-if [[ ${build_version_hotfix} > 0 ]]; then
-=======
 if [[ ${build_version_hotfix} -gt 0 ]]; then
->>>>>>> 514b1ac39f
     build_version+=".${build_version_hotfix}"
 fi
 
