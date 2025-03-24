@@ -1913,7 +1913,7 @@ Status OrcReader::get_next_block_impl(Block* block, size_t* read_rows, bool* eof
         {
             SCOPED_RAW_TIMER(&_statistics.get_batch_time);
             // reset decimal_scale_params_index;
-            _decimal_scale_params_index = 0;
+//            _decimal_scale_params_index = 0;
             try {
                 rr = _row_reader->nextBatch(*_batch, block);
                 if (rr == 0 || _batch->numElements == 0) {
@@ -1983,7 +1983,7 @@ Status OrcReader::get_next_block_impl(Block* block, size_t* read_rows, bool* eof
         {
             SCOPED_RAW_TIMER(&_statistics.get_batch_time);
             // reset decimal_scale_params_index;
-            _decimal_scale_params_index = 0;
+//            _decimal_scale_params_index = 0;
             try {
                 rr = _row_reader->nextBatch(*_batch, block);
                 if (rr == 0 || _batch->numElements == 0) {
@@ -2045,6 +2045,21 @@ Status OrcReader::get_next_block_impl(Block* block, size_t* read_rows, bool* eof
                                                 _lazy_read_ctx.partition_columns));
         RETURN_IF_ERROR(
                 _fill_missing_columns(block, _batch->numElements, _lazy_read_ctx.missing_columns));
+
+
+//        if (     .starts_with(BeConsts::GLOBAL_ROWID_COL)) {
+//            auto& id_file_map = _opts.runtime_state->get_id_file_map();
+//            uint32_t file_id = id_file_map->get_file_mapping_id(std::make_shared<FileMapping>(filePath));
+//
+//
+//            _column_iterators[cid].reset(new RowIdColumnIteratorV2(
+//                    IdManager::ID_VERSION, BackendOptions::get_backend_id(), file_id));  // + row id
+//
+//            continue;
+//        }
+
+
+
 
         if (block->rows() == 0) {
             RETURN_IF_ERROR(_convert_dict_cols_to_string_cols(block, nullptr));
