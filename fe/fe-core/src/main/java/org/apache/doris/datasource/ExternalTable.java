@@ -31,11 +31,8 @@ import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.common.util.PropertyAnalyzer;
 import org.apache.doris.common.util.Util;
-<<<<<<< HEAD
-=======
 import org.apache.doris.datasource.ExternalSchemaCache.SchemaCacheKey;
 import org.apache.doris.datasource.mvcc.MvccSnapshot;
->>>>>>> 514b1ac39f
 import org.apache.doris.nereids.trees.plans.logical.LogicalFileScan.SelectedPartitions;
 import org.apache.doris.persist.gson.GsonPostProcessable;
 import org.apache.doris.persist.gson.GsonUtils;
@@ -403,29 +400,6 @@ public class ExternalTable implements TableIf, Writable, GsonPostProcessable {
         return new TableIndexes();
     }
 
-<<<<<<< HEAD
-    public SelectedPartitions initSelectedPartitions() {
-        if (!supportInternalPartitionPruned()) {
-            return SelectedPartitions.NOT_PRUNED;
-        }
-        if (CollectionUtils.isEmpty(this.getPartitionColumns())) {
-            return SelectedPartitions.NOT_PRUNED;
-        }
-        Map<Long, PartitionItem> nameToPartitionItems = getNameToPartitionItems();
-        return new SelectedPartitions(nameToPartitionItems.size(), nameToPartitionItems, false);
-    }
-
-
-    public Map<Long, PartitionItem> getNameToPartitionItems() {
-        return Collections.emptyMap();
-    }
-
-
-    public List<Column> getPartitionColumns() {
-        return Collections.emptyList();
-    }
-
-=======
     /**
      * Retrieve all partitions and initialize SelectedPartitions
      *
@@ -471,7 +445,6 @@ public class ExternalTable implements TableIf, Writable, GsonPostProcessable {
      *
      * @return
      */
->>>>>>> 514b1ac39f
     public boolean supportInternalPartitionPruned() {
         return false;
     }
