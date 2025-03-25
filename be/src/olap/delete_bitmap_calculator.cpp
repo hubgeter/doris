@@ -137,30 +137,6 @@ Status MergeIndexDeleteBitmapCalculator::init(RowsetId rowset_id,
                                               std::vector<SegmentSharedPtr> const& segments,
                                               size_t seq_col_length, size_t rowdid_length,
                                               size_t max_batch_size) {
-<<<<<<< HEAD
-    _rowset_id = rowset_id;
-    _seq_col_length = seq_col_length;
-    _rowid_length = rowdid_length;
-    _comparator =
-            MergeIndexDeleteBitmapCalculatorContext::Comparator(seq_col_length, _rowid_length);
-    _contexts.reserve(segments.size());
-    _heap = std::make_unique<Heap>(_comparator);
-
-    for (auto& segment : segments) {
-        RETURN_IF_ERROR(segment->load_index(nullptr));
-        auto pk_idx = segment->get_primary_key_index();
-        std::unique_ptr<segment_v2::IndexedColumnIterator> index;
-        RETURN_IF_ERROR(pk_idx->new_iterator(&index, nullptr));
-        auto index_type = vectorized::DataTypeFactory::instance().create_data_type(
-                pk_idx->type_info()->type(), 1, 0);
-        _contexts.emplace_back(std::move(index), index_type, segment->id(), pk_idx->num_rows());
-        _heap->push(&_contexts.back());
-    }
-    if (_rowid_length > 0) {
-        _rowid_coder = get_key_coder(
-                get_scalar_type_info<FieldType::OLAP_FIELD_TYPE_UNSIGNED_INT>()->type());
-    }
-=======
     RETURN_IF_CATCH_EXCEPTION({
         _rowset_id = rowset_id;
         _seq_col_length = seq_col_length;
@@ -184,7 +160,6 @@ Status MergeIndexDeleteBitmapCalculator::init(RowsetId rowset_id,
                     get_scalar_type_info<FieldType::OLAP_FIELD_TYPE_UNSIGNED_INT>()->type());
         }
     });
->>>>>>> 514b1ac39f
     return Status::OK();
 }
 
