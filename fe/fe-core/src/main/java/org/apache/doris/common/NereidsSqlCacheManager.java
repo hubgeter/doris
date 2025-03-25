@@ -225,35 +225,6 @@ public class NereidsSqlCacheManager {
     private Optional<LogicalSqlCache> tryParseSql(
             ConnectContext connectContext, String key, SqlCacheContext sqlCacheContext,
             UserIdentity currentUserIdentity, boolean checkUserVariable) {
-<<<<<<< HEAD
-        Env env = connectContext.getEnv();
-
-        // check table and view and their columns authority
-        if (privilegeChanged(connectContext, env, sqlCacheContext)) {
-            return invalidateCache(key);
-        }
-        if (tablesOrDataChanged(env, sqlCacheContext)) {
-            return invalidateCache(key);
-        }
-        if (viewsChanged(env, sqlCacheContext)) {
-            return invalidateCache(key);
-        }
-
-        LogicalEmptyRelation whateverPlan = new LogicalEmptyRelation(new RelationId(0), ImmutableList.of());
-        if (nondeterministicFunctionChanged(whateverPlan, connectContext, sqlCacheContext)) {
-            return invalidateCache(key);
-        }
-
-        // table structure and data not changed, now check policy
-        if (rowPoliciesChanged(currentUserIdentity, env, sqlCacheContext)) {
-            return invalidateCache(key);
-        }
-        if (dataMaskPoliciesChanged(currentUserIdentity, env, sqlCacheContext)) {
-            return invalidateCache(key);
-        }
-
-=======
->>>>>>> 514b1ac39f
         try {
             Env env = connectContext.getEnv();
 
