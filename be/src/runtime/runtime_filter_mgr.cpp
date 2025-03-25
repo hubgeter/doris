@@ -170,16 +170,9 @@ Status RuntimeFilterMgr::get_local_merge_producer_filters(
     return Status::OK();
 }
 
-<<<<<<< HEAD
-Status RuntimeFilterMgr::register_producer_filter(const TRuntimeFilterDesc& desc,
-                                                  const TQueryOptions& options,
-                                                  std::shared_ptr<IRuntimeFilter>* producer_filter,
-                                                  bool build_bf_exactly) {
-=======
 Status RuntimeFilterMgr::register_producer_filter(
         const TRuntimeFilterDesc& desc, const TQueryOptions& options,
         std::shared_ptr<IRuntimeFilter>* producer_filter) {
->>>>>>> 514b1ac39f
     DCHECK(!_is_global);
     SCOPED_CONSUME_MEM_TRACKER(_tracker.get());
     int32_t key = desc.filter_id;

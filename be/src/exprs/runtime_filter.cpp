@@ -1037,7 +1037,6 @@ Status IRuntimeFilter::publish(RuntimeState* state, bool publish_local) {
         LocalMergeFilters* local_merge_filters = nullptr;
         RETURN_IF_ERROR(_state->global_runtime_filter_mgr()->get_local_merge_producer_filters(
                 _filter_id, &local_merge_filters));
-<<<<<<< HEAD
         std::lock_guard l(*local_merge_filters->lock);
         RETURN_IF_ERROR(local_merge_filters->filters[0]->merge_from(_wrapper.get()));
         local_merge_filters->merge_time--;
@@ -1047,22 +1046,6 @@ Status IRuntimeFilter::publish(RuntimeState* state, bool publish_local) {
                         send_to_local_targets(local_merge_filters->filters[0]->_wrapper, true));
             } else {
                 RETURN_IF_ERROR(send_to_remote_targets(local_merge_filters->filters[0].get()));
-=======
-        local_merge_filters->merge_watcher.start();
-        std::lock_guard l(*local_merge_filters->lock);
-        RETURN_IF_ERROR(local_merge_filters->filters[0]->merge_from(_wrapper.get()));
-        local_merge_filters->merge_time--;
-        local_merge_filters->merge_watcher.stop();
-        if (local_merge_filters->merge_time == 0) {
-            if (_has_local_target) {
-                RETURN_IF_ERROR(
-                        send_to_local_targets(local_merge_filters->filters[0]->_wrapper, true,
-                                              local_merge_filters->merge_watcher.elapsed_time()));
-            } else {
-                RETURN_IF_ERROR(
-                        send_to_remote_targets(local_merge_filters->filters[0].get(),
-                                               local_merge_filters->merge_watcher.elapsed_time()));
->>>>>>> 514b1ac39f
             }
         }
         return Status::OK();

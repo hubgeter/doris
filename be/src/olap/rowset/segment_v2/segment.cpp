@@ -288,15 +288,11 @@ Status Segment::new_iterator(SchemaSPtr schema, const StorageReadOptions& read_o
         }
     }
 
-<<<<<<< HEAD
-    RETURN_IF_ERROR(load_index(read_options.stats));
-=======
     {
         SCOPED_RAW_TIMER(&read_options.stats->segment_load_index_timer_ns);
         RETURN_IF_ERROR(load_index(read_options.stats));
     }
 
->>>>>>> 514b1ac39f
     if (read_options.delete_condition_predicates->num_of_column_predicate() == 0 &&
         read_options.push_down_agg_type_opt != TPushAggOp::NONE &&
         read_options.push_down_agg_type_opt != TPushAggOp::COUNT_ON_INDEX) {
