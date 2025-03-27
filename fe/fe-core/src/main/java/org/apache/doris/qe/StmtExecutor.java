@@ -726,11 +726,7 @@ public class StmtExecutor {
         }
         if (logicalPlan instanceof Command) {
             if (logicalPlan instanceof Forward) {
-<<<<<<< HEAD
-                OlapGroupCommitInsertExecutor.analyzeGroupCommit(logicalPlan);
-=======
                 OlapGroupCommitInsertExecutor.analyzeGroupCommit(context, logicalPlan);
->>>>>>> 514b1ac39f
                 redirectStatus = ((Forward) logicalPlan).toRedirectStatus();
                 if (isForwardToMaster()) {
                     // before forward to master, we also need to set profileType in this node
