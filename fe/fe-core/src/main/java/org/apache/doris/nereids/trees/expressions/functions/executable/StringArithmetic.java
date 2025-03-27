@@ -699,7 +699,6 @@ public class StringArithmetic {
         String[] parts;
         if (number.getValue() < 0) {
             StringBuilder sb = new StringBuilder(first.getValue());
-<<<<<<< HEAD
             StringBuilder separatorBuilder = new StringBuilder(separator);
             separator = separatorBuilder.reverse().toString();
             parts = sb.reverse().toString().split(Pattern.quote(separator), -1);
@@ -708,28 +707,6 @@ public class StringArithmetic {
         }
 
         if (parts.length < Math.abs(number.getValue())) {
-=======
-            StringBuilder seperatorBuilder = new StringBuilder(separator);
-            separator = seperatorBuilder.reverse().toString();
-            if (".$|()[{^?*+\\".contains(separator) || separator.startsWith("\\")) {
-                separator = "\\" + separator;
-            }
-            parts = sb.reverse().toString().split(separator, -1);
-        } else {
-            if (".$|()[{^?*+\\".contains(separator) || separator.startsWith("\\")) {
-                separator = "\\" + separator;
-            }
-            parts = first.getValue().split(separator, -1);
-        }
-
-        if (parts.length < Math.abs(number.getValue()) || number.getValue() == 0) {
-            if (parts.length == Math.abs(number.getValue())) {
-                if (number.getValue() < 0 && first.getValue().startsWith(chr.getValue())
-                        || number.getValue() > 0 && first.getValue().endsWith(chr.getValue())) {
-                    return castStringLikeLiteral(first, "");
-                }
-            }
->>>>>>> 514b1ac39f
             return new NullLiteral(first.getDataType());
         } else if (number.getValue() < 0) {
             StringBuilder result = new StringBuilder(parts[Math.abs(number.getValue()) - 1]);
@@ -747,11 +724,7 @@ public class StringArithmetic {
         if (chr.getValue().isEmpty()) {
             return chr;
         }
-<<<<<<< HEAD
         String[] parts = first.getValue().split(Pattern.quote(chr.getValue()), -1);
-=======
-        String[] parts = first.getValue().split(chr.getValue(), -1);
->>>>>>> 514b1ac39f
         if (Math.abs(number.getValue()) >= parts.length) {
             return first;
         }
