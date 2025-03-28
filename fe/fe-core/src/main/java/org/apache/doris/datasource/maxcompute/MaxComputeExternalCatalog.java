@@ -72,13 +72,9 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
     private long splitRowCount;
     private long splitByteSize;
 
-<<<<<<< HEAD
-    public boolean dateTimePredicatePushDown;
-=======
     private int connectTimeout;
     private int readTimeout;
     private int retryTimes;
->>>>>>> 514b1ac39f
 
     private static final Map<String, ZoneId> REGION_ZONE_MAP;
     private static final List<String> REQUIRED_PROPERTIES = ImmutableList.of(
@@ -116,7 +112,7 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
 
 
     public MaxComputeExternalCatalog(long catalogId, String name, String resource, Map<String, String> props,
-                                     String comment) {
+            String comment) {
         super(catalogId, name, InitCatalogLog.Type.MAX_COMPUTE, comment);
         catalogProperty = new CatalogProperty(resource, props);
     }
@@ -170,7 +166,7 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
 
         boolean splitCrossPartition =
                 Boolean.parseBoolean(props.getOrDefault(MCProperties.SPLIT_CROSS_PARTITION,
-                MCProperties.DEFAULT_SPLIT_CROSS_PARTITION));
+                        MCProperties.DEFAULT_SPLIT_CROSS_PARTITION));
 
         splitStrategy = props.getOrDefault(MCProperties.SPLIT_STRATEGY, MCProperties.DEFAULT_SPLIT_STRATEGY);
         if (splitStrategy.equals(MCProperties.SPLIT_BY_BYTE_SIZE_STRATEGY)) {
@@ -205,9 +201,7 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
         accessKey = credential.getAccessKey();
         secretKey = credential.getSecretKey();
 
-        dateTimePredicatePushDown = Boolean.parseBoolean(
-                props.getOrDefault(MCProperties.DATETIME_PREDICATE_PUSH_DOWN,
-                        MCProperties.DEFAULT_DATETIME_PREDICATE_PUSH_DOWN));
+
 
         Account account = new AliyunAccount(accessKey, secretKey);
         this.odps = new Odps(account);
@@ -329,10 +323,6 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
         return defaultProject;
     }
 
-<<<<<<< HEAD
-    public boolean getDateTimePredicatePushDown() {
-        return dateTimePredicatePushDown;
-=======
     public int getRetryTimes() {
         makeSureInitialized();
         return retryTimes;
@@ -346,7 +336,6 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
     public int getReadTimeout() {
         makeSureInitialized();
         return readTimeout;
->>>>>>> 514b1ac39f
     }
 
     public ZoneId getProjectDateTimeZone() {
