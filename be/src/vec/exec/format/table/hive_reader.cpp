@@ -32,7 +32,6 @@ Status HiveReader::get_next_block_inner(Block* block, size_t* read_rows, bool* e
 
 Status HiveOrcReader::init_reader(
         const std::vector<std::string>& read_table_col_names,
-        const TSchemaInfoNode& table_col_id_table_name_map,
         const std::unordered_map<std::string, ColumnValueRangeType>* table_col_name_to_value_range,
         const VExprContextSPtrs& conjuncts, const TupleDescriptor* tuple_descriptor,
         const RowDescriptor* row_descriptor,
@@ -44,14 +43,12 @@ Status HiveOrcReader::init_reader(
     const orc::Type* orc_type_ptr = nullptr;
     RETURN_IF_ERROR(orc_reader->get_file_type(&orc_type_ptr));
     bool is_hive_col_name =  OrcReader::is_hive1_col_name(orc_type_ptr);
-    auto root = std::make_shared<TableSchemaChange::tableNode>();
-
 
     if (_state->query_options().hive_orc_use_column_names && !is_hive_col_name) {
-        RETURN_IF_ERROR(TableSchemaChangeHelper::orc_use_name(tuple_descriptor, orc_type_ptr, root));
-
+        RETURN_IF_ERROR(BuildTableInfoUtil::by_orc_name(tuple_descriptor, orc_type_ptr, table_info_node_ptr));
     } else {
-        std::map<std::string, const SlotDescriptor*> slot_map;//table_name to slot
+        // hive1 / use index
+        std::map<std::string, const SlotDescriptor*> slot_map; // table_name to slot
         for (const auto& slot : tuple_descriptor->slots()) {
             slot_map.emplace(slot->col_name(), slot);
         }
@@ -60,19 +57,17 @@ Status HiveOrcReader::init_reader(
             auto table_column_name =  read_table_col_names[idx];
             auto file_index = _params.column_idxs[idx];
 
-            auto field_node = std::make_shared<TableSchemaChange::tableNode>();
             if (file_index >= orc_type_ptr->getSubtypeCount()) {
-                field_node->exists_in_file = false;
+                table_info_node_ptr->add_not_exist_children(table_column_name);
             }else {
-                field_node->exists_in_file = true;
-                field_node->file_name = orc_type_ptr->getFieldName(file_index);
-                RETURN_IF_ERROR(TableSchemaChangeHelper::orc_subcolumn_use_name(
-                        slot_map[table_column_name]->type(), orc_type_ptr->getSubtype(file_index),field_node));
+                auto field_node = std::make_shared<Node>();
+                RETURN_IF_ERROR(BuildTableInfoUtil::by_orc_name(slot_map[table_column_name]->type(),
+                                                                orc_type_ptr->getSubtype(file_index), field_node));
+                table_info_node_ptr->add_children(table_column_name, orc_type_ptr->getFieldName(file_index), field_node);
             }
-            root->children.emplace(table_column_name,field_node);
         }
     }
-    orc_reader->table_info_node_ptr = root;
+    orc_reader->table_info_node_ptr = table_info_node_ptr;
 
     return orc_reader->init_reader(&read_table_col_names, {},
                                    table_col_name_to_value_range, conjuncts, false, tuple_descriptor,
@@ -82,7 +77,6 @@ Status HiveOrcReader::init_reader(
 
 Status HiveParquetReader::init_reader(
         const std::vector<std::string>& read_table_col_names,
-        const TSchemaInfoNode& table_col_id_table_name_map,
         const std::unordered_map<std::string, ColumnValueRangeType>* table_col_name_to_value_range,
         const VExprContextSPtrs& conjuncts, const TupleDescriptor* tuple_descriptor,
         const RowDescriptor* row_descriptor,
@@ -91,38 +85,32 @@ Status HiveParquetReader::init_reader(
         const std::unordered_map<int, VExprContextSPtrs>* slot_id_to_filter_conjuncts) {
     auto* parquet_reader = static_cast<ParquetReader*>(_file_format_reader.get());
     FieldDescriptor field_desc = parquet_reader->get_file_metadata_schema();
-    auto parquet_fields_schema  = field_desc.get_fields_schema();
 
-    auto root = std::make_shared<TableSchemaChange::tableNode>();
     if (_state->query_options().hive_parquet_use_column_names) {
-        RETURN_IF_ERROR(TableSchemaChangeHelper::parquet_use_name(tuple_descriptor, field_desc, root));
-    } else { // use idx  and   hive1
+        RETURN_IF_ERROR(BuildTableInfoUtil::by_parquet_name(tuple_descriptor, field_desc, table_info_node_ptr));
+    } else { // use idx
         std::map<std::string, const SlotDescriptor*> slot_map;//table_name to slot
         for (const auto& slot : tuple_descriptor->slots()) {
             slot_map.emplace(slot->col_name(), slot);
         }
 
+        auto parquet_fields_schema  = field_desc.get_fields_schema();
         for (size_t idx = 0 ; idx < _params.column_idxs.size() ; idx++) {
             auto table_column_name =  read_table_col_names[idx];
             auto file_index = _params.column_idxs[idx];
 
-            auto field_node = std::make_shared<TableSchemaChange::tableNode>();
             if (file_index >= parquet_fields_schema.size()) {
-                field_node->exists_in_file = false;
-            }else {
-                field_node->exists_in_file = true;
-                field_node->file_name = parquet_fields_schema[file_index].name;
-                RETURN_IF_ERROR(TableSchemaChangeHelper::parquet_subcolumn_use_name
-                        (slot_map[table_column_name]->type(),field_node, parquet_fields_schema[file_index]));
+                table_info_node_ptr->add_not_exist_children(table_column_name);
+            } else {
+                auto field_node = std::make_shared<Node>();
+                RETURN_IF_ERROR(BuildTableInfoUtil::by_parquet_name(slot_map[table_column_name]->type(),
+                        parquet_fields_schema[file_index], field_node));
+                table_info_node_ptr->add_children(table_column_name, parquet_fields_schema[file_index].name, field_node);
             }
-            root->children.emplace(table_column_name,field_node);
         }
-
     }
 
-
-
-    parquet_reader->set_table_info_node_ptr(root);
+    parquet_reader->set_table_info_node_ptr(table_info_node_ptr);
     return parquet_reader->init_reader(
             read_table_col_names, {}, table_col_name_to_value_range,
             conjuncts, tuple_descriptor, row_descriptor, colname_to_slot_id,

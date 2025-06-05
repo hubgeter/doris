@@ -161,7 +161,7 @@ public:
 
 
     void set_table_info_node_ptr(
-            std::shared_ptr<TableSchemaChange::node> table_info_node_ptr)  {
+            std::shared_ptr<TableSchemaChangeHelper::Node> table_info_node_ptr)  {
         _table_info_node_ptr = table_info_node_ptr;
     }
 
@@ -269,7 +269,7 @@ private:
     // table column name to file column name map. For iceberg schema evolution.
 //    std::unordered_map<std::string, std::string> _table_col_to_file_col;
 
-    std::shared_ptr<TableSchemaChange::node> _table_info_node_ptr = TableSchemaChange::const_node;
+    std::shared_ptr<TableSchemaChangeHelper::Node> _table_info_node_ptr = TableSchemaChangeHelper::ConstNode::get_instance();
 
     const std::unordered_map<std::string, ColumnValueRangeType>* _colname_to_value_range = nullptr;
 

@@ -37,7 +37,6 @@ import org.apache.doris.thrift.TAggregationType;
 import org.apache.doris.thrift.TColumn;
 import org.apache.doris.thrift.TColumnType;
 import org.apache.doris.thrift.TPrimitiveType;
-import org.apache.doris.thrift.TSchemaInfoNode;
 
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
@@ -51,7 +50,6 @@ import org.apache.logging.log4j.Logger;
 import java.io.DataInput;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -602,10 +600,7 @@ public class Column implements GsonPostProcessable {
         return onUpdateDefaultValueExprDef.getExpr(type);
     }
 
-    public TColumn toThrift() {
-        TColumn tColumn = new TColumn();
-        tColumn.setColumnName(removeNamePrefix(this.name));
-
+    public TColumnType columnTypeToThrift() {
         TColumnType tColumnType = new TColumnType();
         tColumnType.setType(this.getDataType().toThrift());
         tColumnType.setLen(this.getStrLen());
@@ -613,8 +608,13 @@ public class Column implements GsonPostProcessable {
         tColumnType.setScale(this.getScale());
 
         tColumnType.setIndexLen(this.getOlapColumnIndexSize());
+        return tColumnType;
+    }
 
-        tColumn.setColumnType(tColumnType);
+    public TColumn toThrift() {
+        TColumn tColumn = new TColumn();
+        tColumn.setColumnName(removeNamePrefix(this.name));
+        tColumn.setColumnType(columnTypeToThrift());
         if (null != this.aggregationType) {
             tColumn.setAggregationType(this.aggregationType.toThrift());
         } else {
@@ -1215,46 +1215,4 @@ public class Column implements GsonPostProcessable {
         this.realDefaultValue = refColumn.realDefaultValue;
     }
 
-    public static void getSchemaInfo(Column column, TSchemaInfoNode root) {
-        if (column.getType().isStructType()) {
-            for (Column child : column.getChildren()) {
-                TSchemaInfoNode childNode = new TSchemaInfoNode();
-                childNode.children = new HashMap<>();
-                childNode.name = child.getName();
-                getSchemaInfo(child, childNode);
-                root.children.put(child.getUniqueId(), childNode);
-            }
-        } else if (column.getType().isArrayType()) {
-            TSchemaInfoNode childNode = new TSchemaInfoNode();
-            childNode.name = "element";
-            childNode.children = new HashMap<>();
-            getSchemaInfo(column.getChildren().get(0), childNode);
-            root.children.put(0, childNode);
-        } else if (column.getType().isMapType()) {
-            TSchemaInfoNode keyNode = new TSchemaInfoNode();
-            keyNode.name = "key";
-            keyNode.children = new HashMap<>();
-            getSchemaInfo(column.getChildren().get(0), keyNode);
-            root.children.put(0, keyNode);
-
-            TSchemaInfoNode valueNode = new TSchemaInfoNode();
-            valueNode.name = "value";
-            valueNode.children = new HashMap<>();
-            getSchemaInfo(column.getChildren().get(1), valueNode);
-            root.children.put(1, valueNode);
-        }
-    }
-
-    public static TSchemaInfoNode getSchemaInfo(List<Column> columns) {
-        TSchemaInfoNode rootNode = new TSchemaInfoNode();
-        rootNode.name = "";
-        rootNode.children = new HashMap<>();
-        Column rootStructColumn = new Column();
-        rootStructColumn.setType(new StructType());
-        for (Column column : columns) {
-            rootStructColumn.addChildrenColumn(column);
-        }
-        getSchemaInfo(rootStructColumn, rootNode);
-        return rootNode;
-    }
 }

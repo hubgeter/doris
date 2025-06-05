@@ -191,7 +191,7 @@ public:
     Status get_parsed_schema(std::vector<std::string>* col_names,
                              std::vector<DataTypePtr>* col_types) override;
 
-    Status get_schema_col_name_attribute(TSchemaInfoNode& root, const std::string& attribute, bool* exist_attribute);
+//    Status get_schema_col_name_attribute(TSchemaInfoNode& root, const std::string& attribute, bool* exist_attribute);
 
     void set_table_col_to_file_col(
             std::unordered_map<std::string, std::string> table_col_to_file_col) {
@@ -226,7 +226,7 @@ public:
                     iterator_pair) {
         _row_id_column_iterator_pair = iterator_pair;
     }
-    std::shared_ptr<TableSchemaChange::node> table_info_node_ptr = TableSchemaChange::const_node;
+    std::shared_ptr<TableSchemaChangeHelper::Node> table_info_node_ptr = TableSchemaChangeHelper::ConstNode::get_instance();
 
     static bool inline is_hive1_col_name(const orc::Type* orc_type_ptr) {
         for (uint64_t idx =  0;  idx  < orc_type_ptr->getSubtypeCount(); idx++){
@@ -345,12 +345,12 @@ private:
 
     template <bool is_filter = false>
     Status _fill_doris_data_column(const std::string& col_name, MutableColumnPtr& data_column,
-                                   const DataTypePtr& data_type,  std::shared_ptr<TableSchemaChange::node> root_node,   const orc::Type* orc_column_type,
+                                   const DataTypePtr& data_type,  std::shared_ptr<TableSchemaChangeHelper::Node> root_node,   const orc::Type* orc_column_type,
                                    const orc::ColumnVectorBatch* cvb, size_t num_values);
 
     template <bool is_filter = false>
     Status _orc_column_to_doris_column(const std::string& col_name, ColumnPtr& doris_column,
-                                       const DataTypePtr& data_type, std::shared_ptr<TableSchemaChange::node> root_node,
+                                       const DataTypePtr& data_type, std::shared_ptr<TableSchemaChangeHelper::Node> root_node,
                                        const orc::Type* orc_column_type,
                                        const orc::ColumnVectorBatch* cvb, size_t num_values);
 

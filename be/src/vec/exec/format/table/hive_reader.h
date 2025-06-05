@@ -23,7 +23,7 @@
 #include "vec/exec/format/table/table_format_reader.h"
 namespace doris::vectorized {
 #include "common/compile_check_begin.h"
-class HiveReader : public TableFormatReader {
+class HiveReader : public TableFormatReader, public TableSchemaChangeHelper {
 public:
     HiveReader(std::unique_ptr<GenericReader> file_format_reader, RuntimeProfile* profile,
                RuntimeState* state, const TFileScanRangeParams& params, const TFileRangeDesc& range,
@@ -49,9 +49,7 @@ ENABLE_FACTORY_CREATOR(HiveOrcReader);
 
     Status init_reader(
             const std::vector<std::string>& read_table_col_names,
-            const TSchemaInfoNode& table_col_id_table_name_map,
-            const std::unordered_map<std::string, ColumnValueRangeType>*
-            table_col_name_to_value_range,
+            const std::unordered_map<std::string, ColumnValueRangeType>* table_col_name_to_value_range,
             const VExprContextSPtrs& conjuncts, const TupleDescriptor* tuple_descriptor,
             const RowDescriptor* row_descriptor,
             const VExprContextSPtrs* not_single_slot_filter_conjuncts,
@@ -69,7 +67,6 @@ ENABLE_FACTORY_CREATOR(HiveParquetReader);
 
     Status init_reader(
             const std::vector<std::string>& read_table_col_names,
-            const TSchemaInfoNode& table_col_id_table_name_map,
             const std::unordered_map<std::string, ColumnValueRangeType>*
             table_col_name_to_value_range,
             const VExprContextSPtrs& conjuncts, const TupleDescriptor* tuple_descriptor,

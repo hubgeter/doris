@@ -120,7 +120,7 @@ Status RowGroupReader::init(
     size_t max_buf_size = std::min(MAX_COLUMN_BUF_SIZE, MAX_GROUP_BUF_SIZE / _read_table_columns.size());
     for (const auto& read_table_col : _read_table_columns) {
 
-        auto read_file_col = _table_info_node_ptr->children_name_in_file( read_table_col);
+        auto read_file_col = _table_info_node_ptr->children_file_column_name( read_table_col);
 
         auto* field = const_cast<FieldSchema*>(schema.get_column(read_file_col));
         auto physical_index = field->physical_column_index;
@@ -153,7 +153,7 @@ Status RowGroupReader::init(
         for (size_t i = 0; i < predicate_col_names.size(); ++i) {
             const string& predicate_col_name = predicate_col_names[i];
             int slot_id = predicate_col_slot_ids[i];
-            auto predicate_file_col_name = _table_info_node_ptr->children_name_in_file( predicate_col_name);
+            auto predicate_file_col_name = _table_info_node_ptr->children_file_column_name( predicate_col_name);
             auto field = const_cast<FieldSchema*>(schema.get_column(predicate_file_col_name));
             if (!disable_dict_filter && !_lazy_read_ctx.has_complex_type &&
                 _can_filter_by_dict(

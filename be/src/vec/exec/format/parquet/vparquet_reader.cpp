@@ -325,11 +325,10 @@ Status ParquetReader::init_reader(
     _column_names = &all_column_names;
     auto schema_desc = _file_metadata->schema();
 
-    std::map<std::string,std::string> required_file_columns;//file  -> table
-
+    std::map<std::string,std::string> required_file_columns;//file column -> table column
     for (auto table_column_name : all_column_names ){
-        if (_table_info_node_ptr->children_exists_in_file(table_column_name)) {
-            required_file_columns.emplace(_table_info_node_ptr->children_name_in_file(table_column_name),
+        if (_table_info_node_ptr->children_column_exists(table_column_name)) {
+            required_file_columns.emplace(_table_info_node_ptr->children_file_column_name(table_column_name),
                                           table_column_name);
         } else {
             _missing_cols.emplace_back(table_column_name);
@@ -400,8 +399,8 @@ Status ParquetReader::set_fill_columns(
     for (auto& read_table_col : _read_table_columns) {
         _lazy_read_ctx.all_read_columns.emplace_back(read_table_col);
 
-        auto file_column_name = _table_info_node_ptr->children_name_in_file(read_table_col);
-        PrimitiveType column_type = schema.get_column(file_column_name)->type.type;
+        auto file_column_name = _table_info_node_ptr->children_file_column_name(read_table_col);
+        PrimitiveType column_type = schema.get_column(file_column_name)->data_type->get_primitive_type();
         if (is_complex_type(column_type)) {
             _lazy_read_ctx.has_complex_type = true;
         }
@@ -930,7 +929,7 @@ Status ParquetReader::_process_column_stat_filter(const std::vector<tparquet::Co
     }
     auto& schema_desc = _file_metadata->schema();
     for (auto& table_col_name : _read_table_columns) {
-        if (_table_info_node_ptr->children_exists_in_file(table_col_name)){
+        if (_table_info_node_ptr->children_column_exists(table_col_name)){
             continue;
         }
 
@@ -939,7 +938,7 @@ Status ParquetReader::_process_column_stat_filter(const std::vector<tparquet::Co
             continue;
         }
 
-        auto file_col_name = _table_info_node_ptr->children_name_in_file(table_col_name);
+        auto file_col_name = _table_info_node_ptr->children_file_column_name(table_col_name);
         int parquet_col_id = _file_metadata->schema().get_column(file_col_name)->physical_column_index;
         if (parquet_col_id < 0) {
             // complex type, not support filter yet.

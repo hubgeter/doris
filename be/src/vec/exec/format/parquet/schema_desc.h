@@ -61,12 +61,7 @@ struct FieldSchema {
     FieldSchema(const FieldSchema& fieldSchema) = default;
     std::string debug_string() const;
 
-    int32_t field_id = 0;
-};
-
-struct xx{
-    std::string name;
-    std::map<int32_t, xx>  children;
+    int32_t field_id = -1;
 };
 
 
@@ -80,12 +75,6 @@ private:
     std::unordered_map<std::string, const FieldSchema*> _name_to_field;
     // Used in from_thrift, marking the next schema position that should be parsed
     size_t _next_schema_pos;
-//    TSchemaInfoNode _field_id_name_mapping;
-    TSchemaInfoNode _schema_info_root_node;
-public:
-    //if hive : dont need  _optional_field_id = false;
-    //if iceberg: i need field id to support schema change
-    bool _optional_field_id = true;
 private:
     void parse_physical_field(const tparquet::SchemaElement& physical_schema, bool is_nullable,
                               FieldSchema* physical_field);
@@ -150,7 +139,7 @@ public:
 //    bool has_parquet_field_id() const { return !_field_id_name_mapping.empty(); }
 //
 
-    TSchemaInfoNode get_field_id_name_map() { return _schema_info_root_node; }
+//    TSchemaInfoNode get_field_id_name_map() { return _schema_info_root_node; }
 
     const std::vector<FieldSchema>& get_fields_schema() const {
         return _fields;

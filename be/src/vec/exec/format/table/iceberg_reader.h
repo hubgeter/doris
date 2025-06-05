@@ -166,7 +166,6 @@ public:
                                  kv_cache, io_ctx) {}
     Status init_reader(
             const std::vector<std::string>& file_col_names,
-            const TSchemaInfoNode& col_id_name_map,
             const std::unordered_map<std::string, ColumnValueRangeType>* colname_to_value_range,
             const VExprContextSPtrs& conjuncts, const TupleDescriptor* tuple_descriptor,
             const RowDescriptor* row_descriptor,
@@ -182,8 +181,7 @@ public:
         parquet_reader->set_delete_rows(&_iceberg_delete_rows);
     }
 
-    Status get_file_col_id_to_name(bool& exist_schema,
-                                   TSchemaInfoNode &file_col_id_to_name) final;
+
 
 protected:
     std::unique_ptr<GenericReader> _create_equality_reader(
@@ -213,7 +211,6 @@ public:
 
     Status init_reader(
             const std::vector<std::string>& file_col_names,
-            const TSchemaInfoNode& col_id_name_map,
             const std::unordered_map<std::string, ColumnValueRangeType>* colname_to_value_range,
             const VExprContextSPtrs& conjuncts, const TupleDescriptor* tuple_descriptor,
             const RowDescriptor* row_descriptor,
@@ -221,8 +218,6 @@ public:
             const VExprContextSPtrs* not_single_slot_filter_conjuncts,
             const std::unordered_map<int, VExprContextSPtrs>* slot_id_to_filter_conjuncts);
 
-    Status get_file_col_id_to_name(bool& exist_schema,
-                                   TSchemaInfoNode &file_col_id_to_name) final;
 
 protected:
     std::unique_ptr<GenericReader> _create_equality_reader(

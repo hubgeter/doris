@@ -18,13 +18,13 @@
 package org.apache.doris.datasource.paimon.source;
 
 import org.apache.doris.analysis.TupleDescriptor;
-import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.TableIf;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.MetaNotFoundException;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.FileFormatUtils;
 import org.apache.doris.common.util.LocationPath;
+import org.apache.doris.datasource.ExternalUtil;
 import org.apache.doris.datasource.FileQueryScanNode;
 import org.apache.doris.datasource.FileSplitter;
 import org.apache.doris.datasource.paimon.PaimonExternalCatalog;
@@ -40,11 +40,9 @@ import org.apache.doris.thrift.TFileRangeDesc;
 import org.apache.doris.thrift.TPaimonDeletionFileDesc;
 import org.apache.doris.thrift.TPaimonFileDesc;
 import org.apache.doris.thrift.TPushAggOp;
-import org.apache.doris.thrift.TSchemaInfoNode;
 import org.apache.doris.thrift.TTableFormatFileDesc;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.Sets;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -114,6 +112,8 @@ public class PaimonScanNode extends FileQueryScanNode {
     private String serializedTable;
     private static final long COUNT_WITH_PARALLEL_SPLITS = 10000;
 
+    protected ConcurrentHashMap<Long, Boolean> currentQuerySchema = new ConcurrentHashMap<>();
+
     public PaimonScanNode(PlanNodeId id,
             TupleDescriptor desc,
             boolean needCheckColumnPriv,
@@ -126,10 +126,7 @@ public class PaimonScanNode extends FileQueryScanNode {
         super.doInitialize();
         source = new PaimonSource(desc);
         serializedTable = encodeObjectToString(source.getPaimonTable());
-        Preconditions.checkNotNull(source);
-        params.setHistorySchemaInfo(new ConcurrentHashMap<>());
-        params.history_schema_info.put(-1L,
-                Column.getSchemaInfo(source.getTargetTable().getColumns()));
+        ExternalUtil.initSchemaInfo(params, -1L, source.getTargetTable().getColumns());
     }
 
     @VisibleForTesting
@@ -167,14 +164,12 @@ public class PaimonScanNode extends FileQueryScanNode {
         return Optional.of(serializedTable);
     }
 
-    private TSchemaInfoNode getSchemaInfo(Long schemaId) {
-        PaimonExternalTable table = (PaimonExternalTable) source.getTargetTable();
-        TableSchema tableSchema = table.getPaimonSchemaCacheValue(schemaId).getTableSchema();
-        TSchemaInfoNode root = new TSchemaInfoNode();
-        root.name = "";
-        root.children = new HashMap<>();
-        PaimonUtil.getSchemaInfo(tableSchema.fields(), root);
-        return root;
+    private void putHistorySchemaInfo(Long schemaId) {
+        if (currentQuerySchema.putIfAbsent(schemaId, Boolean.TRUE) == null) {
+            PaimonExternalTable table = (PaimonExternalTable) source.getTargetTable();
+            TableSchema tableSchema = table.getPaimonSchemaCacheValue(schemaId).getTableSchema();
+            params.addToHistorySchemaInfo(PaimonUtil.getSchemaInfo(tableSchema));
+        }
     }
 
     private void setPaimonParams(TFileRangeDesc rangeDesc, PaimonSplit paimonSplit) {
@@ -198,8 +193,9 @@ public class PaimonScanNode extends FileQueryScanNode {
             } else {
                 throw new RuntimeException("Unsupported file format: " + fileFormat);
             }
+
+            putHistorySchemaInfo(paimonSplit.getSchemaId());
             fileDesc.setSchemaId(paimonSplit.getSchemaId());
-            params.history_schema_info.computeIfAbsent(paimonSplit.getSchemaId(), this::getSchemaInfo);
         }
         fileDesc.setFileFormat(fileFormat);
         fileDesc.setPaimonPredicate(encodeObjectToString(predicates));

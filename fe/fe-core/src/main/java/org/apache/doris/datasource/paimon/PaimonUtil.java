@@ -26,7 +26,14 @@ import org.apache.doris.catalog.ScalarType;
 import org.apache.doris.catalog.Type;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.datasource.hive.HiveUtil;
-import org.apache.doris.thrift.TSchemaInfoNode;
+import org.apache.doris.thrift.TColumnType;
+import org.apache.doris.thrift.TPrimitiveType;
+import org.apache.doris.thrift.schema.external.TArrayField;
+import org.apache.doris.thrift.schema.external.TField;
+import org.apache.doris.thrift.schema.external.TMapField;
+import org.apache.doris.thrift.schema.external.TNestedField;
+import org.apache.doris.thrift.schema.external.TSchema;
+import org.apache.doris.thrift.schema.external.TStructField;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -40,6 +47,7 @@ import org.apache.paimon.options.ConfigOption;
 import org.apache.paimon.partition.Partition;
 import org.apache.paimon.predicate.Predicate;
 import org.apache.paimon.reader.RecordReader;
+import org.apache.paimon.schema.TableSchema;
 import org.apache.paimon.table.Table;
 import org.apache.paimon.table.source.ReadBuilder;
 import org.apache.paimon.types.ArrayType;
@@ -256,52 +264,64 @@ public class PaimonUtil {
         updatePaimonColumnUniqueId(column, field.type());
     }
 
-    public static void getSchemaInfo(DataType dataType, TSchemaInfoNode root) {
+    public static TField getSchemaInfo(DataType dataType) {
+        TField field = new TField();
+        field.setIsOptional(dataType.isNullable());
+        TNestedField nestedField = new TNestedField();
+        TColumnType tColumnType = new TColumnType();
+
         switch (dataType.getTypeRoot()) {
             case ARRAY: {
-                ArrayType arrayType = (ArrayType) dataType;
-
-                TSchemaInfoNode childNode = new TSchemaInfoNode();
-                childNode.name = "element";
-                childNode.children = new HashMap<>();
-                getSchemaInfo(arrayType.getElementType(), childNode);
-                root.children.put(0, childNode);
+                TArrayField listField = new TArrayField();
+                org.apache.paimon.types.ArrayType paimonArrayType = (org.apache.paimon.types.ArrayType) dataType;
+                listField.setItemField(getSchemaInfo(paimonArrayType.getElementType()));
+                nestedField.setArrayField(listField);
+                field.setNestedField(nestedField);
+                tColumnType.setType(TPrimitiveType.ARRAY);
                 break;
             }
             case MAP: {
-                MapType mapType = (MapType) dataType;
-
-                TSchemaInfoNode keyNode = new TSchemaInfoNode();
-                keyNode.name = "key";
-                keyNode.children = new HashMap<>();
-                getSchemaInfo(mapType.getKeyType(), keyNode);
-                root.children.put(0, keyNode);
-
-
-                TSchemaInfoNode valueNode = new TSchemaInfoNode();
-                valueNode.name = "value";
-                valueNode.children = new HashMap<>();
-                getSchemaInfo(mapType.getValueType(), valueNode);
-                root.children.put(1, valueNode);
-
+                TMapField mapField = new TMapField();
+                org.apache.paimon.types.MapType mapType = (org.apache.paimon.types.MapType) dataType;
+                mapField.setKeyField(getSchemaInfo(mapType.getKeyType()));
+                mapField.setValueField(getSchemaInfo(mapType.getValueType()));
+                nestedField.setMapField(mapField);
+                field.setNestedField(nestedField);
+                tColumnType.setType(TPrimitiveType.MAP);
                 break;
             }
-            case ROW:
+            case ROW: {
                 RowType rowType = (RowType) dataType;
-                getSchemaInfo(rowType.getFields(), root);
+                TStructField structField = getSchemaInfo(rowType.getFields());
+                nestedField.setStructField(structField);
+                field.setNestedField(nestedField);
+                tColumnType.setType(TPrimitiveType.STRUCT);
                 break;
+            }
             default:
+                tColumnType.setType(TPrimitiveType.NULL_TYPE);
                 break;
         }
+        field.setType(tColumnType);
+        return field;
     }
 
-    public static void getSchemaInfo(List<DataField> fields, TSchemaInfoNode root) {
-        for (DataField field : fields) {
-            TSchemaInfoNode childNode = new TSchemaInfoNode();
-            childNode.name = field.name().toLowerCase();
-            childNode.children = new HashMap<>();
-            getSchemaInfo(field.type(), childNode);
-            root.children.put(field.id(), childNode);
+    public static TStructField getSchemaInfo(List<DataField> paimonFields) {
+        TStructField structField = new TStructField();
+        for (DataField paimonField : paimonFields) {
+            TField childField = getSchemaInfo(paimonField.type());
+            childField.setName(paimonField.name());
+            childField.setId(paimonField.id());
+            structField.addToFields(childField);
         }
+        return structField;
     }
+
+    public static TSchema getSchemaInfo(TableSchema paimonTableSchema) {
+        TSchema tSchema = new TSchema();
+        tSchema.setSchemaId(paimonTableSchema.id());
+        tSchema.setRootField(getSchemaInfo(paimonTableSchema.fields()));
+        return tSchema;
+    }
+
 }

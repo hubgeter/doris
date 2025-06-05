@@ -415,7 +415,6 @@ void IcebergTableReader::_gen_position_delete_file_range(Block& block, DeleteFil
 
 Status IcebergParquetReader::init_reader(
         const std::vector<std::string>& file_col_names,
-        const TSchemaInfoNode& col_id_name_map,
         const std::unordered_map<std::string, ColumnValueRangeType>* colname_to_value_range,
         const VExprContextSPtrs& conjuncts, const TupleDescriptor* tuple_descriptor,
         const RowDescriptor* row_descriptor,
@@ -424,13 +423,28 @@ Status IcebergParquetReader::init_reader(
         const std::unordered_map<int, VExprContextSPtrs>* slot_id_to_filter_conjuncts) {
     _file_format = Fileformat::PARQUET;
     auto* parquet_reader = static_cast<ParquetReader*>(_file_format_reader.get());
-    RETURN_IF_ERROR(TableSchemaChangeHelper::init_schema_info(col_id_name_map));
+    const auto& field_desc = parquet_reader->get_file_metadata_schema();
 
-    _all_required_col_names = file_col_names;
+    if (!_params.__isset.history_schema_info || _params.history_schema_info.empty()) [[unlikely]] {
+        std::cout <<"aaaaaa\n";
+        RETURN_IF_ERROR(BuildTableInfoUtil::by_parquet_name(tuple_descriptor, field_desc, table_info_node_ptr));
+    } else {
+        bool exist_field_id = true;
+        std::cout <<"bbbbbbb\n";
+
+        RETURN_IF_ERROR(BuildTableInfoUtil::by_parquet_field_id(_params.history_schema_info.front().root_field,
+                                                                field_desc,table_info_node_ptr,exist_field_id));
+        if (!exist_field_id) {
+            std::cout <<"ccccc\n";
+            RETURN_IF_ERROR(BuildTableInfoUtil::by_parquet_name(tuple_descriptor, field_desc, table_info_node_ptr));
+
+        }
+    }
     parquet_reader->set_table_info_node_ptr(table_info_node_ptr);
 
-    RETURN_IF_ERROR(init_row_filters());
 
+    _all_required_col_names = file_col_names;
+    RETURN_IF_ERROR(init_row_filters());
     return parquet_reader->init_reader(_all_required_col_names, {}, colname_to_value_range,
             conjuncts, tuple_descriptor, row_descriptor, colname_to_slot_id,
             not_single_slot_filter_conjuncts, slot_id_to_filter_conjuncts);
@@ -482,9 +496,9 @@ Status IcebergParquetReader ::_read_position_delete_file(const TFileRangeDesc* d
     return Status::OK();
 };
 
+
 Status IcebergOrcReader::init_reader(
         const std::vector<std::string>& file_col_names,
-        const TSchemaInfoNode& col_id_name_map,
         const std::unordered_map<std::string, ColumnValueRangeType>* colname_to_value_range,
         const VExprContextSPtrs& conjuncts, const TupleDescriptor* tuple_descriptor,
         const RowDescriptor* row_descriptor,
@@ -493,9 +507,27 @@ Status IcebergOrcReader::init_reader(
         const std::unordered_map<int, VExprContextSPtrs>* slot_id_to_filter_conjuncts) {
     _file_format = Fileformat::ORC;
     auto* orc_reader = static_cast<OrcReader*>(_file_format_reader.get());
-
+    const orc::Type* orc_type_ptr = nullptr;
+    RETURN_IF_ERROR(orc_reader->get_file_type(&orc_type_ptr));
     _all_required_col_names = file_col_names;
-    RETURN_IF_ERROR(TableSchemaChangeHelper::init_schema_info(col_id_name_map));
+
+
+    if (!_params.__isset.history_schema_info || _params.history_schema_info.empty()) [[unlikely]] {
+        std::cout <<"11111\n";
+        RETURN_IF_ERROR(BuildTableInfoUtil::by_orc_name(tuple_descriptor, orc_type_ptr, table_info_node_ptr));
+    } else {
+        bool exist_field_id = true;
+        std::cout <<"22222\n";
+        RETURN_IF_ERROR(BuildTableInfoUtil::by_orc_field_id(_params.history_schema_info.front().root_field,
+                                            orc_type_ptr, ICEBERG_ORC_ATTRIBUTE,table_info_node_ptr,exist_field_id));
+        if (!exist_field_id) {
+            std::cout <<"3333\n";
+
+            RETURN_IF_ERROR(BuildTableInfoUtil::by_orc_name(tuple_descriptor, orc_type_ptr , table_info_node_ptr));
+
+        }
+    }
+
 
     orc_reader->table_info_node_ptr = table_info_node_ptr;
     RETURN_IF_ERROR(init_row_filters());
@@ -533,76 +565,6 @@ Status IcebergOrcReader::_read_position_delete_file(const TFileRangeDesc* delete
     return Status::OK();
 }
 
-// To support schema evolution, Iceberg write the column id to column name map to parquet file key_value_metadata.
-Status IcebergParquetReader::get_file_col_id_to_name(
-            bool& exist_schema, TSchemaInfoNode &file_col_id_to_name) {
-    auto* parquet_reader = static_cast<ParquetReader*>(_file_format_reader.get());
-    FieldDescriptor field_desc = parquet_reader->get_file_metadata_schema();
-
-//    if (field_desc.) {
-//
-//    }
-
-
-//    if (field_desc.) {
-    if (true) {
-        exist_schema = true;
-        auto parquet_fields_schema  = field_desc.get_fields_schema();
-        std::function<void(const FieldSchema&, TSchemaInfoNode&)>
-                loop = [&](const  FieldSchema& field, TSchemaInfoNode& root)  {
-            if (field.type.type == TYPE_STRUCT) {
-                for (int32_t idx =0 ; idx < field.children.size(); idx++) {
-                    const auto& sub_filed = field.children[idx];
-                    TSchemaInfoNode sub_node;
-                    sub_node.name = sub_filed.name;
-                    loop(sub_filed, sub_node);
-                    root.children.emplace(sub_filed.field_id, sub_node);
-                }
-            } else if (field.type.type == TYPE_MAP) {
-                {
-                    TSchemaInfoNode key_node;
-                    key_node.name = "key";
-                    loop(field.children[0].children[0],key_node);
-                    root.children.emplace(0, key_node);
-                }
-                {
-                    TSchemaInfoNode value_node;
-                    value_node.name = "value";
-                    loop(field.children[0].children[1], value_node);
-                    root.children.emplace(1, value_node);
-                }
-            } else if (field.type.type == TYPE_ARRAY) {
-                TSchemaInfoNode element_node;
-                element_node.name = "element";
-                loop(field.children[0], element_node);
-                root.children.emplace(0, element_node);
-            }
-        };
-        for (const auto& parquet_field : parquet_fields_schema) {
-            TSchemaInfoNode sub_node;
-            sub_node.name = parquet_field.name;
-            loop(parquet_field, sub_node);
-            file_col_id_to_name.children.emplace(parquet_field.field_id, sub_node);
-        }
-    } else {
-        //For early iceberg version, it doesn't write any schema information to Parquet file.
-        exist_schema = false;
-    }
-
-    return Status::OK();
-}
-
-//To support schema evolution, Iceberg write the column id to orc file attribute.
-Status IcebergOrcReader::get_file_col_id_to_name(
-            bool& exist_schema, TSchemaInfoNode &file_col_id_to_name) {
-    auto* orc_reader = static_cast<OrcReader*>(_file_format_reader.get());
-
-    RETURN_IF_ERROR(orc_reader->get_schema_col_name_attribute(file_col_id_to_name, ICEBERG_ORC_ATTRIBUTE, &exist_schema));
-    if (!exist_schema) {
-        return Status::OK();
-    }
-    return Status::OK();
-}
 
 #include "common/compile_check_end.h"
 } // namespace doris::vectorized

@@ -68,7 +68,7 @@ static constexpr uint32_t MAX_DICT_CODE_PREDICATE_TO_REWRITE = std::numeric_limi
 class RowGroupReader : public ProfileCollector {
 public:
 
-    std::shared_ptr<TableSchemaChange::node> _table_info_node_ptr;
+    std::shared_ptr<TableSchemaChangeHelper::Node> _table_info_node_ptr;
     static const std::vector<int64_t> NO_DELETE;
 
     struct RowGroupIndex {

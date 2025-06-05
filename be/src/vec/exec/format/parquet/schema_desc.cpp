@@ -147,67 +147,6 @@ Status FieldDescriptor::parse_from_thrift(const std::vector<tparquet::SchemaElem
             return Status::InvalidArgument("Duplicated field name: {}", _fields[i].name);
         }
         _name_to_field.emplace(_fields[i].name, &_fields[i]);
-
-
-
-        _optional_field_id = (_fields[i].field_id != -1) & _optional_field_id;
-    }
-
-//    std::function<void(const FieldSchema&)>
-//        check_parquet_id(const FieldSchema& field) {
-//        if (field.field_id == -1) {
-//
-//            return;
-//        }
-//
-//        field.
-//    }
-
-
-
-    std::function<void(const FieldSchema&, TSchemaInfoNode&)>
-        loop = [&](const  FieldSchema& field, TSchemaInfoNode& root)  {
-
-        if (field.type.type == TYPE_STRUCT) {
-            for (int32_t idx =0 ; idx < field.children.size(); idx++) {
-                const auto& sub_filed = field.children[idx];
-                TSchemaInfoNode sub_node;
-                sub_node.name = sub_filed.name;
-                loop(sub_filed, sub_node);
-
-                if (_optional_field_id && sub_filed.field_id == -1) {
-                    // 子列没有field id  这很奇怪。
-                    // ??????
-                }
-
-                root.children.emplace(_optional_field_id ? sub_filed.field_id : idx , sub_node);
-            }
-        } else if (field.type.type == TYPE_MAP) {
-            {
-                TSchemaInfoNode key_node;
-                key_node.name = "key";
-                loop(field.children[0].children[0],key_node);
-                root.children.emplace(0, key_node);
-            }
-            {
-                TSchemaInfoNode value_node;
-                value_node.name = "value";
-                loop(field.children[0].children[1], value_node);
-                root.children.emplace(1, value_node);
-            }
-        } else if (field.type.type == TYPE_ARRAY) {
-            TSchemaInfoNode element_node;
-            element_node.name = "element";
-            loop(field.children[0], element_node);
-            root.children.emplace(0, element_node);
-        }
-    };
-
-    for (int32_t idx = 0; idx < root_schema.num_children; idx++) {
-        TSchemaInfoNode sub_node;
-        sub_node.name = _fields[idx].name;
-        loop(_fields[idx], sub_node);
-        _schema_info_root_node.children.emplace(_optional_field_id ? _fields[idx].field_id : idx, sub_node);
     }
 
     if (_next_schema_pos != t_schemas.size()) {

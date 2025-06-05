@@ -33,12 +33,13 @@ public:
 
     ~HudiReader() override = default;
 
-    Status get_file_col_id_to_name(bool& exist_schema,
-                                   TSchemaInfoNode &file_col_id_to_name) final;
-
     Status get_next_block_inner(Block* block, size_t* read_rows, bool* eof) final;
 
     Status init_row_filters() final { return Status::OK(); };
+
+
+
+
 };
 
 class HudiParquetReader final : public HudiReader {
@@ -52,7 +53,6 @@ public:
 
     Status init_reader(
             const std::vector<std::string>& read_table_col_names,
-            const TSchemaInfoNode& table_col_id_table_name_map,
             const std::unordered_map<std::string, ColumnValueRangeType>*
                     table_col_name_to_value_range,
             const VExprContextSPtrs& conjuncts, const TupleDescriptor* tuple_descriptor,

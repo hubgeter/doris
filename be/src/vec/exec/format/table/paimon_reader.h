@@ -38,9 +38,6 @@ public:
 
     Status get_next_block_inner(Block* block, size_t* read_rows, bool* eof) final;
 
-    Status get_file_col_id_to_name(bool& exist_schema,
-                                   TSchemaInfoNode &file_col_id_to_name) final;
-
 protected:
     struct PaimonProfile {
         RuntimeProfile::Counter* num_delete_rows;
@@ -68,18 +65,19 @@ public:
 
     Status init_reader(
             const std::vector<std::string>& read_table_col_names,
-            const TSchemaInfoNode& table_col_id_table_name_map,
             const std::unordered_map<std::string, ColumnValueRangeType>*
                     table_col_name_to_value_range,
             const VExprContextSPtrs& conjuncts, const TupleDescriptor* tuple_descriptor,
             const RowDescriptor* row_descriptor,
             const VExprContextSPtrs* not_single_slot_filter_conjuncts,
             const std::unordered_map<int, VExprContextSPtrs>* slot_id_to_filter_conjuncts) {
-        RETURN_IF_ERROR(TableSchemaChangeHelper::init_schema_info(table_col_id_table_name_map));
-
         auto* orc_reader = static_cast<OrcReader*>(_file_format_reader.get());
-        orc_reader->table_info_node_ptr = table_info_node_ptr;
+        const orc::Type* orc_type_ptr = nullptr;
+        RETURN_IF_ERROR(orc_reader->get_file_type(&orc_type_ptr));
+        RETURN_IF_ERROR(gen_table_info_node_by_field_id(_params, _range.table_format_params.paimon_params.schema_id,
+                                        tuple_descriptor, orc_type_ptr));
 
+        orc_reader->table_info_node_ptr = table_info_node_ptr;
         return orc_reader->init_reader(
                 &read_table_col_names, {}, table_col_name_to_value_range,
                 conjuncts, false, tuple_descriptor, row_descriptor,
@@ -103,7 +101,6 @@ public:
 
     Status init_reader(
             const std::vector<std::string>& read_table_col_names,
-            const TSchemaInfoNode& table_col_id_table_name_map,
             const std::unordered_map<std::string, ColumnValueRangeType>*
                     table_col_name_to_value_range,
             const VExprContextSPtrs& conjuncts, const TupleDescriptor* tuple_descriptor,
@@ -111,9 +108,11 @@ public:
             const std::unordered_map<std::string, int>* colname_to_slot_id,
             const VExprContextSPtrs* not_single_slot_filter_conjuncts,
             const std::unordered_map<int, VExprContextSPtrs>* slot_id_to_filter_conjuncts) {
-        RETURN_IF_ERROR(TableSchemaChangeHelper::init_schema_info(table_col_id_table_name_map));
-        auto* parquet_reader = static_cast<ParquetReader*>(_file_format_reader.get());
 
+        auto* parquet_reader = static_cast<ParquetReader*>(_file_format_reader.get());
+        FieldDescriptor field_desc = parquet_reader->get_file_metadata_schema();
+        RETURN_IF_ERROR(gen_table_info_node_by_field_id(_params,_range.table_format_params.paimon_params.schema_id,
+                                                        tuple_descriptor, field_desc));
         parquet_reader->set_table_info_node_ptr(table_info_node_ptr);
         return parquet_reader->init_reader(
                 read_table_col_names, {}, table_col_name_to_value_range,

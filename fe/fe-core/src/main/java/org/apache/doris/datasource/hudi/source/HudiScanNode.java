@@ -30,6 +30,7 @@ import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.FileFormatUtils;
 import org.apache.doris.common.util.LocationPath;
 import org.apache.doris.datasource.ExternalTable;
+import org.apache.doris.datasource.ExternalUtil;
 import org.apache.doris.datasource.TableFormatType;
 import org.apache.doris.datasource.hive.HivePartition;
 import org.apache.doris.datasource.hive.source.HiveScanNode;
@@ -111,6 +112,8 @@ public class HudiScanNode extends HiveScanNode {
     private TableScanParams scanParams;
     private IncrementalRelation incrementalRelation;
     private HoodieTableFileSystemView fsView;
+
+    protected ConcurrentHashMap<Long, Boolean> currentQuerySchema = new ConcurrentHashMap<>();
 
     /**
      * External file scan node for Query Hudi table
@@ -214,8 +217,8 @@ public class HudiScanNode extends HiveScanNode {
             .getExtMetaCacheMgr()
             .getFsViewProcessor(hmsTable.getCatalog())
             .getFsView(hmsTable.getDbName(), hmsTable.getName(), hudiClient);
-        params.setHistorySchemaInfo(new ConcurrentHashMap<>());
-        params.history_schema_info.put(-1L, Column.getSchemaInfo(table.getColumns()));
+
+        ExternalUtil.initSchemaInfo(params, -1L, table.getColumns());
     }
 
     @Override
@@ -250,6 +253,13 @@ public class HudiScanNode extends HiveScanNode {
         }
     }
 
+
+    private void putHistorySchemaInfo(InternalSchema internalSchema) {
+        if (currentQuerySchema.putIfAbsent(internalSchema.schemaId(), Boolean.TRUE) == null) {
+            params.addToHistorySchemaInfo(HudiUtils.getSchemaInfo(internalSchema));
+        }
+    }
+
     private void setHudiParams(TFileRangeDesc rangeDesc, HudiSplit hudiSplit) {
         TTableFormatFileDesc tableFormatFileDesc = new TTableFormatFileDesc();
         tableFormatFileDesc.setTableFormatType(hudiSplit.getTableFormatType().value());
@@ -273,10 +283,9 @@ public class HudiScanNode extends HiveScanNode {
                         new File(hudiSplit.getPath().get()).getName()));
                 InternalSchema internalSchema = hudiSchemaCacheValue
                         .getCommitInstantInternalSchema(hudiClient, commitInstantTime);
-                params.history_schema_info.computeIfAbsent(
-                        internalSchema.schemaId(),
-                        k -> HudiUtils.getSchemaInfo(internalSchema));
-                fileDesc.setSchemaId(internalSchema.schemaId()); //for schema change. (native reader)
+
+                putHistorySchemaInfo(internalSchema); //for schema change. (native reader)
+                fileDesc.setSchemaId(internalSchema.schemaId());
             }
         }
         tableFormatFileDesc.setHudiParams(fileDesc);

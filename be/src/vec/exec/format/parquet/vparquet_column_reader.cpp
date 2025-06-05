@@ -576,7 +576,7 @@ Status ScalarColumnReader::_try_load_dict_page(bool* loaded, bool* has_dict) {
     return Status::OK();
 }
 
-Status ScalarColumnReader::read_column_data(ColumnPtr& doris_column, DataTypePtr& type, const std::shared_ptr<TableSchemaChange::node>& root_node,
+Status ScalarColumnReader::read_column_data(ColumnPtr& doris_column, DataTypePtr& type, const std::shared_ptr<TableSchemaChangeHelper::Node>& root_node,
                                             FilterMap& filter_map, size_t batch_size,
                                             size_t* read_rows, bool* eof, bool is_dict_filter) {
     if (_converter == nullptr) {
@@ -691,7 +691,7 @@ Status ArrayColumnReader::init(std::unique_ptr<ParquetColumnReader> element_read
     return Status::OK();
 }
 
-Status ArrayColumnReader::read_column_data(ColumnPtr& doris_column, DataTypePtr& type, const std::shared_ptr<TableSchemaChange::node>& root_node,
+Status ArrayColumnReader::read_column_data(ColumnPtr& doris_column, DataTypePtr& type, const std::shared_ptr<TableSchemaChangeHelper::Node>& root_node,
                                            FilterMap& filter_map, size_t batch_size,
                                            size_t* read_rows, bool* eof, bool is_dict_filter) {
     MutableColumnPtr data_column;
@@ -741,7 +741,7 @@ Status MapColumnReader::init(std::unique_ptr<ParquetColumnReader> key_reader,
     return Status::OK();
 }
 
-Status MapColumnReader::read_column_data(ColumnPtr& doris_column, DataTypePtr& type, const std::shared_ptr<TableSchemaChange::node>& root_node,
+Status MapColumnReader::read_column_data(ColumnPtr& doris_column, DataTypePtr& type, const std::shared_ptr<TableSchemaChangeHelper::Node>& root_node,
                                          FilterMap& filter_map, size_t batch_size,
                                          size_t* read_rows, bool* eof, bool is_dict_filter) {
     MutableColumnPtr data_column;
@@ -811,7 +811,7 @@ Status StructColumnReader::init(
     _child_readers = std::move(child_readers);
     return Status::OK();
 }
-Status StructColumnReader::read_column_data(ColumnPtr& doris_column, DataTypePtr& type, const std::shared_ptr<TableSchemaChange::node>& root_node,
+Status StructColumnReader::read_column_data(ColumnPtr& doris_column, DataTypePtr& type, const std::shared_ptr<TableSchemaChangeHelper::Node>& root_node,
                                             FilterMap& filter_map, size_t batch_size,
                                             size_t* read_rows, bool* eof, bool is_dict_filter) {
     MutableColumnPtr data_column;
@@ -851,11 +851,11 @@ Status StructColumnReader::read_column_data(ColumnPtr& doris_column, DataTypePtr
 //            missing_column_idxs.push_back(i);
 //            continue;
 //        }
-        if (!root_node->children_exists_in_file(doris_name)){
+        if (!root_node->children_column_exists(doris_name)){
             missing_column_idxs.push_back(i);
             continue;
         }
-        auto file_name = root_node->children_name_in_file(doris_name);
+        auto file_name = root_node->children_file_column_name(doris_name);
 
         _read_column_names.emplace_back(file_name);
 
