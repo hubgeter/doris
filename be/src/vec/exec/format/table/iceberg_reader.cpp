@@ -426,28 +426,27 @@ Status IcebergParquetReader::init_reader(
     const auto& field_desc = parquet_reader->get_file_metadata_schema();
 
     if (!_params.__isset.history_schema_info || _params.history_schema_info.empty()) [[unlikely]] {
-        std::cout <<"aaaaaa\n";
-        RETURN_IF_ERROR(BuildTableInfoUtil::by_parquet_name(tuple_descriptor, field_desc, table_info_node_ptr));
+        RETURN_IF_ERROR(BuildTableInfoUtil::by_parquet_name(tuple_descriptor, field_desc,
+                                                            table_info_node_ptr));
     } else {
         bool exist_field_id = true;
-        std::cout <<"bbbbbbb\n";
 
-        RETURN_IF_ERROR(BuildTableInfoUtil::by_parquet_field_id(_params.history_schema_info.front().root_field,
-                                                                field_desc,table_info_node_ptr,exist_field_id));
+        RETURN_IF_ERROR(BuildTableInfoUtil::by_parquet_field_id(
+                _params.history_schema_info.front().root_field, field_desc, table_info_node_ptr,
+                exist_field_id));
         if (!exist_field_id) {
-            std::cout <<"ccccc\n";
-            RETURN_IF_ERROR(BuildTableInfoUtil::by_parquet_name(tuple_descriptor, field_desc, table_info_node_ptr));
-
+            RETURN_IF_ERROR(BuildTableInfoUtil::by_parquet_name(tuple_descriptor, field_desc,
+                                                                table_info_node_ptr));
         }
     }
     parquet_reader->set_table_info_node_ptr(table_info_node_ptr);
 
-
     _all_required_col_names = file_col_names;
     RETURN_IF_ERROR(init_row_filters());
     return parquet_reader->init_reader(_all_required_col_names, {}, colname_to_value_range,
-            conjuncts, tuple_descriptor, row_descriptor, colname_to_slot_id,
-            not_single_slot_filter_conjuncts, slot_id_to_filter_conjuncts);
+                                       conjuncts, tuple_descriptor, row_descriptor,
+                                       colname_to_slot_id, not_single_slot_filter_conjuncts,
+                                       slot_id_to_filter_conjuncts);
 }
 
 Status IcebergParquetReader ::_read_position_delete_file(const TFileRangeDesc* delete_range,
@@ -496,7 +495,6 @@ Status IcebergParquetReader ::_read_position_delete_file(const TFileRangeDesc* d
     return Status::OK();
 };
 
-
 Status IcebergOrcReader::init_reader(
         const std::vector<std::string>& file_col_names,
         const std::unordered_map<std::string, ColumnValueRangeType>* colname_to_value_range,
@@ -511,30 +509,25 @@ Status IcebergOrcReader::init_reader(
     RETURN_IF_ERROR(orc_reader->get_file_type(&orc_type_ptr));
     _all_required_col_names = file_col_names;
 
-
     if (!_params.__isset.history_schema_info || _params.history_schema_info.empty()) [[unlikely]] {
-        std::cout <<"11111\n";
-        RETURN_IF_ERROR(BuildTableInfoUtil::by_orc_name(tuple_descriptor, orc_type_ptr, table_info_node_ptr));
+        RETURN_IF_ERROR(BuildTableInfoUtil::by_orc_name(tuple_descriptor, orc_type_ptr,
+                                                        table_info_node_ptr));
     } else {
         bool exist_field_id = true;
-        std::cout <<"22222\n";
-        RETURN_IF_ERROR(BuildTableInfoUtil::by_orc_field_id(_params.history_schema_info.front().root_field,
-                                            orc_type_ptr, ICEBERG_ORC_ATTRIBUTE,table_info_node_ptr,exist_field_id));
+        RETURN_IF_ERROR(BuildTableInfoUtil::by_orc_field_id(
+                _params.history_schema_info.front().root_field, orc_type_ptr, ICEBERG_ORC_ATTRIBUTE,
+                table_info_node_ptr, exist_field_id));
         if (!exist_field_id) {
-            std::cout <<"3333\n";
-
-            RETURN_IF_ERROR(BuildTableInfoUtil::by_orc_name(tuple_descriptor, orc_type_ptr , table_info_node_ptr));
-
+            RETURN_IF_ERROR(BuildTableInfoUtil::by_orc_name(tuple_descriptor, orc_type_ptr,
+                                                            table_info_node_ptr));
         }
     }
 
-
     orc_reader->table_info_node_ptr = table_info_node_ptr;
     RETURN_IF_ERROR(init_row_filters());
-    return orc_reader->init_reader(&_all_required_col_names, {},
-                                   colname_to_value_range, conjuncts, false, tuple_descriptor,
-                                   row_descriptor, not_single_slot_filter_conjuncts,
-                                   slot_id_to_filter_conjuncts);
+    return orc_reader->init_reader(&_all_required_col_names, {}, colname_to_value_range, conjuncts,
+                                   false, tuple_descriptor, row_descriptor,
+                                   not_single_slot_filter_conjuncts, slot_id_to_filter_conjuncts);
 }
 
 Status IcebergOrcReader::_read_position_delete_file(const TFileRangeDesc* delete_range,
@@ -564,7 +557,6 @@ Status IcebergOrcReader::_read_position_delete_file(const TFileRangeDesc* delete
     }
     return Status::OK();
 }
-
 
 #include "common/compile_check_end.h"
 } // namespace doris::vectorized

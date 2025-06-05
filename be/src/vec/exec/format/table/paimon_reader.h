@@ -74,14 +74,15 @@ public:
         auto* orc_reader = static_cast<OrcReader*>(_file_format_reader.get());
         const orc::Type* orc_type_ptr = nullptr;
         RETURN_IF_ERROR(orc_reader->get_file_type(&orc_type_ptr));
-        RETURN_IF_ERROR(gen_table_info_node_by_field_id(_params, _range.table_format_params.paimon_params.schema_id,
-                                        tuple_descriptor, orc_type_ptr));
+        RETURN_IF_ERROR(gen_table_info_node_by_field_id(
+                _params, _range.table_format_params.paimon_params.schema_id, tuple_descriptor,
+                orc_type_ptr));
 
         orc_reader->table_info_node_ptr = table_info_node_ptr;
-        return orc_reader->init_reader(
-                &read_table_col_names, {}, table_col_name_to_value_range,
-                conjuncts, false, tuple_descriptor, row_descriptor,
-                not_single_slot_filter_conjuncts, slot_id_to_filter_conjuncts);
+        return orc_reader->init_reader(&read_table_col_names, {}, table_col_name_to_value_range,
+                                       conjuncts, false, tuple_descriptor, row_descriptor,
+                                       not_single_slot_filter_conjuncts,
+                                       slot_id_to_filter_conjuncts);
     }
 };
 
@@ -108,16 +109,16 @@ public:
             const std::unordered_map<std::string, int>* colname_to_slot_id,
             const VExprContextSPtrs* not_single_slot_filter_conjuncts,
             const std::unordered_map<int, VExprContextSPtrs>* slot_id_to_filter_conjuncts) {
-
         auto* parquet_reader = static_cast<ParquetReader*>(_file_format_reader.get());
         FieldDescriptor field_desc = parquet_reader->get_file_metadata_schema();
-        RETURN_IF_ERROR(gen_table_info_node_by_field_id(_params,_range.table_format_params.paimon_params.schema_id,
-                                                        tuple_descriptor, field_desc));
+        RETURN_IF_ERROR(gen_table_info_node_by_field_id(
+                _params, _range.table_format_params.paimon_params.schema_id, tuple_descriptor,
+                field_desc));
         parquet_reader->set_table_info_node_ptr(table_info_node_ptr);
-        return parquet_reader->init_reader(
-                read_table_col_names, {}, table_col_name_to_value_range,
-                conjuncts, tuple_descriptor, row_descriptor, colname_to_slot_id,
-                not_single_slot_filter_conjuncts, slot_id_to_filter_conjuncts);
+        return parquet_reader->init_reader(read_table_col_names, {}, table_col_name_to_value_range,
+                                           conjuncts, tuple_descriptor, row_descriptor,
+                                           colname_to_slot_id, not_single_slot_filter_conjuncts,
+                                           slot_id_to_filter_conjuncts);
     }
 };
 #include "common/compile_check_end.h"

@@ -36,10 +36,6 @@ public:
     Status get_next_block_inner(Block* block, size_t* read_rows, bool* eof) final;
 
     Status init_row_filters() final { return Status::OK(); };
-
-
-
-
 };
 
 class HudiParquetReader final : public HudiReader {

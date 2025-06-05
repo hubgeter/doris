@@ -37,15 +37,15 @@ Status HiveOrcReader::init_reader(
         const RowDescriptor* row_descriptor,
         const VExprContextSPtrs* not_single_slot_filter_conjuncts,
         const std::unordered_map<int, VExprContextSPtrs>* slot_id_to_filter_conjuncts) {
-
     auto* orc_reader = static_cast<OrcReader*>(_file_format_reader.get());
 
     const orc::Type* orc_type_ptr = nullptr;
     RETURN_IF_ERROR(orc_reader->get_file_type(&orc_type_ptr));
-    bool is_hive_col_name =  OrcReader::is_hive1_col_name(orc_type_ptr);
+    bool is_hive_col_name = OrcReader::is_hive1_col_name(orc_type_ptr);
 
     if (_state->query_options().hive_orc_use_column_names && !is_hive_col_name) {
-        RETURN_IF_ERROR(BuildTableInfoUtil::by_orc_name(tuple_descriptor, orc_type_ptr, table_info_node_ptr));
+        RETURN_IF_ERROR(BuildTableInfoUtil::by_orc_name(tuple_descriptor, orc_type_ptr,
+                                                        table_info_node_ptr));
     } else {
         // hive1 / use index
         std::map<std::string, const SlotDescriptor*> slot_map; // table_name to slot
@@ -53,26 +53,27 @@ Status HiveOrcReader::init_reader(
             slot_map.emplace(slot->col_name(), slot);
         }
 
-        for (size_t idx = 0 ; idx < _params.column_idxs.size() ; idx++) {
-            auto table_column_name =  read_table_col_names[idx];
+        for (size_t idx = 0; idx < _params.column_idxs.size(); idx++) {
+            auto table_column_name = read_table_col_names[idx];
             auto file_index = _params.column_idxs[idx];
 
             if (file_index >= orc_type_ptr->getSubtypeCount()) {
                 table_info_node_ptr->add_not_exist_children(table_column_name);
-            }else {
+            } else {
                 auto field_node = std::make_shared<Node>();
-                RETURN_IF_ERROR(BuildTableInfoUtil::by_orc_name(slot_map[table_column_name]->type(),
-                                                                orc_type_ptr->getSubtype(file_index), field_node));
-                table_info_node_ptr->add_children(table_column_name, orc_type_ptr->getFieldName(file_index), field_node);
+                RETURN_IF_ERROR(BuildTableInfoUtil::by_orc_name(
+                        slot_map[table_column_name]->type(), orc_type_ptr->getSubtype(file_index),
+                        field_node));
+                table_info_node_ptr->add_children(
+                        table_column_name, orc_type_ptr->getFieldName(file_index), field_node);
             }
         }
     }
     orc_reader->table_info_node_ptr = table_info_node_ptr;
 
-    return orc_reader->init_reader(&read_table_col_names, {},
-                                   table_col_name_to_value_range, conjuncts, false, tuple_descriptor,
-                                   row_descriptor, not_single_slot_filter_conjuncts,
-                                   slot_id_to_filter_conjuncts);
+    return orc_reader->init_reader(&read_table_col_names, {}, table_col_name_to_value_range,
+                                   conjuncts, false, tuple_descriptor, row_descriptor,
+                                   not_single_slot_filter_conjuncts, slot_id_to_filter_conjuncts);
 }
 
 Status HiveParquetReader::init_reader(
@@ -87,34 +88,37 @@ Status HiveParquetReader::init_reader(
     FieldDescriptor field_desc = parquet_reader->get_file_metadata_schema();
 
     if (_state->query_options().hive_parquet_use_column_names) {
-        RETURN_IF_ERROR(BuildTableInfoUtil::by_parquet_name(tuple_descriptor, field_desc, table_info_node_ptr));
-    } else { // use idx
-        std::map<std::string, const SlotDescriptor*> slot_map;//table_name to slot
+        RETURN_IF_ERROR(BuildTableInfoUtil::by_parquet_name(tuple_descriptor, field_desc,
+                                                            table_info_node_ptr));
+    } else {                                                   // use idx
+        std::map<std::string, const SlotDescriptor*> slot_map; //table_name to slot
         for (const auto& slot : tuple_descriptor->slots()) {
             slot_map.emplace(slot->col_name(), slot);
         }
 
-        auto parquet_fields_schema  = field_desc.get_fields_schema();
-        for (size_t idx = 0 ; idx < _params.column_idxs.size() ; idx++) {
-            auto table_column_name =  read_table_col_names[idx];
+        auto parquet_fields_schema = field_desc.get_fields_schema();
+        for (size_t idx = 0; idx < _params.column_idxs.size(); idx++) {
+            auto table_column_name = read_table_col_names[idx];
             auto file_index = _params.column_idxs[idx];
 
             if (file_index >= parquet_fields_schema.size()) {
                 table_info_node_ptr->add_not_exist_children(table_column_name);
             } else {
                 auto field_node = std::make_shared<Node>();
-                RETURN_IF_ERROR(BuildTableInfoUtil::by_parquet_name(slot_map[table_column_name]->type(),
-                        parquet_fields_schema[file_index], field_node));
-                table_info_node_ptr->add_children(table_column_name, parquet_fields_schema[file_index].name, field_node);
+                RETURN_IF_ERROR(BuildTableInfoUtil::by_parquet_name(
+                        slot_map[table_column_name]->type(), parquet_fields_schema[file_index],
+                        field_node));
+                table_info_node_ptr->add_children(
+                        table_column_name, parquet_fields_schema[file_index].name, field_node);
             }
         }
     }
 
     parquet_reader->set_table_info_node_ptr(table_info_node_ptr);
-    return parquet_reader->init_reader(
-            read_table_col_names, {}, table_col_name_to_value_range,
-            conjuncts, tuple_descriptor, row_descriptor, colname_to_slot_id,
-            not_single_slot_filter_conjuncts, slot_id_to_filter_conjuncts);
+    return parquet_reader->init_reader(read_table_col_names, {}, table_col_name_to_value_range,
+                                       conjuncts, tuple_descriptor, row_descriptor,
+                                       colname_to_slot_id, not_single_slot_filter_conjuncts,
+                                       slot_id_to_filter_conjuncts);
 }
 
 #include "common/compile_check_end.h"

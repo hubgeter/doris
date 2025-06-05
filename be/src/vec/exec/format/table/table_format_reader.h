@@ -25,14 +25,13 @@
 #include "exec/olap_common.h"
 #include "runtime/runtime_state.h"
 #include "util/runtime_profile.h"
-#include "vec/core/block.h"
-#include "vec/exec/format/generic_reader.h"
-
-#include "vec/exec/format/parquet/schema_desc.h"
 #include "util/string_util.h"
-#include "vec/data_types/data_type_map.h"
+#include "vec/core/block.h"
 #include "vec/data_types/data_type_array.h"
+#include "vec/data_types/data_type_map.h"
 #include "vec/data_types/data_type_struct.h"
+#include "vec/exec/format/generic_reader.h"
+#include "vec/exec/format/parquet/schema_desc.h"
 
 namespace doris {
 class TFileRangeDesc;
@@ -133,11 +132,13 @@ public:
         };
 
         virtual std::string children_file_column_name(std::string table_column_name) const {
-            throw std::logic_error("children_file_column_name should not be called on base TableInfoNode");
+            throw std::logic_error(
+                    "children_file_column_name should not be called on base TableInfoNode");
         }
 
         virtual bool children_column_exists(std::string table_column_name) const {
-            throw std::logic_error("children_column_exists should not be called on base TableInfoNode");
+            throw std::logic_error(
+                    "children_column_exists should not be called on base TableInfoNode");
         }
 
         virtual std::shared_ptr<Node> get_element_node() const {
@@ -152,24 +153,24 @@ public:
         }
 
         virtual void add_not_exist_children(std::string table_column_name) {
-            throw std::logic_error("add_not_exist_children should not be called on base TableInfoNode");
+            throw std::logic_error(
+                    "add_not_exist_children should not be called on base TableInfoNode");
         };
 
-        virtual void add_children(std::string table_column_name,
-                                  std::string file_column_name, std::shared_ptr<Node> children_node) {
+        virtual void add_children(std::string table_column_name, std::string file_column_name,
+                                  std::shared_ptr<Node> children_node) {
             throw std::logic_error("add_children should not be called on base TableInfoNode");
-
         }
-
     };
 
     class ScalarNode : public Node {};
 
-    class StructNode :  public Node {
+    class StructNode : public Node {
         using ChildrenType = std::tuple<std::shared_ptr<Node>, std::string, bool>;
 
         // table column name -> { node, file_column_name, exists_in_file}
         std::map<std::string, ChildrenType> children;
+
     public:
         std::shared_ptr<Node> get_children_node(std::string table_column_name) const override {
             DCHECK(children.contains(table_column_name));
@@ -177,7 +178,7 @@ public:
             return std::get<0>(children.at(table_column_name));
         }
 
-        std::string children_file_column_name(std::string table_column_name) const override{
+        std::string children_file_column_name(std::string table_column_name) const override {
             DCHECK(children.contains(table_column_name));
             DCHECK(children_column_exists(table_column_name));
             return std::get<1>(children.at(table_column_name));
@@ -189,77 +190,63 @@ public:
         }
 
         void add_not_exist_children(std::string table_column_name) override {
-            children.emplace(table_column_name, std::make_tuple(nullptr,"",false));
+            children.emplace(table_column_name, std::make_tuple(nullptr, "", false));
         }
 
-        void add_children(std::string table_column_name,
-                          std::string file_column_name, std::shared_ptr<Node> children_node) override {
-            children.emplace(table_column_name, std::make_tuple(children_node,file_column_name,true));
+        void add_children(std::string table_column_name, std::string file_column_name,
+                          std::shared_ptr<Node> children_node) override {
+            children.emplace(table_column_name,
+                             std::make_tuple(children_node, file_column_name, true));
         }
     };
 
-    class ArrayNode :  public Node {
+    class ArrayNode : public Node {
         std::shared_ptr<Node> _element_node;
-    public:
-        ArrayNode(const std::shared_ptr<Node>& element_node)
-            : _element_node(element_node) {
-        }
 
-        std::shared_ptr<Node> get_element_node() const override {
-            return _element_node;
-        }
+    public:
+        ArrayNode(const std::shared_ptr<Node>& element_node) : _element_node(element_node) {}
+
+        std::shared_ptr<Node> get_element_node() const override { return _element_node; }
     };
 
-    class MapNode:  public Node {
+    class MapNode : public Node {
         std::shared_ptr<Node> _key_node;
         std::shared_ptr<Node> _value_node;
+
     public:
-        MapNode(const std::shared_ptr<Node>& key_node,  const std::shared_ptr<Node>& value_node)
-            : _key_node(key_node),_value_node(value_node)  {}
+        MapNode(const std::shared_ptr<Node>& key_node, const std::shared_ptr<Node>& value_node)
+                : _key_node(key_node), _value_node(value_node) {}
 
-        std::shared_ptr<Node> get_key_node() const override {
-            return _key_node;
-        }
+        std::shared_ptr<Node> get_key_node() const override { return _key_node; }
 
-        std::shared_ptr<Node> get_value_node() const override {
-            return _value_node;
-        }
+        std::shared_ptr<Node> get_value_node() const override { return _value_node; }
     };
 
-    class ConstNode: public Node {
+    class ConstNode : public Node {
         // If you can be sure that there has been no schema change between the table and the file,
         // you can use constNode (of course, you need to pay attention to case sensitivity).
     public:
-        std::shared_ptr<Node> get_children_node(std::string table_column_name) const override{
+        std::shared_ptr<Node> get_children_node(std::string table_column_name) const override {
             return get_instance();
         };
 
-        std::string children_file_column_name(std::string table_column_name) const override{
+        std::string children_file_column_name(std::string table_column_name) const override {
             return table_column_name;
         }
 
-        bool children_column_exists(std::string table_column_name) const override{
-            return true;
-        }
+        bool children_column_exists(std::string table_column_name) const override { return true; }
 
-        std::shared_ptr<Node> get_element_node() const override{
-            return get_instance();
-        }
+        std::shared_ptr<Node> get_element_node() const override { return get_instance(); }
 
-        std::shared_ptr<Node> get_key_node() const override{
-            return get_instance();
-        }
+        std::shared_ptr<Node> get_key_node() const override { return get_instance(); }
 
-        std::shared_ptr<Node> get_value_node() const override{
-            return get_instance();
-        }
+        std::shared_ptr<Node> get_value_node() const override { return get_instance(); }
 
         static const std::shared_ptr<ConstNode>& get_instance() {
             static const std::shared_ptr<ConstNode> instance = std::make_shared<ConstNode>();
             return instance;
         }
     };
-
 
 protected:
     // Whenever external components invoke the Parquet/ORC reader (e.g., init_reader, get_next_block, set_fill_columns),
@@ -269,29 +256,33 @@ protected:
     std::shared_ptr<Node> table_info_node_ptr = std::make_shared<StructNode>();
 
 protected:
-    Status gen_table_info_node_by_field_id(const TFileScanRangeParams& params, int64_t split_schema_id,
-                                           const TupleDescriptor* tuple_descriptor, const FieldDescriptor& parquet_field_desc) {
+    Status gen_table_info_node_by_field_id(const TFileScanRangeParams& params,
+                                           int64_t split_schema_id,
+                                           const TupleDescriptor* tuple_descriptor,
+                                           const FieldDescriptor& parquet_field_desc) {
         if (!params.__isset.history_schema_info) [[unlikely]] {
-            RETURN_IF_ERROR(BuildTableInfoUtil::by_parquet_name(tuple_descriptor, parquet_field_desc, table_info_node_ptr));
+            RETURN_IF_ERROR(BuildTableInfoUtil::by_parquet_name(
+                    tuple_descriptor, parquet_field_desc, table_info_node_ptr));
             return Status::OK();
         }
         return gen_table_info_node_by_field_id(params, split_schema_id);
     }
 
-
-    Status gen_table_info_node_by_field_id(const TFileScanRangeParams& params, int64_t split_schema_id,
-                                           const TupleDescriptor* tuple_descriptor, const orc::Type* orc_type_ptr) {
-
+    Status gen_table_info_node_by_field_id(const TFileScanRangeParams& params,
+                                           int64_t split_schema_id,
+                                           const TupleDescriptor* tuple_descriptor,
+                                           const orc::Type* orc_type_ptr) {
         if (!params.__isset.history_schema_info) [[unlikely]] {
-            RETURN_IF_ERROR(BuildTableInfoUtil::by_orc_name(tuple_descriptor, orc_type_ptr, table_info_node_ptr));
+            RETURN_IF_ERROR(BuildTableInfoUtil::by_orc_name(tuple_descriptor, orc_type_ptr,
+                                                            table_info_node_ptr));
             return Status::OK();
         }
         return gen_table_info_node_by_field_id(params, split_schema_id);
-
     }
 
 private:
-    Status gen_table_info_node_by_field_id(const TFileScanRangeParams& params, int64_t split_schema_id) {
+    Status gen_table_info_node_by_field_id(const TFileScanRangeParams& params,
+                                           int64_t split_schema_id) {
         if (params.current_schema_id == split_schema_id) {
             table_info_node_ptr = ConstNode::get_instance();
             return Status::OK();
@@ -300,24 +291,23 @@ private:
         size_t table_schema_idx = -1;
         size_t file_schema_idx = -1;
         //todo : Perhaps this process can be optimized by pre-generating a map
-        for (size_t idx =0 ; idx< params.history_schema_info.size(); idx++) {
-            if (params.history_schema_info[idx].schema_id ==  params.current_schema_id) {
+        for (size_t idx = 0; idx < params.history_schema_info.size(); idx++) {
+            if (params.history_schema_info[idx].schema_id == params.current_schema_id) {
                 table_schema_idx = idx;
-            }else if (params.history_schema_info[idx].schema_id == split_schema_id) {
+            } else if (params.history_schema_info[idx].schema_id == split_schema_id) {
                 file_schema_idx = idx;
             }
         }
 
         if (table_schema_idx == -1 || file_schema_idx == -1) [[unlikely]] {
-            return Status::InternalError("miss table/file schema info, table_schema_idx:{}  file_schema_idx:{}",
-                                         table_schema_idx, file_schema_idx);
+            return Status::InternalError(
+                    "miss table/file schema info, table_schema_idx:{}  file_schema_idx:{}",
+                    table_schema_idx, file_schema_idx);
         }
         RETURN_IF_ERROR(BuildTableInfoUtil::by_table_field_id(
                 params.history_schema_info.at(table_schema_idx).root_field,
-                params.history_schema_info.at(file_schema_idx).root_field,
-                table_info_node_ptr));
+                params.history_schema_info.at(file_schema_idx).root_field, table_info_node_ptr));
         return Status::OK();
-
     }
 
 public:
@@ -325,57 +315,59 @@ public:
         // todo : Maybe I can use templates to implement this functionality.
 
         // for hive parquet
-        static Status by_parquet_name(
-                const TupleDescriptor* table_tuple_descriptor,
-                const FieldDescriptor& parquet_field_desc,
-                std::shared_ptr<TableSchemaChangeHelper::Node>& node);
+        static Status by_parquet_name(const TupleDescriptor* table_tuple_descriptor,
+                                      const FieldDescriptor& parquet_field_desc,
+                                      std::shared_ptr<TableSchemaChangeHelper::Node>& node);
 
         // for hive parquet
-        static Status by_parquet_name(const DataTypePtr& table_data_type , const FieldSchema& file_field,
-                                    std::shared_ptr<TableSchemaChangeHelper::Node>& node);
+        static Status by_parquet_name(const DataTypePtr& table_data_type,
+                                      const FieldSchema& file_field,
+                                      std::shared_ptr<TableSchemaChangeHelper::Node>& node);
 
-    // for hive orc
-    static Status by_orc_name(const TupleDescriptor* table_tuple_descriptor,
-                              const orc::Type* orc_type_ptr,
-                              std::shared_ptr<TableSchemaChangeHelper::Node>& node);
-    // for hive orc
-    static Status by_orc_name(const DataTypePtr& table_data_type , const orc::Type* orc_root,
-                              std::shared_ptr<TableSchemaChangeHelper::Node>& node);
+        // for hive orc
+        static Status by_orc_name(const TupleDescriptor* table_tuple_descriptor,
+                                  const orc::Type* orc_type_ptr,
+                                  std::shared_ptr<TableSchemaChangeHelper::Node>& node);
+        // for hive orc
+        static Status by_orc_name(const DataTypePtr& table_data_type, const orc::Type* orc_root,
+                                  std::shared_ptr<TableSchemaChangeHelper::Node>& node);
 
-    // for paimon hudi
-    static Status by_table_field_id(const schema::external::TField table_schema, const schema::external::TField file_schema,
-                                    std::shared_ptr<TableSchemaChangeHelper::Node>& node);
+        // for paimon hudi
+        static Status by_table_field_id(const schema::external::TField table_schema,
+                                        const schema::external::TField file_schema,
+                                        std::shared_ptr<TableSchemaChangeHelper::Node>& node);
 
-    // for paimon hudi
-    static Status by_table_field_id(const schema::external::TStructField& table_schema,
-                                    const schema::external::TStructField& file_schema,
-                                    std::shared_ptr<TableSchemaChangeHelper::Node>& node);
+        // for paimon hudi
+        static Status by_table_field_id(const schema::external::TStructField& table_schema,
+                                        const schema::external::TStructField& file_schema,
+                                        std::shared_ptr<TableSchemaChangeHelper::Node>& node);
 
-    //for iceberg parquet
-    static Status by_parquet_field_id(const schema::external::TStructField& table_schema,
-                                      const FieldDescriptor& parquet_field_desc,
+        //for iceberg parquet
+        static Status by_parquet_field_id(const schema::external::TStructField& table_schema,
+                                          const FieldDescriptor& parquet_field_desc,
+                                          std::shared_ptr<TableSchemaChangeHelper::Node>& node,
+                                          bool& exist_field_id);
+
+        // for iceberg parquet
+        static Status by_parquet_field_id(const schema::external::TField& table_schema,
+                                          const FieldSchema& parquet_field,
+                                          std::shared_ptr<TableSchemaChangeHelper::Node>& node,
+                                          bool& exist_field_id);
+
+        // for iceberg orc
+        static Status by_orc_field_id(const schema::external::TStructField& table_schema,
+                                      const orc::Type* orc_root,
+                                      const std::string& field_id_attribute_key,
                                       std::shared_ptr<TableSchemaChangeHelper::Node>& node,
                                       bool& exist_field_id);
 
-
-    // for iceberg parquet
-    static Status by_parquet_field_id(const schema::external::TField& table_schema,
-                                      const FieldSchema& parquet_field,
+        // for iceberg orc
+        static Status by_orc_field_id(const schema::external::TField& table_schema,
+                                      const orc::Type* orc_root,
+                                      const std::string& field_id_attribute_key,
                                       std::shared_ptr<TableSchemaChangeHelper::Node>& node,
                                       bool& exist_field_id);
-
-    // for iceberg orc
-    static Status by_orc_field_id(const schema::external::TStructField& table_schema, const orc::Type* orc_root,
-                                  const std::string& field_id_attribute_key,
-                                  std::shared_ptr<TableSchemaChangeHelper::Node>& node,
-                                  bool& exist_field_id);
-
-    // for iceberg orc
-    static Status by_orc_field_id(const schema::external::TField& table_schema, const orc::Type* orc_root,
-                                  const std::string& field_id_attribute_key,
-                                  std::shared_ptr<TableSchemaChangeHelper::Node>& node,
-                                  bool& exist_field_id);
-};
+    };
 };
 
 #include "common/compile_check_end.h"

@@ -38,7 +38,6 @@ PaimonReader::PaimonReader(std::unique_ptr<GenericReader> file_format_reader,
             ADD_CHILD_TIMER(_profile, "DeleteFileReadTime", paimon_profile);
 }
 
-
 Status PaimonReader::init_row_filters() {
     const auto& table_desc = _range.table_format_params.paimon_params;
     if (!table_desc.__isset.deletion_file) {

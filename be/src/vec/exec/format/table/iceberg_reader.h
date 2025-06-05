@@ -181,8 +181,6 @@ public:
         parquet_reader->set_delete_rows(&_iceberg_delete_rows);
     }
 
-
-
 protected:
     std::unique_ptr<GenericReader> _create_equality_reader(
             const TFileRangeDesc& delete_desc) final {
@@ -217,7 +215,6 @@ public:
             const std::unordered_map<std::string, int>* colname_to_slot_id,
             const VExprContextSPtrs* not_single_slot_filter_conjuncts,
             const std::unordered_map<int, VExprContextSPtrs>* slot_id_to_filter_conjuncts);
-
 
 protected:
     std::unique_ptr<GenericReader> _create_equality_reader(

@@ -34,7 +34,6 @@
 #include "vec/data_types/data_type_struct.h"
 #include "vec/exec/format/table/table_format_reader.h"
 
-
 namespace doris::vectorized {
 #include "common/compile_check_begin.h"
 
@@ -139,7 +138,6 @@ Status FieldDescriptor::parse_from_thrift(const std::vector<tparquet::SchemaElem
     auto& root_schema = t_schemas[0];
     _fields.resize(root_schema.num_children);
     _next_schema_pos = 1;
-
 
     for (int i = 0; i < root_schema.num_children; ++i) {
         RETURN_IF_ERROR(parse_node_field(t_schemas, _next_schema_pos, &_fields[i]));

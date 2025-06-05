@@ -28,11 +28,11 @@
 
 #include "common/cast_set.h"
 #include "common/status.h"
+#include "gen_cpp/Planner_types.h"
 #include "runtime/types.h"
 #include "util/slice.h"
 #include "vec/data_types/data_type.h"
 #include "vec/data_types/data_type_nothing.h"
-#include "gen_cpp/Planner_types.h"
 
 namespace doris::vectorized {
 #include "common/compile_check_begin.h"
@@ -64,7 +64,6 @@ struct FieldSchema {
     int32_t field_id = -1;
 };
 
-
 class FieldDescriptor {
 private:
     // Only the schema elements at the first level
@@ -75,6 +74,7 @@ private:
     std::unordered_map<std::string, const FieldSchema*> _name_to_field;
     // Used in from_thrift, marking the next schema position that should be parsed
     size_t _next_schema_pos;
+
 private:
     void parse_physical_field(const tparquet::SchemaElement& physical_schema, bool is_nullable,
                               FieldSchema* physical_field);
@@ -136,16 +136,14 @@ public:
 
     int32_t size() const { return cast_set<int32_t>(_fields.size()); }
 
-//    bool has_parquet_field_id() const { return !_field_id_name_mapping.empty(); }
-//
+    //    bool has_parquet_field_id() const { return !_field_id_name_mapping.empty(); }
+    //
 
-//    TSchemaInfoNode get_field_id_name_map() { return _schema_info_root_node; }
+    //    TSchemaInfoNode get_field_id_name_map() { return _schema_info_root_node; }
 
-    const std::vector<FieldSchema>& get_fields_schema() const {
-        return _fields;
-    }
+    const std::vector<FieldSchema>& get_fields_schema() const { return _fields; }
 
-//    const doris::Slice get_column_name_from_field_id(int32_t id) const;
+    //    const doris::Slice get_column_name_from_field_id(int32_t id) const;
 };
 #include "common/compile_check_end.h"
 

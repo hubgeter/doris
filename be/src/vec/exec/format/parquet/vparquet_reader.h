@@ -151,7 +151,7 @@ public:
 
     const FieldDescriptor get_file_metadata_schema();
     void set_table_to_file_col_map(std::unordered_map<std::string, std::string>& map) {
-//        _table_col_to_file_col = map;
+        //        _table_col_to_file_col = map;
     }
 
     void set_row_id_column_iterator(
@@ -159,12 +159,10 @@ public:
         _row_id_column_iterator_pair = iterator_pair;
     }
 
-
     void set_table_info_node_ptr(
-            std::shared_ptr<TableSchemaChangeHelper::Node> table_info_node_ptr)  {
+            std::shared_ptr<TableSchemaChangeHelper::Node> table_info_node_ptr) {
         _table_info_node_ptr = table_info_node_ptr;
     }
-
 
 protected:
     void _collect_profile_before_close() override;
@@ -267,9 +265,10 @@ private:
     bool _row_group_eof = true;
     size_t _total_groups; // num of groups(stripes) of a parquet(orc) file
     // table column name to file column name map. For iceberg schema evolution.
-//    std::unordered_map<std::string, std::string> _table_col_to_file_col;
+    //    std::unordered_map<std::string, std::string> _table_col_to_file_col;
 
-    std::shared_ptr<TableSchemaChangeHelper::Node> _table_info_node_ptr = TableSchemaChangeHelper::ConstNode::get_instance();
+    std::shared_ptr<TableSchemaChangeHelper::Node> _table_info_node_ptr =
+            TableSchemaChangeHelper::ConstNode::get_instance();
 
     const std::unordered_map<std::string, ColumnValueRangeType>* _colname_to_value_range = nullptr;
 
@@ -280,7 +279,6 @@ private:
     //sequence in file
     std::vector<std::string> _read_table_columns;
     std::vector<std::string> _read_file_columns;
-
 
     RowRange _whole_range = RowRange(0, 0);
     const std::vector<int64_t>* _delete_rows = nullptr;

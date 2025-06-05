@@ -52,8 +52,8 @@
 #include "vec/exec/format/column_type_convert.h"
 #include "vec/exec/format/format_common.h"
 #include "vec/exec/format/generic_reader.h"
-#include "vec/exec/format/table/transactional_hive_reader.h"
 #include "vec/exec/format/table/table_format_reader.h"
+#include "vec/exec/format/table/transactional_hive_reader.h"
 #include "vec/exprs/vliteral.h"
 #include "vec/exprs/vslot_ref.h"
 
@@ -117,7 +117,6 @@ class OrcReader : public GenericReader {
     ENABLE_FACTORY_CREATOR(OrcReader);
 
 public:
-
     Status get_file_type(const orc::Type** root) {
         RETURN_IF_ERROR(_create_file_reader());
         *root = &(_reader->getType());
@@ -191,11 +190,11 @@ public:
     Status get_parsed_schema(std::vector<std::string>* col_names,
                              std::vector<DataTypePtr>* col_types) override;
 
-//    Status get_schema_col_name_attribute(TSchemaInfoNode& root, const std::string& attribute, bool* exist_attribute);
+    //    Status get_schema_col_name_attribute(TSchemaInfoNode& root, const std::string& attribute, bool* exist_attribute);
 
     void set_table_col_to_file_col(
             std::unordered_map<std::string, std::string> table_col_to_file_col) {
-//        _table_col_to_file_col = table_col_to_file_col;
+        //        _table_col_to_file_col = table_col_to_file_col;
     }
 
     void set_position_delete_rowids(vector<int64_t>* delete_rows) {
@@ -220,16 +219,16 @@ public:
     static DataTypePtr convert_to_doris_type(const orc::Type* orc_type);
     static std::string get_field_name_lower_case(const orc::Type* orc_type, int pos);
 
-
     void set_row_id_column_iterator(
             const std::pair<std::shared_ptr<segment_v2::RowIdColumnIteratorV2>, int>&
                     iterator_pair) {
         _row_id_column_iterator_pair = iterator_pair;
     }
-    std::shared_ptr<TableSchemaChangeHelper::Node> table_info_node_ptr = TableSchemaChangeHelper::ConstNode::get_instance();
+    std::shared_ptr<TableSchemaChangeHelper::Node> table_info_node_ptr =
+            TableSchemaChangeHelper::ConstNode::get_instance();
 
     static bool inline is_hive1_col_name(const orc::Type* orc_type_ptr) {
-        for (uint64_t idx =  0;  idx  < orc_type_ptr->getSubtypeCount(); idx++){
+        for (uint64_t idx = 0; idx < orc_type_ptr->getSubtypeCount(); idx++) {
             if (!_is_hive1_col_name(orc_type_ptr->getFieldName(idx))) {
                 return false;
             }
@@ -345,12 +344,15 @@ private:
 
     template <bool is_filter = false>
     Status _fill_doris_data_column(const std::string& col_name, MutableColumnPtr& data_column,
-                                   const DataTypePtr& data_type,  std::shared_ptr<TableSchemaChangeHelper::Node> root_node,   const orc::Type* orc_column_type,
+                                   const DataTypePtr& data_type,
+                                   std::shared_ptr<TableSchemaChangeHelper::Node> root_node,
+                                   const orc::Type* orc_column_type,
                                    const orc::ColumnVectorBatch* cvb, size_t num_values);
 
     template <bool is_filter = false>
     Status _orc_column_to_doris_column(const std::string& col_name, ColumnPtr& doris_column,
-                                       const DataTypePtr& data_type, std::shared_ptr<TableSchemaChangeHelper::Node> root_node,
+                                       const DataTypePtr& data_type,
+                                       std::shared_ptr<TableSchemaChangeHelper::Node> root_node,
                                        const orc::Type* orc_column_type,
                                        const orc::ColumnVectorBatch* cvb, size_t num_values);
 
@@ -601,7 +603,6 @@ private:
         return true;
     }
 
-
     Status _fill_row_id_columns(Block* block);
 
     bool _seek_to_read_one_line() {
@@ -637,7 +638,7 @@ private:
     const std::vector<std::string>* _table_column_names;
     // _missing_column_names_set: used in iceberg/hudi/paimon, the columns are dropped
     // but added back(drop column a then add column a). Shouldn't read this column data in this case.
-//    std::set<std::string> _missing_column_names_set;
+    //    std::set<std::string> _missing_column_names_set;
     int32_t _offset_days = 0;
     cctz::time_zone _time_zone;
 
@@ -657,7 +658,7 @@ private:
     bool _is_hive1_orc_or_use_idx = false;
 
     // map col name in metastore to col name in orc file
-//    std::unordered_map<std::string, std::string> _col_name_to_file_col_name;
+    //    std::unordered_map<std::string, std::string> _col_name_to_file_col_name;
     // map col name in orc file to orc type
     std::unordered_map<std::string, const orc::Type*> _type_map; // file column name to orc type
     std::vector<const orc::Type*> _col_orc_type;
@@ -708,7 +709,7 @@ private:
     //for iceberg table , when table column name != file column name
     //TODO(CXY) : remove _table_col_to_file_col,because we hava _col_name_to_file_col_name，
     // the two have the same effect.
-//    std::unordered_map<std::string, std::string> _table_col_to_file_col;
+    //    std::unordered_map<std::string, std::string> _table_col_to_file_col;
     //support iceberg position delete .
     std::vector<int64_t>* _position_delete_ordered_rowids = nullptr;
     std::unordered_map<const VSlotRef*, orc::PredicateDataType>

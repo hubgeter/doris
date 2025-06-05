@@ -40,7 +40,7 @@ public:
 
 class HiveOrcReader final : public HiveReader {
 public:
-ENABLE_FACTORY_CREATOR(HiveOrcReader);
+    ENABLE_FACTORY_CREATOR(HiveOrcReader);
     HiveOrcReader(std::unique_ptr<GenericReader> file_format_reader, RuntimeProfile* profile,
                   RuntimeState* state, const TFileScanRangeParams& params,
                   const TFileRangeDesc& range, io::IOContext* io_ctx)
@@ -49,7 +49,8 @@ ENABLE_FACTORY_CREATOR(HiveOrcReader);
 
     Status init_reader(
             const std::vector<std::string>& read_table_col_names,
-            const std::unordered_map<std::string, ColumnValueRangeType>* table_col_name_to_value_range,
+            const std::unordered_map<std::string, ColumnValueRangeType>*
+                    table_col_name_to_value_range,
             const VExprContextSPtrs& conjuncts, const TupleDescriptor* tuple_descriptor,
             const RowDescriptor* row_descriptor,
             const VExprContextSPtrs* not_single_slot_filter_conjuncts,
@@ -58,7 +59,7 @@ ENABLE_FACTORY_CREATOR(HiveOrcReader);
 
 class HiveParquetReader final : public HiveReader {
 public:
-ENABLE_FACTORY_CREATOR(HiveParquetReader);
+    ENABLE_FACTORY_CREATOR(HiveParquetReader);
     HiveParquetReader(std::unique_ptr<GenericReader> file_format_reader, RuntimeProfile* profile,
                       RuntimeState* state, const TFileScanRangeParams& params,
                       const TFileRangeDesc& range, io::IOContext* io_ctx)
@@ -68,7 +69,7 @@ ENABLE_FACTORY_CREATOR(HiveParquetReader);
     Status init_reader(
             const std::vector<std::string>& read_table_col_names,
             const std::unordered_map<std::string, ColumnValueRangeType>*
-            table_col_name_to_value_range,
+                    table_col_name_to_value_range,
             const VExprContextSPtrs& conjuncts, const TupleDescriptor* tuple_descriptor,
             const RowDescriptor* row_descriptor,
             const std::unordered_map<std::string, int>* colname_to_slot_id,
