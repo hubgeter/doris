@@ -111,8 +111,8 @@ Status TransactionalHiveReader::init_reader(
     orc_reader->table_info_node_ptr = table_info_node_ptr;
 
     Status status = orc_reader->init_reader(
-            &_col_names, {}, colname_to_value_range, conjuncts, true, tuple_descriptor,
-            row_descriptor, not_single_slot_filter_conjuncts, slot_id_to_filter_conjuncts);
+            &_col_names, colname_to_value_range, conjuncts, true, tuple_descriptor, row_descriptor,
+            not_single_slot_filter_conjuncts, slot_id_to_filter_conjuncts);
     return status;
 }
 
@@ -202,9 +202,9 @@ Status TransactionalHiveReader::init_row_filters() {
 
         delete_reader.table_info_node_ptr = root;
 
-        RETURN_IF_ERROR(delete_reader.init_reader(
-                &TransactionalHive::DELETE_ROW_COLUMN_NAMES_LOWER_CASE, {}, nullptr, {}, false,
-                nullptr, nullptr, nullptr, nullptr));
+        RETURN_IF_ERROR(
+                delete_reader.init_reader(&TransactionalHive::DELETE_ROW_COLUMN_NAMES_LOWER_CASE,
+                                          nullptr, {}, false, nullptr, nullptr, nullptr, nullptr));
 
         std::unordered_map<std::string, std::tuple<std::string, const SlotDescriptor*>>
                 partition_columns;

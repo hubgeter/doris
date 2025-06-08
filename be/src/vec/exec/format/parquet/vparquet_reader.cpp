@@ -38,6 +38,7 @@
 #include "runtime/descriptors.h"
 #include "runtime/types.h"
 #include "util/slice.h"
+#include "util/string_util.h"
 #include "util/timezone_utils.h"
 #include "vec/columns/column.h"
 #include "vec/common/typeid_cast.h"
@@ -298,7 +299,6 @@ void ParquetReader::iceberg_sanitize(const std::vector<std::string>& read_column
 
 Status ParquetReader::init_reader(
         const std::vector<std::string>& all_column_names,
-        const std::vector<std::string>& missing_column_names,
         const std::unordered_map<std::string, ColumnValueRangeType>* colname_to_value_range,
         const VExprContextSPtrs& conjuncts, const TupleDescriptor* tuple_descriptor,
         const RowDescriptor* row_descriptor,

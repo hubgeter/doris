@@ -183,7 +183,7 @@ Status FieldDescriptor::parse_node_field(const std::vector<tparquet::SchemaEleme
         auto child = &node_field->children[0];
         parse_physical_field(t_schema, false, child);
 
-        node_field->name = to_lower(t_schema.name);
+        node_field->name = t_schema.name;
         node_field->data_type = std::make_shared<DataTypeArray>(make_nullable(child->data_type));
         _next_schema_pos = curr_pos + 1;
         node_field->field_id = t_schema.__isset.field_id ? t_schema.field_id : -1;
@@ -200,7 +200,7 @@ Status FieldDescriptor::parse_node_field(const std::vector<tparquet::SchemaEleme
 
 void FieldDescriptor::parse_physical_field(const tparquet::SchemaElement& physical_schema,
                                            bool is_nullable, FieldSchema* physical_field) {
-    physical_field->name = to_lower(physical_schema.name);
+    physical_field->name = physical_schema.name;
     physical_field->parquet_schema = physical_schema;
     physical_field->physical_type = physical_schema.type;
     _physical_fields.push_back(physical_field);
@@ -466,7 +466,7 @@ Status FieldDescriptor::parse_group_field(const std::vector<tparquet::SchemaElem
         // produce a non-null list<struct>
         RETURN_IF_ERROR(parse_struct_field(t_schemas, curr_pos, struct_field));
 
-        group_field->name = to_lower(group_schema.name);
+        group_field->name = group_schema.name;
         group_field->data_type =
                 std::make_shared<DataTypeArray>(make_nullable(struct_field->data_type));
         group_field->field_id = group_schema.__isset.field_id ? group_schema.field_id : -1;
@@ -534,7 +534,7 @@ Status FieldDescriptor::parse_list_field(const std::vector<tparquet::SchemaEleme
         _next_schema_pos = curr_pos + 2;
     }
 
-    list_field->name = to_lower(first_level.name);
+    list_field->name = first_level.name;
     list_field->data_type =
             std::make_shared<DataTypeArray>(make_nullable(list_field->children[0].data_type));
     if (is_optional) {
@@ -600,7 +600,7 @@ Status FieldDescriptor::parse_map_field(const std::vector<tparquet::SchemaElemen
     // produce MAP<STRUCT<KEY, VALUE>>
     RETURN_IF_ERROR(parse_struct_field(t_schemas, curr_pos + 1, map_kv_field));
 
-    map_field->name = to_lower(map_schema.name);
+    map_field->name = map_schema.name;
     map_field->data_type = std::make_shared<DataTypeMap>(
             make_nullable(assert_cast<const DataTypeStruct*>(
                                   remove_nullable(map_kv_field->data_type).get())
@@ -631,7 +631,7 @@ Status FieldDescriptor::parse_struct_field(const std::vector<tparquet::SchemaEle
     for (int i = 0; i < num_children; ++i) {
         RETURN_IF_ERROR(parse_node_field(t_schemas, _next_schema_pos, &struct_field->children[i]));
     }
-    struct_field->name = to_lower(struct_schema.name);
+    struct_field->name = struct_schema.name;
 
     struct_field->field_id = struct_schema.__isset.field_id ? struct_schema.field_id : -1;
     DataTypes res_data_types;

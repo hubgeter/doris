@@ -39,7 +39,7 @@ Status TableSchemaChangeHelper::BuildTableInfoUtil::by_parquet_name(
     auto parquet_fields_schema = parquet_field_desc.get_fields_schema();
     std::map<std::string, size_t> file_column_name_idx_map;
     for (size_t idx = 0; idx < parquet_fields_schema.size(); idx++) {
-        file_column_name_idx_map.emplace(parquet_fields_schema[idx].name, idx);
+        file_column_name_idx_map.emplace(to_lower(parquet_fields_schema[idx].name), idx);
     }
 
     for (const auto& slot : table_tuple_descriptor->slots()) {
@@ -51,7 +51,8 @@ Status TableSchemaChangeHelper::BuildTableInfoUtil::by_parquet_name(
             RETURN_IF_ERROR(by_parquet_name(slot->type(), parquet_fields_schema[file_column_idx],
                                             field_node));
 
-            struct_node->add_children(table_column_name, table_column_name, field_node);
+            struct_node->add_children(table_column_name,
+                                      parquet_fields_schema[file_column_idx].name, field_node);
         } else {
             struct_node->add_not_exist_children(table_column_name);
         }
@@ -119,7 +120,7 @@ Status TableSchemaChangeHelper::BuildTableInfoUtil::by_parquet_name(
 
         std::map<std::string, size_t> parquet_field_names;
         for (size_t idx = 0; idx < file_field.children.size(); idx++) {
-            parquet_field_names.emplace(file_field.children[idx].name, idx);
+            parquet_field_names.emplace(to_lower(file_field.children[idx].name), idx);
         }
         for (size_t idx = 0; idx < struct_data_type->get_elements().size(); idx++) {
             const auto& doris_field_name = struct_data_type->get_element_name(idx);
@@ -131,7 +132,8 @@ Status TableSchemaChangeHelper::BuildTableInfoUtil::by_parquet_name(
                 RETURN_IF_ERROR(by_parquet_name(struct_data_type->get_element(idx),
                                                 file_field.children[parquet_field_idx],
                                                 field_node));
-                struct_node->add_children(doris_field_name, doris_field_name, field_node);
+                struct_node->add_children(doris_field_name,
+                                          file_field.children[parquet_field_idx].name, field_node);
             } else {
                 struct_node->add_not_exist_children(doris_field_name);
             }

@@ -45,7 +45,7 @@ Status HudiParquetReader::init_reader(
             _params, _range.table_format_params.hudi_params.schema_id, tuple_descriptor,
             field_desc));
     parquet_reader->set_table_info_node_ptr(table_info_node_ptr);
-    return parquet_reader->init_reader(read_table_col_names, {}, table_col_name_to_value_range,
+    return parquet_reader->init_reader(read_table_col_names, table_col_name_to_value_range,
                                        conjuncts, tuple_descriptor, row_descriptor,
                                        colname_to_slot_id, not_single_slot_filter_conjuncts,
                                        slot_id_to_filter_conjuncts);

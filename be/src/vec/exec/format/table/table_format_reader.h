@@ -198,6 +198,8 @@ public:
             children.emplace(table_column_name,
                              std::make_tuple(children_node, file_column_name, true));
         }
+
+        const std::map<std::string, ChildrenType>& get_childrens() const { return children; }
     };
 
     class ArrayNode : public Node {
@@ -247,6 +249,24 @@ public:
             return instance;
         }
     };
+
+//    static std::string debug(std::shared_ptr<Node> root, size_t pre = 0) {
+//        std::string ans;
+//        if (auto scalar_node = std::dynamic_pointer_cast<ScalarNode>(root)) {
+//        } else if (auto struct_node = std::dynamic_pointer_cast<StructNode>(root)) {
+//            for (const auto& [table_col_name, value] : struct_node->get_childrens()) {
+//                const auto& [child_node, file_col_name, exist] = value;
+//                if (exist) {
+//                }
+//            }
+//
+//        } else if (auto array_node = std::dynamic_pointer_cast<StructNode>(root)) {
+//        } else if (auto map_node = std::dynamic_pointer_cast<MapNode>(root)) {
+//        } else {
+//            DCHECK(false);
+//        }
+//        return ans;
+//    }
 
 protected:
     // Whenever external components invoke the Parquet/ORC reader (e.g., init_reader, get_next_block, set_fill_columns),

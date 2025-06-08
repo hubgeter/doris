@@ -147,7 +147,6 @@ Status IcebergTableReader::_equality_delete_base(
     std::unordered_map<std::string, std::tuple<std::string, const SlotDescriptor*>>
             partition_columns;
     std::unordered_map<std::string, VExprContextSPtr> missing_columns;
-    std::vector<std::string> not_in_file_col_names;
 
     for (const auto& delete_file : delete_files) {
         TFileRangeDesc delete_desc;
@@ -167,13 +166,12 @@ Status IcebergTableReader::_equality_delete_base(
         }
         if (auto* parquet_reader = typeid_cast<ParquetReader*>(delete_reader.get())) {
             RETURN_IF_ERROR(parquet_reader->open());
-            RETURN_IF_ERROR(parquet_reader->init_reader(equality_delete_col_names,
-                                                        not_in_file_col_names, nullptr, {}, nullptr,
-                                                        nullptr, nullptr, nullptr, nullptr, false));
+            RETURN_IF_ERROR(parquet_reader->init_reader(equality_delete_col_names, nullptr, {},
+                                                        nullptr, nullptr, nullptr, nullptr, nullptr,
+                                                        false));
         } else if (auto* orc_reader = typeid_cast<OrcReader*>(delete_reader.get())) {
-            RETURN_IF_ERROR(orc_reader->init_reader(&equality_delete_col_names,
-                                                    not_in_file_col_names, nullptr, {}, false, {},
-                                                    {}, nullptr, nullptr));
+            RETURN_IF_ERROR(orc_reader->init_reader(&equality_delete_col_names, nullptr, {}, false,
+                                                    {}, {}, nullptr, nullptr));
         } else {
             return Status::InternalError("Unsupported format of delete file");
         }
@@ -443,9 +441,9 @@ Status IcebergParquetReader::init_reader(
 
     _all_required_col_names = file_col_names;
     RETURN_IF_ERROR(init_row_filters());
-    return parquet_reader->init_reader(_all_required_col_names, {}, colname_to_value_range,
-                                       conjuncts, tuple_descriptor, row_descriptor,
-                                       colname_to_slot_id, not_single_slot_filter_conjuncts,
+    return parquet_reader->init_reader(_all_required_col_names, colname_to_value_range, conjuncts,
+                                       tuple_descriptor, row_descriptor, colname_to_slot_id,
+                                       not_single_slot_filter_conjuncts,
                                        slot_id_to_filter_conjuncts);
 }
 
@@ -456,9 +454,8 @@ Status IcebergParquetReader ::_read_position_delete_file(const TFileRangeDesc* d
             const_cast<cctz::time_zone*>(&_state->timezone_obj()), _io_ctx, _state);
 
     RETURN_IF_ERROR(parquet_delete_reader.open());
-    RETURN_IF_ERROR(parquet_delete_reader.init_reader(delete_file_col_names, {}, nullptr, {},
-                                                      nullptr, nullptr, nullptr, nullptr, nullptr,
-                                                      false));
+    RETURN_IF_ERROR(parquet_delete_reader.init_reader(delete_file_col_names, nullptr, {}, nullptr,
+                                                      nullptr, nullptr, nullptr, nullptr, false));
 
     std::unordered_map<std::string, std::tuple<std::string, const SlotDescriptor*>>
             partition_columns;
@@ -525,7 +522,7 @@ Status IcebergOrcReader::init_reader(
 
     orc_reader->table_info_node_ptr = table_info_node_ptr;
     RETURN_IF_ERROR(init_row_filters());
-    return orc_reader->init_reader(&_all_required_col_names, {}, colname_to_value_range, conjuncts,
+    return orc_reader->init_reader(&_all_required_col_names, colname_to_value_range, conjuncts,
                                    false, tuple_descriptor, row_descriptor,
                                    not_single_slot_filter_conjuncts, slot_id_to_filter_conjuncts);
 }
@@ -535,9 +532,8 @@ Status IcebergOrcReader::_read_position_delete_file(const TFileRangeDesc* delete
     OrcReader orc_delete_reader(_profile, _state, _params, *delete_range,
                                 READ_DELETE_FILE_BATCH_SIZE, _state->timezone(), _io_ctx);
     std::unordered_map<std::string, ColumnValueRangeType> colname_to_value_range;
-    RETURN_IF_ERROR(orc_delete_reader.init_reader(&delete_file_col_names, {},
-                                                  &colname_to_value_range, {}, false, {}, {},
-                                                  nullptr, nullptr));
+    RETURN_IF_ERROR(orc_delete_reader.init_reader(&delete_file_col_names, &colname_to_value_range,
+                                                  {}, false, {}, {}, nullptr, nullptr));
 
     std::unordered_map<std::string, std::tuple<std::string, const SlotDescriptor*>>
             partition_columns;
