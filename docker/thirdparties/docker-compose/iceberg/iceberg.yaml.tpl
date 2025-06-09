@@ -60,6 +60,8 @@ services:
       interval: 5s
       timeout: 60s
       retries: 120
+    volumes:
+      - ./data/input/pgdata:/var/lib/postgresql/data
     networks:
       - doris--iceberg
 

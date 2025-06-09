@@ -851,12 +851,6 @@ Status StructColumnReader::read_column_data(
         ColumnPtr& doris_field = doris_struct.get_column_ptr(i);
         auto& doris_type = const_cast<DataTypePtr&>(doris_struct_type->get_element(i));
         auto& doris_name = const_cast<String&>(doris_struct_type->get_element_name(i));
-
-        // remember the missing column index
-        //        if (_child_readers.find(doris_name) == _child_readers.end()) {
-        //            missing_column_idxs.push_back(i);
-        //            continue;
-        //        }
         if (!root_node->children_column_exists(doris_name)) {
             missing_column_idxs.push_back(i);
             continue;
@@ -865,7 +859,6 @@ Status StructColumnReader::read_column_data(
 
         _read_column_names.emplace_back(file_name);
 
-        //        select_vector.reset();
         size_t field_rows = 0;
         bool field_eof = false;
         if (not_missing_column_id == -1) {

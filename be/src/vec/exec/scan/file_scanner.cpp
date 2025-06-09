@@ -1132,7 +1132,7 @@ Status FileScanner::_init_parquet_reader(std::unique_ptr<ParquetReader>&& parque
                 _default_val_row_desc.get(), _col_name_to_slot_id,
                 &_not_single_slot_filter_conjuncts, &_slot_id_to_filter_conjuncts);
         _cur_reader = std::move(hudi_reader);
-    } else {
+    } else if (range.table_format_params.table_format_type == "hive") {
         auto hive_reader = HiveParquetReader::create_unique(std::move(parquet_reader), _profile,
                                                             _state, *_params, range, _io_ctx.get());
         init_status = hive_reader->init_reader(
@@ -1140,6 +1140,34 @@ Status FileScanner::_init_parquet_reader(std::unique_ptr<ParquetReader>&& parque
                 _default_val_row_desc.get(), _col_name_to_slot_id,
                 &_not_single_slot_filter_conjuncts, &_slot_id_to_filter_conjuncts);
         _cur_reader = std::move(hive_reader);
+    } else if (range.table_format_params.table_format_type == "tvf") {
+        const auto& parquet_meta = parquet_reader->get_file_metadata_schema();
+        // For tvf query, we actually need to use `TableSchemaChangeHelper::ConstNode`, because
+        // `get_parsed_schema` returns the correct case name. However, since doris will convert
+        // the columns inside the struct to lowercase, we need to use a form similar to hive to
+        // match the case names inside the struct.
+        auto tvf_info_node = std::make_shared<TableSchemaChangeHelper::StructNode>();
+        for (const auto& slot : _file_slot_descs) {
+            const auto parquet_field = parquet_meta.get_column(slot->col_name());
+            const auto& table_column_name = slot->col_name();
+            std::shared_ptr<TableSchemaChangeHelper::Node> field_node = nullptr;
+            RETURN_IF_ERROR(TableSchemaChangeHelper::BuildTableInfoUtil::by_parquet_name(
+                    slot->type(), *parquet_field, field_node));
+            tvf_info_node->add_children(table_column_name, table_column_name, field_node);
+        }
+        parquet_reader->set_table_info_node_ptr(tvf_info_node);
+        init_status = parquet_reader->init_reader(
+                _file_col_names, _colname_to_value_range, _push_down_conjuncts, _real_tuple_desc,
+                _default_val_row_desc.get(), _col_name_to_slot_id,
+                &_not_single_slot_filter_conjuncts, &_slot_id_to_filter_conjuncts);
+        _cur_reader = std::move(parquet_reader);
+    } else if (_is_load) {
+        // For load, `file_scanner` will only read existing columns, so `TableSchemaChangeHelper::ConstNode` is used.
+        init_status = parquet_reader->init_reader(
+                _file_col_names, _colname_to_value_range, _push_down_conjuncts, _real_tuple_desc,
+                _default_val_row_desc.get(), _col_name_to_slot_id,
+                &_not_single_slot_filter_conjuncts, &_slot_id_to_filter_conjuncts);
+        _cur_reader = std::move(parquet_reader);
     }
 
     return init_status;
@@ -1181,7 +1209,7 @@ Status FileScanner::_init_orc_reader(std::unique_ptr<OrcReader>&& orc_reader) {
                 &_slot_id_to_filter_conjuncts);
         RETURN_IF_ERROR(paimon_reader->init_row_filters());
         _cur_reader = std::move(paimon_reader);
-    } else {
+    } else if (range.table_format_params.table_format_type == "hive") {
         std::unique_ptr<HiveOrcReader> hive_reader = HiveOrcReader::create_unique(
                 std::move(orc_reader), _profile, _state, *_params, range, _io_ctx.get());
 
@@ -1190,6 +1218,40 @@ Status FileScanner::_init_orc_reader(std::unique_ptr<OrcReader>&& orc_reader) {
                 _default_val_row_desc.get(), &_not_single_slot_filter_conjuncts,
                 &_slot_id_to_filter_conjuncts);
         _cur_reader = std::move(hive_reader);
+    } else if (range.table_format_params.table_format_type == "tvf") {
+        const orc::Type* orc_type_ptr = nullptr;
+        RETURN_IF_ERROR(orc_reader->get_file_type(&orc_type_ptr));
+
+        std::map<std::string, const orc::Type*> column_name_to_orc_type;
+        for (uint64_t idx = 0; idx < orc_type_ptr->getSubtypeCount(); idx++) {
+            column_name_to_orc_type.emplace(orc_type_ptr->getFieldName(idx),
+                                            orc_type_ptr->getSubtype(idx));
+        }
+
+        auto tvf_info_node = std::make_shared<TableSchemaChangeHelper::StructNode>();
+
+        for (const auto& slot : _file_slot_descs) {
+            const auto& table_column_name = slot->col_name();
+            DCHECK(column_name_to_orc_type.contains(table_column_name));
+
+            std::shared_ptr<TableSchemaChangeHelper::Node> field_node = nullptr;
+            RETURN_IF_ERROR(TableSchemaChangeHelper::BuildTableInfoUtil::by_orc_name(
+                    slot->type(), column_name_to_orc_type.at(table_column_name), field_node));
+            tvf_info_node->add_children(table_column_name, table_column_name, field_node);
+        }
+        orc_reader->table_info_node_ptr = tvf_info_node;
+
+        init_status = orc_reader->init_reader(
+                &_file_col_names, _colname_to_value_range, _push_down_conjuncts, false,
+                _real_tuple_desc, _default_val_row_desc.get(), &_not_single_slot_filter_conjuncts,
+                &_slot_id_to_filter_conjuncts);
+        _cur_reader = std::move(orc_reader);
+    } else if (_is_load) {
+        init_status = orc_reader->init_reader(
+                &_file_col_names, _colname_to_value_range, _push_down_conjuncts, false,
+                _real_tuple_desc, _default_val_row_desc.get(), &_not_single_slot_filter_conjuncts,
+                &_slot_id_to_filter_conjuncts);
+        _cur_reader = std::move(orc_reader);
     }
 
     return init_status;

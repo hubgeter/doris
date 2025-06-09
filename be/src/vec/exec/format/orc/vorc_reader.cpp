@@ -327,15 +327,13 @@ Status OrcReader::init_reader(
         const VExprContextSPtrs& conjuncts, bool is_acid, const TupleDescriptor* tuple_descriptor,
         const RowDescriptor* row_descriptor,
         const VExprContextSPtrs* not_single_slot_filter_conjuncts,
-        const std::unordered_map<int, VExprContextSPtrs>* slot_id_to_filter_conjuncts,
-        const bool hive_use_column_names) {
+        const std::unordered_map<int, VExprContextSPtrs>* slot_id_to_filter_conjuncts) {
     _table_column_names = column_names;
     _colname_to_value_range = colname_to_value_range;
     _lazy_read_ctx.conjuncts = conjuncts;
     _is_acid = is_acid;
     _tuple_descriptor = tuple_descriptor;
     _row_descriptor = row_descriptor;
-    _is_hive1_orc_or_use_idx = !hive_use_column_names;
     if (not_single_slot_filter_conjuncts != nullptr && !not_single_slot_filter_conjuncts->empty()) {
         _not_single_slot_filter_conjuncts.insert(_not_single_slot_filter_conjuncts.end(),
                                                  not_single_slot_filter_conjuncts->begin(),
@@ -366,58 +364,11 @@ Status OrcReader::get_parsed_schema(std::vector<std::string>* col_names,
     RETURN_IF_ERROR(_create_file_reader());
     const auto& root_type = _is_acid ? remove_acid(_reader->getType()) : _reader->getType();
     for (int i = 0; i < root_type.getSubtypeCount(); ++i) {
-        col_names->emplace_back(get_field_name_lower_case(&root_type, i));
+        col_names->emplace_back(root_type.getFieldName(i));
         col_types->emplace_back(convert_to_doris_type(root_type.getSubtype(i)));
     }
     return Status::OK();
 }
-
-//Status OrcReader::get_schema_col_name_attribute(TSchemaInfoNode& root, const std::string& attribute, bool* exist_attribute) {
-//    RETURN_IF_ERROR(_create_file_reader());
-//    *exist_attribute = true;
-//
-//    std::function<void(const orc::Type*, TSchemaInfoNode& )>
-//        loop = [&](const orc::Type* orc_type, TSchemaInfoNode& root_node) {
-//        if (orc_type->getKind() == orc::TypeKind::STRUCT) {
-//            for (int i = 0; i< orc_type->getSubtypeCount(); i++) {
-//                const auto& field_name = orc_type->getFieldName(i);
-//
-//                if (!orc_type->getSubtype(i)->hasAttributeKey(attribute)) {
-//                    *exist_attribute = false;
-//                    return;
-//                }
-//
-//                TSchemaInfoNode field_node;
-//                field_node.name = field_name;
-//                loop(orc_type->getSubtype(i), field_node);
-//                root_node.children.emplace(std::stoi(orc_type->getSubtype(i)->getAttributeValue(attribute)), field_node);
-//            }
-//        }else if (orc_type->getKind() == orc::TypeKind::LIST) {
-//
-//            TSchemaInfoNode element_node;
-//            element_node.name = "element";
-//            loop(orc_type->getSubtype(0), element_node);
-//            root_node.children.emplace(0, element_node);
-//
-//        } else if (orc_type->getKind() == orc::TypeKind::MAP) {
-//            {
-//                TSchemaInfoNode key_node;
-//                key_node.name = "key";
-//                loop(orc_type->getSubtype(0),key_node);
-//                root_node.children.emplace(0,key_node);
-//            }
-//            {
-//                TSchemaInfoNode value_node;
-//                value_node.name = "value";
-//                loop(orc_type->getSubtype(1),value_node);
-//                root_node.children.emplace(1,value_node);
-//            }
-//        }
-//    };
-//    const auto& root_type = _reader->getType();
-//    loop(&root_type, root);
-//    return Status::OK();
-//}
 
 Status OrcReader::_init_read_columns() {
     const auto& root_type = _reader->getType();
@@ -1500,7 +1451,7 @@ Status OrcReader::get_columns(std::unordered_map<std::string, DataTypePtr>* name
                               std::unordered_set<std::string>* missing_cols) {
     const auto& root_type = _reader->getType();
     for (int i = 0; i < root_type.getSubtypeCount(); ++i) {
-        name_to_type->emplace(get_field_name_lower_case(&root_type, i),
+        name_to_type->emplace(root_type.getFieldName(i),
                               convert_to_doris_type(root_type.getSubtype(i)));
     }
     for (auto& col : _missing_cols) {
