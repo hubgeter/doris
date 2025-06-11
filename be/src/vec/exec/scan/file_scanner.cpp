@@ -1243,8 +1243,7 @@ Status FileScanner::_init_orc_reader(std::unique_ptr<OrcReader>&& orc_reader) {
         std::shared_ptr<TableSchemaChangeHelper::Node> tvf_info_node = nullptr;
         RETURN_IF_ERROR(TableSchemaChangeHelper::BuildTableInfoUtil::by_orc_name(
                 _real_tuple_desc, orc_type_ptr, tvf_info_node));
-        orc_reader->table_info_node_ptr = tvf_info_node;
-
+        orc_reader->set_table_info_node_ptr(tvf_info_node);
         init_status = orc_reader->init_reader(
                 &_file_col_names, _colname_to_value_range, _push_down_conjuncts, false,
                 _real_tuple_desc, _default_val_row_desc.get(), &_not_single_slot_filter_conjuncts,
@@ -1270,7 +1269,7 @@ Status FileScanner::_init_orc_reader(std::unique_ptr<OrcReader>&& orc_reader) {
                 load_info_node->add_not_exist_children(slot->col_name());
             }
         }
-        orc_reader->table_info_node_ptr = load_info_node;
+        orc_reader->set_table_info_node_ptr(load_info_node);
         init_status = orc_reader->init_reader(
                 &_file_col_names, _colname_to_value_range, _push_down_conjuncts, false,
                 _real_tuple_desc, _default_val_row_desc.get(), &_not_single_slot_filter_conjuncts,
