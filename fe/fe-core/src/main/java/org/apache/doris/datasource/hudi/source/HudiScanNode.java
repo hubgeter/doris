@@ -113,6 +113,7 @@ public class HudiScanNode extends HiveScanNode {
     private IncrementalRelation incrementalRelation;
     private HoodieTableFileSystemView fsView;
 
+    // The schema information involved in the current query process (including historical schema).
     protected ConcurrentHashMap<Long, Boolean> currentQuerySchema = new ConcurrentHashMap<>();
 
     /**
@@ -218,6 +219,10 @@ public class HudiScanNode extends HiveScanNode {
             .getFsViewProcessor(hmsTable.getCatalog())
             .getFsView(hmsTable.getDbName(), hmsTable.getName(), hudiClient);
         // Todo: Get the current schema id of the table, instead of using -1.
+        // In Be Parquet/Rrc reader, if `current table schema id == current file schema id`, then its
+        // `table_info_node_ptr` will be `TableSchemaChangeHelper::ConstNode`. When using `ConstNode`,
+        // you need to pay special attention to the `case difference` between the `table column name`
+        // and `the file column name`.
         ExternalUtil.initSchemaInfo(params, -1L, table.getColumns());
     }
 
