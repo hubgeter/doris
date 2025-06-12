@@ -233,9 +233,7 @@ public class HiveScanNode extends FileQueryScanNode {
                             if (allFiles.size() > numSplitsPerPartition.get()) {
                                 numSplitsPerPartition.set(allFiles.size());
                             }
-                            if (splitAssignment.needMoreSplit()) {
-                                splitAssignment.addToQueue(allFiles);
-                            }
+                            splitAssignment.addToQueue(allFiles);
                         } catch (Exception e) {
                             batchException.set(new UserException(e.getMessage(), e));
                         } finally {
