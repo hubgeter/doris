@@ -57,11 +57,13 @@ import org.apache.hudi.common.model.FileSlice;
 import org.apache.hudi.common.model.HoodieBaseFile;
 import org.apache.hudi.common.model.HoodieLogFile;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.TableSchemaResolver;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
 import org.apache.hudi.common.table.view.HoodieTableFileSystemView;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.internal.schema.InternalSchema;
+import org.apache.hudi.internal.schema.convert.AvroInternalSchemaConverter;
 import org.apache.hudi.storage.StoragePath;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -292,6 +294,16 @@ public class HudiScanNode extends HiveScanNode {
 
                 putHistorySchemaInfo(internalSchema); //for schema change. (native reader)
                 fileDesc.setSchemaId(internalSchema.schemaId());
+            } else {
+                try {
+                    TableSchemaResolver schemaUtil = new TableSchemaResolver(hudiClient);
+                    InternalSchema internalSchema =
+                            AvroInternalSchemaConverter.convert(schemaUtil.getTableAvroSchema(true));
+                    putHistorySchemaInfo(internalSchema); // Handle column name case for BE.
+                    fileDesc.setSchemaId(internalSchema.schemaId());
+                } catch (Exception e) {
+                    throw new RuntimeException("Cannot get hudi table schema.", e);
+                }
             }
         }
         tableFormatFileDesc.setHudiParams(fileDesc);
