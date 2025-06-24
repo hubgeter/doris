@@ -111,7 +111,8 @@ private:
             const uint64_t workload_group_id, const PRequestBlockDesc& request_block_desc,
             std::shared_ptr<IdFileMap> id_file_map, std::vector<SlotDescriptor>& slots,
             std::shared_ptr<FileMapping> first_file_mapping, const TUniqueId& query_id,
-            vectorized::Block& result_block, int64_t* init_reader_ms, int64_t* get_block_ms);
+            vectorized::Block& result_block, int64_t* init_reader_avg_ms, int64_t* get_block_avg_ms,
+            size_t* scan_range_cnt);
 };
 
 template <typename Func>

@@ -1344,7 +1344,7 @@ Status FileScanner::read_lines_from_range(const TFileRangeDesc& range,
             },
             get_block_ms));
 
-    //    RETURN_IF_ERROR(_cur_reader->close());
+    RETURN_IF_ERROR(_cur_reader->close());
     return Status::OK();
 }
 
