@@ -115,6 +115,11 @@ public:
     MutableColumnPtr get_shrinked_column() override;
     bool could_shrinked_column() override;
 
+    void sanity_check() const override {
+        data->sanity_check();
+        offsets->sanity_check();
+    }
+
     /** On the index i there is an offset to the beginning of the i + 1 -th element. */
     using ColumnOffsets = ColumnVector<Offset64>;
 

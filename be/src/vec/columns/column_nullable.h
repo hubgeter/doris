@@ -145,6 +145,16 @@ public:
 
     MutableColumnPtr get_shrinked_column() override;
     bool could_shrinked_column() override;
+
+    void sanity_check() const override {
+        if (nested_column->size() != get_null_map_data().size()) {
+            throw doris::Exception(ErrorCode::INTERNAL_ERROR,
+                                   "Size of nested column {} is not equal to size of null map {}",
+                                   nested_column->size(), get_null_map_data().size());
+        }
+        nested_column->sanity_check();
+    }
+
     bool is_variable_length() const override { return nested_column->is_variable_length(); }
 
     const char* get_family_name() const override { return "Nullable"; }

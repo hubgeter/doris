@@ -93,6 +93,11 @@ public:
     /// Name of a Column kind, without parameters (example: FixedString, Array).
     virtual const char* get_family_name() const = 0;
 
+    // used to check the column data is valid or not.
+    virtual void sanity_check() const {
+        // do nothing by default, but some column may need to check
+    }
+
     /** If column isn't constant, returns nullptr (or itself).
       * If column is constant, transforms constant to full column (if column type allows such transform) and return it.
       */
