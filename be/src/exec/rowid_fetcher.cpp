@@ -510,6 +510,7 @@ Status RowIdStorageReader::read_by_rowids(const PMultiGetRequestV2& request,
 
         for (int i = 0; i < request.request_block_descs_size(); ++i) {
             const auto& request_block_desc = request.request_block_descs(i);
+            PMultiGetBlockV2* pblock = response->add_blocks();
             if (request_block_desc.row_id_size() >= 1) {
                 // Since this block belongs to the same table, we only need to take the first type for judgment.
                 auto first_file_id = request_block_desc.file_id(0);
@@ -546,8 +547,8 @@ Status RowIdStorageReader::read_by_rowids(const PMultiGetRequestV2& request,
                     RETURN_IF_ERROR(read_batch_external_row(
                             request.wg_id(), request_block_desc, id_file_map, slots,
                             first_file_mapping, tquery_id, result_blocks[i],
-                            &external_init_reader_avg_ms, &external_get_block_avg_ms,
-                            &external_scan_range_cnt));
+                            pblock->mutable_profile(), &external_init_reader_avg_ms,
+                            &external_get_block_avg_ms, &external_scan_range_cnt));
                 }
 
                 // after read the block, shrink char type block
@@ -557,9 +558,9 @@ Status RowIdStorageReader::read_by_rowids(const PMultiGetRequestV2& request,
             [[maybe_unused]] size_t compressed_size = 0;
             [[maybe_unused]] size_t uncompressed_size = 0;
             int be_exec_version = request.has_be_exec_version() ? request.be_exec_version() : 0;
-            RETURN_IF_ERROR(result_blocks[i].serialize(
-                    be_exec_version, response->add_blocks()->mutable_block(), &uncompressed_size,
-                    &compressed_size, segment_v2::CompressionTypePB::LZ4));
+            RETURN_IF_ERROR(result_blocks[i].serialize(be_exec_version, pblock->mutable_block(),
+                                                       &uncompressed_size, &compressed_size,
+                                                       segment_v2::CompressionTypePB::LZ4));
         }
 
         // Build file type statistics string
@@ -636,18 +637,21 @@ Status RowIdStorageReader::read_batch_doris_format_row(
     return Status::OK();
 }
 
+const std::string RowIdStorageReader::ScannersRunningTimeProfile = "ScannersRunningTime";
+const std::string RowIdStorageReader::InitReaderAvgTimeProfile = "InitReaderAvgTime";
+const std::string RowIdStorageReader::GetBlockAvgTimeProfile = "GetBlockAvgTime";
+const std::string RowIdStorageReader::FileReadLinesProfile = "FileReadLines";
+
 Status RowIdStorageReader::read_batch_external_row(
         const uint64_t workload_group_id, const PRequestBlockDesc& request_block_desc,
         std::shared_ptr<IdFileMap> id_file_map, std::vector<SlotDescriptor>& slots,
         std::shared_ptr<FileMapping> first_file_mapping, const TUniqueId& query_id,
-        vectorized::Block& result_block, int64_t* init_reader_avg_ms, int64_t* get_block_avg_ms,
-        size_t* scan_range_cnt) {
+        vectorized::Block& result_block, PRuntimeProfileTree* pprofile, int64_t* init_reader_avg_ms,
+        int64_t* get_block_avg_ms, size_t* scan_range_cnt) {
     TFileScanRangeParams rpc_scan_params;
     TupleDescriptor tuple_desc(request_block_desc.desc(), false);
     std::unordered_map<std::string, int> colname_to_slot_id;
     std::shared_ptr<RuntimeState> runtime_state = nullptr;
-    std::unique_ptr<RuntimeProfile> runtime_profile =
-            std::make_unique<RuntimeProfile>("ExternalRowIDFetcher");
 
     int max_file_scanners = 0;
     {
@@ -707,13 +711,18 @@ Status RowIdStorageReader::read_batch_external_row(
     using namespace std;
     // Hash(TFileRangeDesc) => { all the rows that need to be read and their positions in the result block. }
     map<std::string, map<segment_v2::rowid_t, size_t>> scan_rows;
+
     // Block corresponding to the order of `scan_rows` map.
     vector<vectorized::Block> scan_blocks;
+
     // row_id (Indexing of vectors) => < In which block, which line in the block >
     vector<pair<size_t, size_t>> row_id_block_idx;
-    // Count the time it takes to read each TFileRangeDesc.
+
+    // Count the time/bytes it takes to read each TFileRangeDesc. (for profile)
     vector<int64_t> init_reader_ms;
     vector<int64_t> get_block_ms;
+    vector<string> file_read_bytes;
+    vector<string> file_read_times;
 
     auto hash_file_range = [](const TFileRangeDesc& file_range_desc) {
         std::string value;
@@ -751,7 +760,10 @@ Status RowIdStorageReader::read_batch_external_row(
     row_id_block_idx.resize(request_block_desc.row_id_size());
     init_reader_ms.resize(scan_rows.size(), 0);
     get_block_ms.resize(scan_rows.size(), 0);
+    file_read_bytes.resize(scan_rows.size());
+    file_read_times.resize(scan_rows.size());
 
+    // Get the workload group for subsequent scan task submission.
     std::vector<uint64_t> workload_group_ids;
     workload_group_ids.emplace_back(workload_group_id);
     auto wg = ExecEnv::GetInstance()->workload_group_mgr()->get_group(workload_group_ids);
@@ -761,76 +773,128 @@ Status RowIdStorageReader::read_batch_external_row(
     wg->get_query_scheduler(&exec_sched, &scan_sched, &remote_scan_sched);
     DCHECK(remote_scan_sched);
 
-    // Ensure that all scan tasks are completed.
-    std::atomic<int> producer_count {0};
-    std::condition_variable cv;
-    std::mutex mtx;
+    int64_t scan_running_time = 0;
+    RETURN_IF_ERROR(scope_timer_run(
+            [&]() -> Status {
+                // Make sure to insert data into result_block only after all scan tasks have been executed.
+                std::atomic<int> producer_count {0};
+                std::condition_variable cv;
+                std::mutex mtx;
 
-    //semaphore: Limit the number of scan tasks submitted at one time
-    std::counting_semaphore semaphore {max_file_scanners};
+                //semaphore: Limit the number of scan tasks submitted at one time
+                std::counting_semaphore semaphore {max_file_scanners};
 
-    size_t idx = 0;
-    for (const auto& [_, row_ids] : scan_rows) {
-        semaphore.acquire();
-        RETURN_IF_ERROR(remote_scan_sched->submit_scan_task(vectorized::SimplifiedScanTask(
-                [&, row_ids, idx]() {
-                    SCOPED_ATTACH_TASK(ExecEnv::GetInstance()->rowid_storage_reader_tracker());
-                    signal::set_signal_task_id(query_id);
+                size_t idx = 0;
+                for (const auto& [_, row_ids] : scan_rows) {
+                    semaphore.acquire();
+                    RETURN_IF_ERROR(
+                            remote_scan_sched->submit_scan_task(vectorized::SimplifiedScanTask(
+                                    [&, row_ids, idx]() {
+                                        SCOPED_ATTACH_TASK(
+                                                ExecEnv::GetInstance()
+                                                        ->rowid_storage_reader_tracker());
+                                        signal::set_signal_task_id(query_id);
 
-                    scan_blocks[idx] = vectorized::Block(slots, row_ids.size());
+                                        scan_blocks[idx] = vectorized::Block(slots, row_ids.size());
 
-                    size_t j = 0;
-                    list<int64_t> read_ids;
-                    //Generate an ordered list with the help of the orderliness of the map.
-                    for (const auto& [row_id, result_block_idx] : row_ids) {
-                        read_ids.emplace_back(row_id);
-                        row_id_block_idx[result_block_idx] = make_pair(idx, j);
-                        j++;
-                    }
+                                        size_t j = 0;
+                                        list<int64_t> read_ids;
+                                        //Generate an ordered list with the help of the orderliness of the map.
+                                        for (const auto& [row_id, result_block_idx] : row_ids) {
+                                            read_ids.emplace_back(row_id);
+                                            row_id_block_idx[result_block_idx] = make_pair(idx, j);
+                                            j++;
+                                        }
 
-                    auto file_id = request_block_desc.file_id(row_ids.begin()->second);
-                    auto file_mapping = id_file_map->get_file_mapping(file_id);
-                    if (!file_mapping) {
-                        return Status::InternalError(
-                                "Backend:{} file_mapping not found, query_id: {}, file_id: {}",
-                                BackendOptions::get_localhost(), print_id(query_id), file_id);
-                    }
+                                        auto file_id =
+                                                request_block_desc.file_id(row_ids.begin()->second);
+                                        auto file_mapping = id_file_map->get_file_mapping(file_id);
+                                        if (!file_mapping) {
+                                            return Status::InternalError(
+                                                    "Backend:{} file_mapping not found, query_id: "
+                                                    "{}, file_id: {}",
+                                                    BackendOptions::get_localhost(),
+                                                    print_id(query_id), file_id);
+                                        }
 
-                    auto& external_info = file_mapping->get_external_file_info();
-                    auto& scan_range_desc = external_info.scan_range_desc;
+                                        auto& external_info =
+                                                file_mapping->get_external_file_info();
+                                        auto& scan_range_desc = external_info.scan_range_desc;
 
-                    // Clear to avoid reading iceberg position delete file...
-                    scan_range_desc.table_format_params.iceberg_params = TIcebergFileDesc {};
+                                        // Clear to avoid reading iceberg position delete file...
+                                        scan_range_desc.table_format_params.iceberg_params =
+                                                TIcebergFileDesc {};
 
-                    // Clear to avoid reading hive transactional delete delta file...
-                    scan_range_desc.table_format_params.transactional_hive_params =
-                            TTransactionalHiveDesc {};
-                    {
-                        std::unique_ptr<vectorized::FileScanner> vfile_scanner_ptr =
-                                vectorized::FileScanner::create_unique(
-                                        runtime_state.get(), runtime_profile.get(),
-                                        &rpc_scan_params, &colname_to_slot_id, &tuple_desc);
+                                        // Clear to avoid reading hive transactional delete delta file...
+                                        scan_range_desc.table_format_params
+                                                .transactional_hive_params =
+                                                TTransactionalHiveDesc {};
 
-                        RETURN_IF_ERROR(vfile_scanner_ptr->prepare_for_read_lines(scan_range_desc));
-                        RETURN_IF_ERROR(vfile_scanner_ptr->read_lines_from_range(
-                                scan_range_desc, read_ids, &scan_blocks[idx], external_info,
-                                &init_reader_ms[idx], &get_block_ms[idx]));
-                    }
-                    semaphore.release();
+                                        std::unique_ptr<RuntimeProfile> sub_runtime_profile =
+                                                std::make_unique<RuntimeProfile>(
+                                                        "ExternalRowIDFetcher");
+                                        {
+                                            std::unique_ptr<vectorized::FileScanner>
+                                                    vfile_scanner_ptr =
+                                                            vectorized::FileScanner::create_unique(
+                                                                    runtime_state.get(),
+                                                                    sub_runtime_profile.get(),
+                                                                    &rpc_scan_params,
+                                                                    &colname_to_slot_id,
+                                                                    &tuple_desc);
 
-                    if (++producer_count == scan_rows.size()) {
-                        std::lock_guard<std::mutex> lock(mtx);
-                        cv.notify_one();
-                    }
-                    return Status::OK();
-                },
-                nullptr)));
-        idx++;
-    }
-    {
-        std::unique_lock<std::mutex> lock(mtx);
-        cv.wait(lock, [&] { return producer_count == scan_rows.size(); });
-    }
+                                            RETURN_IF_ERROR(
+                                                    vfile_scanner_ptr->prepare_for_read_lines(
+                                                            scan_range_desc));
+                                            RETURN_IF_ERROR(
+                                                    vfile_scanner_ptr->read_lines_from_range(
+                                                            scan_range_desc, read_ids,
+                                                            &scan_blocks[idx], external_info,
+                                                            &init_reader_ms[idx],
+                                                            &get_block_ms[idx]));
+                                        }
+
+                                        auto file_read_bytes_counter =
+                                                sub_runtime_profile->get_counter(
+                                                        vectorized::FileScanner::
+                                                                FileReadBytesProfile);
+
+                                        if (file_read_bytes_counter != nullptr) {
+                                            file_read_bytes[idx] = PrettyPrinter::print(
+                                                    file_read_bytes_counter->value(),
+                                                    file_read_bytes_counter->type());
+                                        }
+
+                                        auto file_read_times_counter =
+                                                sub_runtime_profile->get_counter(
+                                                        vectorized::FileScanner::
+                                                                FileReadTimeProfile);
+                                        if (file_read_times_counter != nullptr) {
+                                            file_read_times[idx] = PrettyPrinter::print(
+                                                    file_read_times_counter->value(),
+                                                    file_read_times_counter->type());
+                                        }
+
+                                        semaphore.release();
+                                        if (++producer_count == scan_rows.size()) {
+                                            std::lock_guard<std::mutex> lock(mtx);
+                                            cv.notify_one();
+                                        }
+                                        return Status::OK();
+                                    },
+                                    nullptr)));
+                    idx++;
+                }
+
+                {
+                    std::unique_lock<std::mutex> lock(mtx);
+                    cv.wait(lock, [&] { return producer_count == scan_rows.size(); });
+                }
+                return Status::OK();
+            },
+            &scan_running_time));
+
+    // Insert the read data into result_block.
     for (const auto& [pos_block, block_idx] : row_id_block_idx) {
         for (size_t column_id = 0; column_id < result_block.get_columns().size(); column_id++) {
             auto dst_col =
@@ -844,11 +908,59 @@ Status RowIdStorageReader::read_batch_external_row(
         }
     }
 
-    *init_reader_avg_ms =
-            std::accumulate(init_reader_ms.begin(), init_reader_ms.end(), int64_t(0)) /
-            init_reader_ms.size();
-    *get_block_avg_ms = std::accumulate(get_block_ms.begin(), get_block_ms.end(), int64_t(0)) /
-                        get_block_ms.size();
+    // Statistical runtime profile information.
+    std::unique_ptr<RuntimeProfile> runtime_profile =
+            std::make_unique<RuntimeProfile>("ExternalRowIDFetcher");
+    {
+        runtime_profile->add_info_string(ScannersRunningTimeProfile,
+                                         std::to_string(scan_running_time) + "ms");
+    }
+
+    {
+        *init_reader_avg_ms =
+                std::accumulate(init_reader_ms.begin(), init_reader_ms.end(), int64_t(0)) /
+                init_reader_ms.size();
+        runtime_profile->add_info_string(InitReaderAvgTimeProfile,
+                                         std::to_string(*init_reader_avg_ms) + "ms");
+    }
+
+    {
+        *get_block_avg_ms = std::accumulate(get_block_ms.begin(), get_block_ms.end(), int64_t(0)) /
+                            get_block_ms.size();
+        runtime_profile->add_info_string(GetBlockAvgTimeProfile,
+                                         std::to_string(*init_reader_avg_ms) + "ms");
+    }
+
+    {
+        stringstream ss;
+        ss << "[";
+        for (const auto& [_, row_ids] : scan_rows) {
+            ss << std::to_string(row_ids.size()) << ", ";
+        }
+        ss << "]";
+        runtime_profile->add_info_string(FileReadLinesProfile, ss.str());
+    }
+
+    {
+        stringstream ss;
+        ss << "[";
+        for (const auto& str : file_read_bytes) {
+            ss << str << ", ";
+        }
+        ss << "]";
+        runtime_profile->add_info_string(vectorized::FileScanner::FileReadBytesProfile, ss.str());
+    }
+
+    {
+        stringstream ss;
+        ss << "[";
+        for (const auto& str : file_read_times) {
+            ss << str << ",";
+        }
+        ss << "]";
+        runtime_profile->add_info_string(vectorized::FileScanner::FileReadTimeProfile, ss.str());
+    }
+    runtime_profile->to_proto(pprofile, 2);
 
     *scan_range_cnt = scan_rows.size();
 

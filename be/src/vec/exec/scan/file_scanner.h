@@ -62,6 +62,10 @@ class FileScanner : public Scanner {
 public:
     static constexpr const char* NAME = "FileScanner";
 
+    // sub profile name (for parquet/orc)
+    static const std::string FileReadBytesProfile;
+    static const std::string FileReadTimeProfile;
+
     FileScanner(RuntimeState* state, pipeline::FileScanLocalState* parent, int64_t limit,
                 std::shared_ptr<vectorized::SplitSourceConnector> split_source,
                 RuntimeProfile* profile, ShardedKVCache* kv_cache,

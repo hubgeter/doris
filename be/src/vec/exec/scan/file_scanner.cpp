@@ -94,6 +94,9 @@ class ShardedKVCache;
 namespace doris::vectorized {
 using namespace ErrorCode;
 
+const std::string FileScanner::FileReadBytesProfile = "FileReadBytes";
+const std::string FileScanner::FileReadTimeProfile = "FileReadTime";
+
 FileScanner::FileScanner(
         RuntimeState* state, pipeline::FileScanLocalState* local_state, int64_t limit,
         std::shared_ptr<vectorized::SplitSourceConnector> split_source, RuntimeProfile* profile,
@@ -1344,6 +1347,7 @@ Status FileScanner::read_lines_from_range(const TFileRangeDesc& range,
             },
             get_block_ms));
 
+    _cur_reader->collect_profile_before_close();
     RETURN_IF_ERROR(_cur_reader->close());
     return Status::OK();
 }
