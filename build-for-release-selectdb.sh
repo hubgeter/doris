@@ -154,7 +154,7 @@ JAVA17_DOWNLOAD_LINK=
 JAVA17_DIR_NAME=
 if [[ "${ARCH}" == "x64" ]]; then
     JAVA17_DOWNLOAD_LINK="https://selectdb-doris-1308700295.cos.ap-beijing.myqcloud.com/release/jdbc_driver/openjdk-17.0.2_linux-x64_bin.tar.gz"
-    JAVA17_DIR_NAME="jdk-17.0.2"
+    JAVA17_DIR_NAME="openjdk-17.0.2_linux-x64"
 elif [[ "${ARCH}" == "arm64" ]]; then
     JAVA17_DOWNLOAD_LINK="https://selectdb-doris-1308700295.cos.ap-beijing.myqcloud.com/release/jdbc_driver/bisheng-jdk-17.0.11-linux-aarch64.tar.gz"
     JAVA17_DIR_NAME="bisheng-jdk-17.0.11"
