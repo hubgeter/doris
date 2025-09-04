@@ -20,22 +20,12 @@
 // **Note**: default db will be create if not exist
 defaultDb = "regression_test"
 
-jdbcUrl = "jdbc:mysql://172.19.0.2:9131/?useLocalSessionState=true&allowLoadLocalInfile=true"
-targetJdbcUrl = "jdbc:mysql://172.19.0.2:9131/?useLocalSessionState=true&allowLoadLocalInfile=true"
+jdbcUrl = "jdbc:mysql://127.0.0.1:9032/?useLocalSessionState=true&allowLoadLocalInfile=true&zeroDateTimeBehavior=round"
+targetJdbcUrl = "jdbc:mysql://127.0.0.1:9032/?useLocalSessionState=true&allowLoadLocalInfile=true&zeroDateTimeBehavior=round"
 jdbcUser = "root"
 jdbcPassword = ""
 
-ccrDownstreamUrl = "jdbc:mysql://172.19.0.2:9131/?useLocalSessionState=true&allowLoadLocalInfile=true"
-ccrDownstreamUser = "root"
-ccrDownstreamPassword = ""
-ccrDownstreamFeThriftAddress = "127.0.0.1:9020"
-
-feSourceThriftAddress = "127.0.0.1:9020"
-feTargetThriftAddress = "127.0.0.1:9020"
-feSyncerUser = "root"
-feSyncerPassword = ""
-
-feHttpAddress = "172.19.0.2:8131"
+feHttpAddress = "127.0.0.1:8032"
 feHttpUser = "root"
 feHttpPassword = ""
 
@@ -51,46 +41,27 @@ trinoPluginsPath = "/tmp/trino_connector"
 
 // will test <group>/<suite>.groovy
 // empty group will test all group
-testGroups = ""
+testGroups = "nonConcurrent"
 // empty suite will test all suite
 testSuites = ""
 // empty directories will test all directories
 testDirectories = ""
 
 // this groups will not be executed
-excludeGroups = ""
+excludeGroups = "p1,p2"
 // this suites will not be executed
-// load_stream_fault_injection may cause bad disk
 
+// this suites will not be executed
 excludeSuites = "000_the_start_sentinel_do_not_touch," + // keep this line as the first line
-    "test_dump_image," +
-    "test_index_failure_injection," +
-    "test_compaction_uniq_cluster_keys_with_delete," +
-    "test_compaction_uniq_keys_cluster_key," +
-    "test_pk_uk_case_cluster," +
-    "test_point_query_ck," +
-    "test_rowstore_ck," +
-    "test_point_query_partition_ck," +
-    "test_profile," +
-    "test_refresh_mtmv," +
-    "test_spark_load," +
-    "test_broker_load_func," +
-    "test_index_compaction_failure_injection," +
-    "test_full_compaction_run_status," +
-    "test_topn_fault_injection," + 
-    "zzz_the_end_sentinel_do_not_touch" // keep this line as the last line
+    "zzz_the_end_sentinel_do_not_touch"// keep this line as the last line
 
 // this directories will not be executed
 excludeDirectories = "000_the_start_sentinel_do_not_touch," + // keep this line as the first line
-    "cloud," +
-    "cloud_p0," +
-    "nereids_rules_p0/subquery," +
-    "unique_with_mow_c_p0," +
-    "workload_manager_p1," +
-    "plsql_p0," + // plsql is not developped any more
+    "variant_github_events_nonConcurrent_p2," +
+    "variant_github_events_new_p2," +
+    "hdfs_vault_p2," +
+    "nereids_p0/hbo," +
     "zzz_the_end_sentinel_do_not_touch"// keep this line as the last line
-
-customConf1 = "test_custom_conf_value"
 
 // for test csv with header
 enableHdfs=false // set to true if hdfs is ready
@@ -136,6 +107,10 @@ kafka_port=19193
 // iceberg test config
 iceberg_rest_uri_port=18181
 iceberg_minio_port=19001
+
+// polaris rest catalog config
+polaris_rest_uri_port=20181
+polaris_minio_port=20001
 
 enableEsTest=false
 es_6_port=19200

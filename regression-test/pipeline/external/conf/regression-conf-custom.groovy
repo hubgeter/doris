@@ -20,22 +20,12 @@
 // **Note**: default db will be create if not exist
 defaultDb = "regression_test"
 
-jdbcUrl = "jdbc:mysql://172.19.0.2:9131/?useLocalSessionState=true&allowLoadLocalInfile=true"
-targetJdbcUrl = "jdbc:mysql://172.19.0.2:9131/?useLocalSessionState=true&allowLoadLocalInfile=true"
+jdbcUrl = "jdbc:mysql://127.0.0.1:9031/?useLocalSessionState=true&allowLoadLocalInfile=true"
+targetJdbcUrl = "jdbc:mysql://127.0.0.1:9031/?useLocalSessionState=true&allowLoadLocalInfile=true"
 jdbcUser = "root"
 jdbcPassword = ""
 
-ccrDownstreamUrl = "jdbc:mysql://172.19.0.2:9131/?useLocalSessionState=true&allowLoadLocalInfile=true"
-ccrDownstreamUser = "root"
-ccrDownstreamPassword = ""
-ccrDownstreamFeThriftAddress = "127.0.0.1:9020"
-
-feSourceThriftAddress = "127.0.0.1:9020"
-feTargetThriftAddress = "127.0.0.1:9020"
-feSyncerUser = "root"
-feSyncerPassword = ""
-
-feHttpAddress = "172.19.0.2:8131"
+feHttpAddress = "127.0.0.1:8031"
 feHttpUser = "root"
 feHttpPassword = ""
 
@@ -51,7 +41,7 @@ trinoPluginsPath = "/tmp/trino_connector"
 
 // will test <group>/<suite>.groovy
 // empty group will test all group
-testGroups = ""
+testGroups = "external"
 // empty suite will test all suite
 testSuites = ""
 // empty directories will test all directories
@@ -123,11 +113,17 @@ hive3PgPort=5732
 // See `docker/thirdparties/start-thirdparties-docker.sh`
 enableKafkaTest=true
 kafka_port=19193
+// refactor params
+enableRefactorParamsTest=true
 
 // iceberg test config
 iceberg_rest_uri_port=18181
 iceberg_minio_port=19001
 enableIcebergTest=true
+
+// polaris rest catalog config
+polaris_rest_uri_port=20181
+polaris_minio_port=20001
 
 enableEsTest=true
 es_5_port=59200
@@ -171,3 +167,10 @@ enableKerberosTest = true
 kerberosHmsPort=9883
 kerberosHdfsPort=8820
 enableNonCatalogKerberosTest = true
+
+
+// LakeSoul catalog test config
+enableLakesoulTest = true
+
+// AWS iam role config
+
