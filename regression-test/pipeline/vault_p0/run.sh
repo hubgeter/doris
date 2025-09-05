@@ -79,8 +79,6 @@ run() {
 
     # used to set up HDFS docker
     docker_compose_hdfs_yaml='
-version: "3"
-
 services:
  namenode:
   image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
@@ -89,14 +87,16 @@ services:
   container_name: hadoop3-namenode
   ports:
    - "9870:9870"
+   - "8020:8020"
   expose:
    - "9870"
+   - "8020"
   healthcheck:
    test: [ "CMD", "curl", "http://localhost:9870/" ]
    interval: 5s
    timeout: 120s
    retries: 120
-  network_mode: "host"
+#   network_mode: "host"
 
  datanode:
   image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
@@ -110,7 +110,7 @@ services:
    interval: 5s
    timeout: 60s
    retries: 120
-  network_mode: "host"
+#   network_mode: "host"
 '
     if echo "${docker_compose_hdfs_yaml}" >docker-compose.yaml && docker-compose up -d; then echo; else echo "ERROR: start hdfs docker failed"; fi
     JAVA_HOME="$(find /usr/lib/jvm -maxdepth 1 -type d -name 'java-8-*' | sed -n '1p')"
@@ -173,5 +173,7 @@ if [[ ${exit_flag} != "0" ]] || ${need_collect_log}; then
     fi
     if core_info="$(upload_doris_log_to_oss "${core_file_name}")"; then reporting_messages_error "${core_info##*coredump.tar.gz to }"; fi
 fi
+echo "#### try to stop minio docker ####"
+if cd "${teamcity_build_checkoutDir}" && docker-compose down; then echo; fi
 
 exit "${exit_flag}"

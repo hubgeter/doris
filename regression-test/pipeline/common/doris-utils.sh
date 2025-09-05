@@ -955,8 +955,8 @@ function warehouse_add_fe() {
 
 function warehouse_add_be() {
     local ret
-    local heartbeat_port
-    heartbeat_port=$(get_doris_conf_value "${DORIS_HOME}"/be/conf heartbeat_port)
+    local heartbeat_service_port
+    heartbeat_service_port=$(get_doris_conf_value "${DORIS_HOME}"/be/conf heartbeat_service_port)
     if curl "127.0.0.1:5000/MetaService/http/add_cluster?token=greedisgood9999" -d "{
         \"instance_id\": \"cloud_instance_0\",
         \"cluster\":{
@@ -967,7 +967,7 @@ function warehouse_add_be() {
                 {
                     \"cloud_unique_id\":\"cloud_unique_id_compute_node0\",
                     \"ip\":\"127.0.0.1\",
-                    \"heartbeat_port\":\"${heartbeat_port}\"
+                    \"heartbeat_port\":\"${heartbeat_service_port}\"
                 }
             ]
         }
