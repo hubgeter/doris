@@ -3,8 +3,7 @@
     "doris":{
       "array_fields":[
         "sports",
-        "scores",
-        "z_details"
+        "scores"
       ]
     }
   }
