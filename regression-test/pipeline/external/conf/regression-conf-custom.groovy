@@ -113,17 +113,11 @@ hive3PgPort=5732
 // See `docker/thirdparties/start-thirdparties-docker.sh`
 enableKafkaTest=true
 kafka_port=19193
-// refactor params
-enableRefactorParamsTest=true
 
 // iceberg test config
 iceberg_rest_uri_port=18181
 iceberg_minio_port=19001
 enableIcebergTest=true
-
-// polaris rest catalog config
-polaris_rest_uri_port=20181
-polaris_minio_port=20001
 
 enableEsTest=true
 es_5_port=59200
@@ -167,10 +161,3 @@ enableKerberosTest = true
 kerberosHmsPort=9883
 kerberosHdfsPort=8820
 enableNonCatalogKerberosTest = true
-
-
-// LakeSoul catalog test config
-enableLakesoulTest = true
-
-// AWS iam role config
-

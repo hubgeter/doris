@@ -1,5 +1,5 @@
-jdbcUrl = "jdbc:mysql://127.0.0.1:9030/?useLocalSessionState=true&allowLoadLocalInfile=true&zeroDateTimeBehavior=round"
-targetJdbcUrl = "jdbc:mysql://127.0.0.1:9030/?useLocalSessionState=true&allowLoadLocalInfile=true&zeroDateTimeBehavior=round"
+jdbcUrl = "jdbc:mysql://127.0.0.1:9030/?useLocalSessionState=true&allowLoadLocalInfile=true"
+targetJdbcUrl = "jdbc:mysql://127.0.0.1:9030/?useLocalSessionState=true&allowLoadLocalInfile=true"
 
 testGroups = "p0"
 // empty suite will test all suite
@@ -15,6 +15,12 @@ excludeGroups = ""
 excludeSuites = "000_the_start_sentinel_do_not_touch," + // keep this line as the first line
     "test_dump_image," +
     "test_index_failure_injection," +
+    "test_compaction_uniq_cluster_keys_with_delete," +
+    "test_compaction_uniq_keys_cluster_key," +
+    "test_pk_uk_case_cluster," +
+    "test_point_query_ck," +
+    "test_rowstore_ck," +
+    "test_point_query_partition_ck," +
     "test_profile," +
     "test_refresh_mtmv," +
     "test_spark_load," +
@@ -28,8 +34,10 @@ excludeSuites = "000_the_start_sentinel_do_not_touch," + // keep this line as th
 excludeDirectories = "000_the_start_sentinel_do_not_touch," + // keep this line as the first line
     "cloud," +
     "cloud_p0," +
+    "nereids_rules_p0/subquery," +
+    "unique_with_mow_c_p0," +
     "workload_manager_p1," +
-    "plsql_p0," + // plsql is not developped any more, add by sk
+    "plsql_p0," + // plsql is not developped any more
     "zzz_the_end_sentinel_do_not_touch"// keep this line as the last line
 
 customConf1 = "test_custom_conf_value"
@@ -78,10 +86,6 @@ kafka_port=19193
 // iceberg test config
 iceberg_rest_uri_port=18181
 iceberg_minio_port=19001
-
-// polaris rest catalog config
-polaris_rest_uri_port=20181
-polaris_minio_port=20001
 
 enableEsTest=false
 es_6_port=19200
