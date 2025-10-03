@@ -23,7 +23,6 @@ import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
-import org.apache.doris.datasource.CatalogIf;
 import org.apache.doris.qe.ConnectContext;
 
 import com.google.common.base.Strings;
