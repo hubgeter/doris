@@ -1,5 +1,21 @@
 jdbcUrl = "jdbc:mysql://127.0.0.1:9030/?useLocalSessionState=true&allowLoadLocalInfile=true"
 targetJdbcUrl = "jdbc:mysql://127.0.0.1:9030/?useLocalSessionState=true&allowLoadLocalInfile=true"
+jdbcUser = "root"
+jdbcPassword = ""
+
+ccrDownstreamUrl = "jdbc:mysql://127.0.0.1:9030/?useLocalSessionState=true&allowLoadLocalInfile=true"
+ccrDownstreamUser = "root"
+ccrDownstreamPassword = ""
+ccrDownstreamFeThriftAddress = "127.0.0.1:9020"
+
+feSourceThriftAddress = "127.0.0.1:9020"
+feTargetThriftAddress = "127.0.0.1:9020"
+feSyncerUser = "root"
+feSyncerPassword = ""
+
+feHttpAddress = "127.0.0.1:8030"
+feHttpUser = "root"
+feHttpPassword = ""
 
 testGroups = "p0"
 // empty suite will test all suite
