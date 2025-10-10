@@ -96,7 +96,9 @@ lib_path="${DORIS_HOME}/lib"
 bin="${DORIS_HOME}/lib/doris_cloud"
 export LD_LIBRARY_PATH="${lib_path}:${LD_LIBRARY_PATH}"
 
-chmod 550 "${DORIS_HOME}/lib/doris_cloud"
+if [[ ! -x "${DORIS_HOME}/lib/doris_cloud" || ! -r "${DORIS_HOME}/lib/doris_cloud" ]]; then
+    chmod 550 "${DORIS_HOME}/lib/doris_cloud"
+fi
 
 if [[ -z "${JAVA_HOME}" ]]; then
     echo "The JAVA_HOME environment variable is not defined correctly"
