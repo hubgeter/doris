@@ -79,6 +79,8 @@ run() {
 
     # used to set up HDFS docker
     docker_compose_hdfs_yaml='
+version: "3"
+
 services:
  namenode:
   image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
