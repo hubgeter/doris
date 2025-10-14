@@ -36,6 +36,8 @@ if [[ -z "${commit_id_from_trigger}" ]]; then echo "ERROR: env commit_id_from_tr
 if [[ -z "${s3SourceAk}" || -z "${s3SourceSk}" ]]; then echo "ERROR: env s3SourceAk or s3SourceSk not set" && exit 1; fi
 if [[ -z "${hwYunAk}" || -z "${hwYunSk}" ]]; then echo "WARNING: env hwYunAk or hwYunSk not set"; fi
 if [[ -z "${txYunAk}" || -z "${txYunSk}" ]]; then echo "WARNING: env txYunAk or txYunSk not set"; fi
+if [[ -z "${aliYunAk}" || -z "${aliYunSk}" ]]; then echo "WARNING: env aliYunAk or aliYunSk not set"; fi
+if [[ -z "${AWSAK}" || -z "${AWSSK}" ]]; then echo "WARNING: env AWSAK or AWSSK not set"; fi
 
 # shellcheck source=/dev/null
 source "$(bash "${teamcity_build_checkoutDir}"/regression-test/pipeline/common/get-or-set-tmp-env.sh 'get')"
@@ -64,6 +66,10 @@ run() {
         echo "hwYunSk='${hwYunSk:-}'"
         echo "txYunAk='${txYunAk:-}'"
         echo "txYunSk='${txYunSk:-}'"
+        echo "aliYunAk='${aliYunAk:-}'"
+        echo "aliYunSk='${aliYunSk:-}'"
+        echo "AWSAK='${AWSAK:-}'"
+        echo "AWSSK='${AWSSK:-}'"
     } >>"${teamcity_build_checkoutDir}"/regression-test/pipeline/external/conf/regression-conf-custom.groovy
     cp -f "${teamcity_build_checkoutDir}"/regression-test/pipeline/external/conf/regression-conf-custom.groovy \
         "${teamcity_build_checkoutDir}"/regression-test/conf/

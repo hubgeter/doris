@@ -96,7 +96,7 @@ services:
    interval: 5s
    timeout: 120s
    retries: 120
-#   network_mode: "host"
+  network_mode: "host"
 
  datanode:
   image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
@@ -110,7 +110,7 @@ services:
    interval: 5s
    timeout: 60s
    retries: 120
-#   network_mode: "host"
+  network_mode: "host"
 '
     if echo "${docker_compose_hdfs_yaml}" >docker-compose.yaml && docker-compose up -d; then echo; else echo "ERROR: start hdfs docker failed"; fi
     JAVA_HOME="$(find /usr/lib/jvm -maxdepth 1 -type d -name 'java-8-*' | sed -n '1p')"

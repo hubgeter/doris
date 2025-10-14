@@ -161,3 +161,17 @@ enableKerberosTest = true
 kerberosHmsPort=9883
 kerberosHdfsPort=8820
 enableNonCatalogKerberosTest = true
+
+// requires valid ak/sk, which will be set in regression-test/pipeline/external/run.sh
+ak='xxx'
+sk='xxx'
+hwYunAk='xxx'
+hwYunSk='xxx'
+txYunAk='xxx'
+txYunSk='xxx'
+aliYunAk='xxx'
+aliYunSk='xxx'
+aliYunBucket='doris-regression-hk'
+aliYunEndpoint='oss-cn-hongkong-internal.aliyuncs.com'
+AWSAK='xxx'
+AWSSK='xxx'
