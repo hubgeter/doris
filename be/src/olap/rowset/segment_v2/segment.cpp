@@ -125,6 +125,7 @@ Status Segment::_open(io::FileSystemSPtr fs, const std::string& path, uint32_t s
 
         st = fs->open_file(path, &file_reader, &reader_options);
         if (st) {
+            segment->_fs = fs;
             segment->_file_reader = std::move(file_reader);
             st = segment->_open(stats);
         }
@@ -139,6 +140,7 @@ Status Segment::_open(io::FileSystemSPtr fs, const std::string& path, uint32_t s
             io::FileReaderOptions opt = reader_options;
             opt.cache_type = io::FileCachePolicy::NO_CACHE; // skip cache
             RETURN_IF_ERROR(fs->open_file(path, &file_reader, &opt));
+            segment->_fs = fs;
             segment->_file_reader = std::move(file_reader);
             st = segment->_open(stats);
             if (!st.ok()) {
@@ -149,6 +151,7 @@ Status Segment::_open(io::FileSystemSPtr fs, const std::string& path, uint32_t s
         }
     }
     RETURN_IF_ERROR(st);
+    DCHECK(segment->_fs != nullptr) << "file system is nullptr after segment open";
     *output = std::move(segment);
     return Status::OK();
 }
@@ -809,26 +812,6 @@ Status Segment::get_column_reader(const TabletColumn& col,
                                                             stats);
     }
     return _column_reader_cache->get_column_reader(col_uid, column_reader, stats);
-}
-
-Status Segment::new_bitmap_index_iterator(const TabletColumn& tablet_column,
-                                          const StorageReadOptions& read_options,
-                                          std::unique_ptr<BitmapIndexIterator>* iter) {
-    RETURN_IF_ERROR(_create_column_meta_once(read_options.stats));
-    std::shared_ptr<ColumnReader> reader;
-    auto st = get_column_reader(tablet_column, &reader, read_options.stats);
-    if (st.is<ErrorCode::NOT_FOUND>()) {
-        return Status::OK();
-    }
-    RETURN_IF_ERROR(st);
-    DCHECK(reader != nullptr);
-    if (reader->has_bitmap_index()) {
-        BitmapIndexIterator* it;
-        RETURN_IF_ERROR(reader->new_bitmap_index_iterator(&it));
-        iter->reset(it);
-        return Status::OK();
-    }
-    return Status::OK();
 }
 
 Status Segment::new_index_iterator(const TabletColumn& tablet_column, const TabletIndex* index_meta,

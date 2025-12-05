@@ -80,7 +80,6 @@ import org.apache.doris.nereids.trees.expressions.SlotReference;
 import org.apache.doris.nereids.trees.expressions.TimestampArithmetic;
 import org.apache.doris.nereids.trees.expressions.TryCast;
 import org.apache.doris.nereids.trees.expressions.UnaryArithmetic;
-import org.apache.doris.nereids.trees.expressions.VirtualSlotReference;
 import org.apache.doris.nereids.trees.expressions.WhenClause;
 import org.apache.doris.nereids.trees.expressions.functions.AlwaysNotNullable;
 import org.apache.doris.nereids.trees.expressions.functions.AlwaysNullable;
@@ -755,22 +754,13 @@ public class ExpressionTranslator extends DefaultExpressionVisitor<Expr, PlanTra
     public Expr visitTimestampArithmetic(TimestampArithmetic arithmetic, PlanTranslatorContext context) {
         Preconditions.checkNotNull(arithmetic.getFuncName(),
                 "funcName in TimestampArithmetic should not be null");
-        NullableMode nullableMode = NullableMode.ALWAYS_NULLABLE;
-        if (arithmetic.children().stream().anyMatch(e -> e.getDataType().isDateV2LikeType())) {
-            nullableMode = NullableMode.DEPEND_ON_ARGUMENT;
-        }
         TimestampArithmeticExpr timestampArithmeticExpr = new TimestampArithmeticExpr(
                 arithmetic.getFuncName(), arithmetic.getOp(),
                 arithmetic.left().accept(this, context), arithmetic.right().accept(this, context),
                 arithmetic.getTimeUnit().toString(), arithmetic.getDataType().toCatalogDataType(),
-                nullableMode);
+                NullableMode.DEPEND_ON_ARGUMENT);
         timestampArithmeticExpr.setNullableFromNereids(arithmetic.nullable());
         return timestampArithmeticExpr;
-    }
-
-    @Override
-    public Expr visitVirtualReference(VirtualSlotReference virtualSlotReference, PlanTranslatorContext context) {
-        return context.findSlotRef(virtualSlotReference.getExprId());
     }
 
     @Override

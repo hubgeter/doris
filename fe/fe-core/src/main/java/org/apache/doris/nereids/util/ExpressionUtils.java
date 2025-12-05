@@ -70,6 +70,7 @@ import org.apache.doris.nereids.trees.plans.logical.LogicalEmptyRelation;
 import org.apache.doris.nereids.trees.plans.logical.LogicalUnion;
 import org.apache.doris.nereids.trees.plans.visitor.ExpressionLineageReplacer;
 import org.apache.doris.nereids.types.BooleanType;
+import org.apache.doris.nereids.types.VariantType;
 import org.apache.doris.nereids.types.coercion.NumericType;
 import org.apache.doris.qe.ConnectContext;
 
@@ -541,6 +542,32 @@ public class ExpressionUtils {
     }
 
     /**
+     * replaceNullAware, if could not be replaced by map, the return null
+     */
+    public static Expression replaceNullAware(Expression expr,
+            Map<? extends Expression, ? extends Expression> replaceMap) {
+        Set<Boolean> containNull = new HashSet<>();
+        Expression finalReplacedExpr = expr.rewriteDownShortCircuit(e -> {
+            if (!containNull.isEmpty()) {
+                return e;
+            }
+            Expression replacedExpr = replaceMap.get(e);
+            if (replacedExpr == null && e instanceof SlotReference
+                    && e.getDataType() instanceof VariantType) {
+                // this is valid, because the variant expression would be extended in expression rewrite
+                return e;
+            }
+            if (replacedExpr == null && e instanceof NamedExpression) {
+                // if replace named expression failed, return null directly
+                containNull.add(true);
+                return e;
+            }
+            return replacedExpr == null ? e : replacedExpr;
+        });
+        return containNull.isEmpty() ? finalReplacedExpr : null;
+    }
+
+    /**
      * Replace expression node in the expression tree by `replaceMap` in top-down manner.
      */
     public static List<NamedExpression> replaceNamedExpressions(List<? extends NamedExpression> namedExpressions,
@@ -886,7 +913,16 @@ public class ExpressionUtils {
             Predicate<TreeNode<Expression>> predicate) {
         ImmutableSet.Builder<E> set = ImmutableSet.builder();
         for (Expression expr : expressions) {
-            set.addAll(expr.collectToList(predicate));
+            set.addAll(expr.collect(predicate));
+        }
+        return set.build();
+    }
+
+    public static <E> Set<E> collectWithTest(Collection<? extends Expression> expressions,
+            Predicate<TreeNode<Expression>> predicate, Predicate<TreeNode<Expression>> test) {
+        ImmutableSet.Builder<E> set = ImmutableSet.builder();
+        for (Expression expr : expressions) {
+            set.addAll(expr.collectWithTest(predicate, test));
         }
         return set.build();
     }

@@ -69,7 +69,6 @@ struct RowLocation;
 
 namespace segment_v2 {
 
-class BitmapIndexIterator;
 class ColumnIterator;
 class InvertedIndexIterator;
 class RowRanges;
@@ -171,10 +170,8 @@ private:
     [[nodiscard]] Status _lazy_init(vectorized::Block* block);
     [[nodiscard]] Status _init_impl(const StorageReadOptions& opts);
     [[nodiscard]] Status _init_return_column_iterators();
-    [[nodiscard]] Status _init_bitmap_index_iterators();
     [[nodiscard]] Status _init_index_iterators();
 
-    Status _apply_ann_topn_predicate();
     // calculate row ranges that fall into requested key ranges using short key index
     [[nodiscard]] Status _get_row_ranges_by_keys();
     [[nodiscard]] Status _prepare_seek(const StorageReadOptions::KeyRange& key_range);
@@ -192,13 +189,15 @@ private:
     // calculate row ranges that satisfy requested column conditions using various column index
     [[nodiscard]] Status _get_row_ranges_by_column_conditions();
     [[nodiscard]] Status _get_row_ranges_from_conditions(RowRanges* condition_row_ranges);
-    [[nodiscard]] Status _apply_bitmap_index();
     [[nodiscard]] Status _apply_inverted_index();
     [[nodiscard]] Status _apply_inverted_index_on_column_predicate(
             ColumnPredicate* pred, std::vector<ColumnPredicate*>& remaining_predicates,
             bool* continue_apply);
+    [[nodiscard]] Status _apply_ann_topn_predicate();
     [[nodiscard]] Status _apply_index_expr();
+
     bool _column_has_fulltext_index(int32_t cid);
+    bool _column_has_ann_index(int32_t cid);
     bool _downgrade_without_index(Status res, bool need_remaining = false);
     inline bool _inverted_index_not_support_pred_type(const PredicateType& type);
     bool _is_literal_node(const TExprNodeType::type& node_type);
@@ -391,7 +390,6 @@ private:
     std::vector<vectorized::IndexFieldNameAndTypePair> _storage_name_and_type;
     // vector idx -> column iterarator
     std::vector<std::unique_ptr<ColumnIterator>> _column_iterators;
-    std::vector<std::unique_ptr<BitmapIndexIterator>> _bitmap_index_iterators;
     std::vector<std::unique_ptr<IndexIterator>> _index_iterators;
     // after init(), `_row_bitmap` contains all rowid to scan
     roaring::Roaring _row_bitmap;
@@ -485,14 +483,21 @@ private:
     * a boolean value to indicate whether the column has been read by the index.
     */
     std::unordered_map<ColumnId, std::unordered_map<ColumnPredicate*, bool>>
-            _column_predicate_inverted_index_status;
+            _column_predicate_index_exec_status;
 
     /*
     * column and common expr on it.
     * a boolean value to indicate whether the column has been read by the index.
     */
     std::unordered_map<ColumnId, std::unordered_map<const vectorized::VExpr*, bool>>
-            _common_expr_inverted_index_status;
+            _common_expr_index_exec_status;
+
+    /*
+    * common expr context to slotref map
+    * slot ref map is used to get slot ref expr by using column id.
+    */
+    std::unordered_map<vectorized::VExprContext*, std::unordered_map<ColumnId, vectorized::VExpr*>>
+            _common_expr_to_slotref_map;
 
     vectorized::ScoreRuntimeSPtr _score_runtime;
 
@@ -506,9 +511,6 @@ private:
 
     // key is column uid, value is the sparse column cache
     std::unordered_map<int32_t, PathToSparseColumnCacheUPtr> _variant_sparse_column_cache;
-
-    std::unordered_map<vectorized::VExprContext*, std::unordered_map<ColumnId, vectorized::VExpr*>>
-            _common_expr_to_slotref_map;
 };
 
 } // namespace segment_v2

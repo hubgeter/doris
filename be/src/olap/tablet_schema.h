@@ -102,7 +102,6 @@ public:
     bool is_on_update_current_timestamp() const { return _is_on_update_current_timestamp; }
     bool is_variant_type() const { return _type == FieldType::OLAP_FIELD_TYPE_VARIANT; }
     bool is_bf_column() const { return _is_bf_column; }
-    bool has_bitmap_index() const { return _has_bitmap_index; }
     bool is_array_type() const { return _type == FieldType::OLAP_FIELD_TYPE_ARRAY; }
     bool is_agg_state_type() const { return _type == FieldType::OLAP_FIELD_TYPE_AGG_STATE; }
     bool is_jsonb_type() const { return _type == FieldType::OLAP_FIELD_TYPE_JSONB; }
@@ -191,7 +190,6 @@ public:
     int32_t parent_unique_id() const { return _parent_col_unique_id; }
     void set_parent_unique_id(int32_t col_unique_id) { _parent_col_unique_id = col_unique_id; }
     void set_is_bf_column(bool is_bf_column) { _is_bf_column = is_bf_column; }
-    void set_has_bitmap_index(bool has_bitmap_index) { _has_bitmap_index = has_bitmap_index; }
     std::shared_ptr<const vectorized::IDataType> get_vec_type() const;
 
     Status check_valid() const {
@@ -202,10 +200,6 @@ public:
         }
         if (is_bf_column()) {
             return Status::NotSupported("Do not support bloom filter index, type={}",
-                                        get_string_by_field_type(type()));
-        }
-        if (has_bitmap_index()) {
-            return Status::NotSupported("Do not support bitmap index, type={}",
                                         get_string_by_field_type(type()));
         }
         return Status::OK();
@@ -279,7 +273,6 @@ private:
 
     bool _is_bf_column = false;
 
-    bool _has_bitmap_index = false;
     bool _visible = true;
 
     std::vector<TabletColumnPtr> _sub_columns;
@@ -340,6 +333,8 @@ public:
     void set_escaped_escaped_index_suffix_path(const std::string& name);
 
     bool is_inverted_index() const { return _index_type == IndexType::INVERTED; }
+
+    bool is_ann_index() const { return _index_type == IndexType::ANN; }
 
     void remove_parser_and_analyzer() {
         _properties.erase(INVERTED_INDEX_PARSER_KEY);
@@ -463,7 +458,6 @@ public:
     void set_skip_write_index_on_load(bool skip) { _skip_write_index_on_load = skip; }
     bool skip_write_index_on_load() const { return _skip_write_index_on_load; }
     int32_t delete_sign_idx() const { return _delete_sign_idx; }
-    void set_delete_sign_idx(int32_t delete_sign_idx) { _delete_sign_idx = delete_sign_idx; }
     bool has_sequence_col() const { return _sequence_col_idx != -1; }
     int32_t sequence_col_idx() const { return _sequence_col_idx; }
     void set_version_col_idx(int32_t version_col_idx) { _version_col_idx = version_col_idx; }
@@ -544,6 +538,8 @@ public:
 
     bool has_ngram_bf_index(int32_t col_unique_id) const;
     const TabletIndex* get_ngram_bf_index(int32_t col_unique_id) const;
+    const TabletIndex* get_index(int32_t col_unique_id, IndexType index_type,
+                                 const std::string& suffix_path) const;
     void update_indexes_from_thrift(const std::vector<doris::TOlapTableIndex>& indexes);
     // If schema version is not set, it should be -1
     int32_t schema_version() const { return _schema_version; }

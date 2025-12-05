@@ -324,8 +324,10 @@ Status JniConnector::_fill_block(Block* block, size_t num_rows) {
     SCOPED_RAW_TIMER(&_fill_block_watcher);
     JNIEnv* env = nullptr;
     RETURN_IF_ERROR(JniUtil::GetJNIEnv(&env));
+    // todo: maybe do not need to build name to index map every time
+    auto name_to_pos_map = block->get_name_to_pos_map();
     for (int i = 0; i < _column_names.size(); ++i) {
-        auto& column_with_type_and_name = block->get_by_name(_column_names[i]);
+        auto& column_with_type_and_name = block->get_by_position(name_to_pos_map[_column_names[i]]);
         auto& column_ptr = column_with_type_and_name.column;
         auto& column_type = column_with_type_and_name.type;
         RETURN_IF_ERROR(_fill_column(_table_meta, column_ptr, column_type, num_rows));
@@ -483,7 +485,7 @@ Status JniConnector::_fill_map_column(TableMetaAddress& address, MutableColumnPt
                                  map_offsets[origin_size + num_rows - 1] - start_offset));
     RETURN_IF_ERROR(_fill_column(address, value_column, value_type,
                                  map_offsets[origin_size + num_rows - 1] - start_offset));
-    return map.deduplicate_keys();
+    return Status::OK();
 }
 
 Status JniConnector::_fill_struct_column(TableMetaAddress& address, MutableColumnPtr& doris_column,

@@ -398,6 +398,8 @@ DECLARE_mInt32(unused_rowset_monitor_interval);
 DECLARE_mInt32(quering_rowsets_evict_interval);
 DECLARE_String(storage_root_path);
 DECLARE_mString(broken_storage_path);
+DECLARE_Int32(min_active_scan_threads);
+DECLARE_Int32(min_active_file_scan_threads);
 
 // Config is used to check incompatible old format hdr_ format
 // whether doris uses strict way. When config is true, process will log fatal
@@ -876,6 +878,11 @@ DECLARE_Int32(query_cache_max_partition_count);
 DECLARE_mInt32(max_tablet_version_num);
 
 DECLARE_mInt32(time_series_max_tablet_version_num);
+
+// the max sleep time when meeting high pressure load task
+DECLARE_mInt64(max_load_back_pressure_version_wait_time_ms);
+// the threshold of rowset number gap that triggers back pressure
+DECLARE_mInt64(load_back_pressure_version_threshold);
 
 // Frontend mainly use two thrift sever type: THREAD_POOL, THREADED_SELECTOR. if fe use THREADED_SELECTOR model for thrift server,
 // the thrift_server_type_of_fe should be set THREADED_SELECTOR to make be thrift client to fe constructed with TFramedTransport
@@ -1359,6 +1366,12 @@ DECLARE_Int32(fe_expire_duration_seconds);
 // , but if the waiting time exceed the limit, then be will exit directly.
 // During this period, FE will not send any queries to BE and waiting for all running queries to stop.
 DECLARE_Int32(grace_shutdown_wait_seconds);
+// When using the graceful stop feature, after the main process waits for
+// all currently running tasks to finish, it will continue to wait for
+// an additional period to ensure that queries still running on other nodes have also completed.
+// Since a BE node cannot detect the task execution status on other BE nodes,
+// you may need to increase this threshold to allow for a longer waiting time.
+DECLARE_Int32(grace_shutdown_post_delay_seconds);
 
 // BitmapValue serialize version.
 DECLARE_Int16(bitmap_serialize_version);

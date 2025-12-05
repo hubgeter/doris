@@ -604,11 +604,6 @@ void TabletColumn::init_from_pb(const ColumnPB& column) {
     } else {
         _is_bf_column = false;
     }
-    if (column.has_has_bitmap_index()) {
-        _has_bitmap_index = column.has_bitmap_index();
-    } else {
-        _has_bitmap_index = false;
-    }
     if (column.has_aggregation()) {
         _aggregation = get_aggregation_type_by_string(column.aggregation());
         _aggregation_name = column.aggregation();
@@ -710,9 +705,6 @@ void TabletColumn::to_schema_pb(ColumnPB* column) const {
     }
     column->set_result_is_nullable(_result_is_nullable);
     column->set_be_exec_version(_be_exec_version);
-    if (_has_bitmap_index) {
-        column->set_has_bitmap_index(_has_bitmap_index);
-    }
     column->set_visible(_visible);
 
     if (_type == FieldType::OLAP_FIELD_TYPE_ARRAY) {
@@ -1215,7 +1207,6 @@ void TabletSchema::update_index_info_from(const TabletSchema& tablet_schema) {
             continue;
         }
         col->set_is_bf_column(tablet_schema._cols[col_idx]->is_bf_column());
-        col->set_has_bitmap_index(tablet_schema._cols[col_idx]->has_bitmap_index());
     }
 }
 
@@ -1544,7 +1535,8 @@ void TabletSchema::update_tablet_columns(const TabletSchema& tablet_schema,
 
 bool TabletSchema::has_inverted_index_with_index_id(int64_t index_id) const {
     for (size_t i = 0; i < _indexes.size(); i++) {
-        if (_indexes[i]->index_type() == IndexType::INVERTED &&
+        if ((_indexes[i]->index_type() == IndexType::INVERTED ||
+             _indexes[i]->index_type() == IndexType::ANN) &&
             _indexes[i]->index_id() == index_id) {
             return true;
         }
@@ -1645,7 +1637,6 @@ const TabletIndex* TabletSchema::ann_index(int32_t col_unique_id,
 }
 
 const TabletIndex* TabletSchema::ann_index(const TabletColumn& col) const {
-    // Some columns(Float, Double, JSONB ...) from the variant do not support inverted index
     if (!segment_v2::IndexColumnWriter::check_support_ann_index(col)) {
         return nullptr;
     }
@@ -1664,6 +1655,18 @@ bool TabletSchema::has_ngram_bf_index(int32_t col_unique_id) const {
 const TabletIndex* TabletSchema::get_ngram_bf_index(int32_t col_unique_id) const {
     // Get the ngram bf index for the given column unique id
     IndexKey index_key(IndexType::NGRAM_BF, col_unique_id, "");
+    auto it = _col_id_suffix_to_index.find(index_key);
+    if (it != _col_id_suffix_to_index.end()) {
+        if (!it->second.empty() && it->second[0] < _indexes.size()) {
+            return _indexes[it->second[0]].get();
+        }
+    }
+    return nullptr;
+}
+
+const TabletIndex* TabletSchema::get_index(int32_t col_unique_id, IndexType index_type,
+                                           const std::string& suffix_path) const {
+    IndexKey index_key(index_type, col_unique_id, suffix_path);
     auto it = _col_id_suffix_to_index.find(index_key);
     if (it != _col_id_suffix_to_index.end()) {
         if (!it->second.empty() && it->second[0] < _indexes.size()) {
@@ -1738,7 +1741,6 @@ bool operator==(const TabletColumn& a, const TabletColumn& b) {
     if (a._length != b._length) return false;
     if (a._index_length != b._index_length) return false;
     if (a._is_bf_column != b._is_bf_column) return false;
-    if (a._has_bitmap_index != b._has_bitmap_index) return false;
     if (a._column_path == nullptr && a._column_path != nullptr) return false;
     if (b._column_path == nullptr && a._column_path != nullptr) return false;
     if (b._column_path != nullptr && a._column_path != nullptr &&

@@ -53,7 +53,6 @@
 #include "olap/rowset/segment_v2/ann_index/ann_index.h"
 #include "olap/rowset/segment_v2/ann_index/ann_index_reader.h"
 #include "olap/rowset/segment_v2/ann_index/ann_topn_runtime.h"
-#include "olap/rowset/segment_v2/bitmap_index_reader.h"
 #include "olap/rowset/segment_v2/column_reader.h"
 #include "olap/rowset/segment_v2/column_reader_cache.h"
 #include "olap/rowset/segment_v2/index_file_reader.h"
@@ -274,7 +273,6 @@ SegmentIterator::SegmentIterator(std::shared_ptr<Segment> segment, SchemaSPtr sc
         : _segment(std::move(segment)),
           _schema(schema),
           _column_iterators(_schema->num_columns()),
-          _bitmap_index_iterators(_schema->num_columns()),
           _index_iterators(_schema->num_columns()),
           _cur_rowid(0),
           _lazy_materialization_read(false),
@@ -384,7 +382,7 @@ void SegmentIterator::_initialize_predicate_results() {
     // Initialize from _col_predicates
     for (auto* pred : _col_predicates) {
         int cid = pred->column_id();
-        _column_predicate_inverted_index_status[cid][pred] = false;
+        _column_predicate_index_exec_status[cid][pred] = false;
     }
 
     _calculate_expr_in_remaining_conjunct_root();
@@ -392,7 +390,6 @@ void SegmentIterator::_initialize_predicate_results() {
 
 Status SegmentIterator::init_iterators() {
     RETURN_IF_ERROR(_init_return_column_iterators());
-    RETURN_IF_ERROR(_init_bitmap_index_iterators());
     RETURN_IF_ERROR(_init_index_iterators());
     return Status::OK();
 }
@@ -602,7 +599,6 @@ Status SegmentIterator::_get_row_ranges_by_column_conditions() {
         return Status::OK();
     }
 
-    RETURN_IF_ERROR(_apply_bitmap_index());
     {
         if (_opts.runtime_state &&
             _opts.runtime_state->query_options().enable_inverted_index_query &&
@@ -620,9 +616,8 @@ Status SegmentIterator::_get_row_ranges_by_column_conditions() {
             for (auto it = _common_expr_ctxs_push_down.begin();
                  it != _common_expr_ctxs_push_down.end();) {
                 if ((*it)->all_expr_inverted_index_evaluated()) {
-                    const auto* result =
-                            (*it)->get_inverted_index_context()->get_inverted_index_result_for_expr(
-                                    (*it)->root().get());
+                    const auto* result = (*it)->get_index_context()->get_index_result_for_expr(
+                            (*it)->root().get());
                     if (result != nullptr) {
                         _row_bitmap &= *result->get_data_bitmap();
                         auto root = (*it)->root();
@@ -684,6 +679,13 @@ Status SegmentIterator::_get_row_ranges_by_column_conditions() {
     return Status::OK();
 }
 
+bool SegmentIterator::_column_has_ann_index(int32_t cid) {
+    bool has_ann_index = _index_iterators[cid] != nullptr &&
+                         _index_iterators[cid]->get_reader(AnnIndexReaderType::ANN);
+
+    return has_ann_index;
+}
+
 Status SegmentIterator::_apply_ann_topn_predicate() {
     if (_ann_topn_runtime == nullptr) {
         return Status::OK();
@@ -693,7 +695,7 @@ Status SegmentIterator::_apply_ann_topn_predicate() {
     size_t src_col_idx = _ann_topn_runtime->get_src_column_idx();
     ColumnId src_cid = _schema->column_id(src_col_idx);
     IndexIterator* ann_index_iterator = _index_iterators[src_cid].get();
-    bool has_ann_index = ann_index_iterator != nullptr;
+    bool has_ann_index = _column_has_ann_index(src_cid);
     bool has_common_expr_push_down = !_common_expr_ctxs_push_down.empty();
     bool has_column_predicate = std::any_of(_is_pred_column.begin(), _is_pred_column.end(),
                                             [](bool is_pred) { return is_pred; });
@@ -928,36 +930,6 @@ Status SegmentIterator::_get_row_ranges_from_conditions(RowRanges* condition_row
     return Status::OK();
 }
 
-// filter rows by evaluating column predicates using bitmap indexes.
-// upon return, predicates that've been evaluated by bitmap indexes are removed from _col_predicates.
-Status SegmentIterator::_apply_bitmap_index() {
-    SCOPED_RAW_TIMER(&_opts.stats->bitmap_index_filter_timer);
-    size_t input_rows = _row_bitmap.cardinality();
-
-    std::vector<ColumnPredicate*> remaining_predicates;
-    auto is_like_predicate = [](ColumnPredicate* _pred) {
-        return dynamic_cast<LikeColumnPredicate<TYPE_CHAR>*>(_pred) != nullptr ||
-               dynamic_cast<LikeColumnPredicate<TYPE_STRING>*>(_pred) != nullptr;
-    };
-    for (auto pred : _col_predicates) {
-        auto cid = pred->column_id();
-        if (_bitmap_index_iterators[cid] == nullptr || pred->type() == PredicateType::BF ||
-            is_like_predicate(pred)) {
-            // no bitmap index for this column
-            remaining_predicates.push_back(pred);
-        } else {
-            RETURN_IF_ERROR(pred->evaluate(_bitmap_index_iterators[cid].get(), _segment->num_rows(),
-                                           &_row_bitmap));
-            if (_row_bitmap.isEmpty()) {
-                break; // all rows have been pruned, no need to process further predicates
-            }
-        }
-    }
-    _col_predicates = std::move(remaining_predicates);
-    _opts.stats->rows_bitmap_index_filtered += (input_rows - _row_bitmap.cardinality());
-    return Status::OK();
-}
-
 bool SegmentIterator::_is_literal_node(const TExprNodeType::type& node_type) {
     switch (node_type) {
     case TExprNodeType::BOOL_LITERAL:
@@ -1166,7 +1138,7 @@ Status SegmentIterator::_apply_inverted_index_on_column_predicate(
             return Status::OK();
         }
         if (!pred->is_runtime_filter()) {
-            _column_predicate_inverted_index_status[pred->column_id()][pred] = true;
+            _column_predicate_index_exec_status[pred->column_id()][pred] = true;
         }
     }
     return Status::OK();
@@ -1271,8 +1243,8 @@ bool SegmentIterator::_check_all_conditions_passed_inverted_index_for_column(Col
     if (_opts.runtime_state && !_opts.runtime_state->query_options().enable_common_expr_pushdown) {
         return false;
     }
-    auto pred_it = _column_predicate_inverted_index_status.find(cid);
-    if (pred_it != _column_predicate_inverted_index_status.end()) {
+    auto pred_it = _column_predicate_index_exec_status.find(cid);
+    if (pred_it != _column_predicate_index_exec_status.end()) {
         const auto& pred_map = pred_it->second;
         bool pred_passed = std::all_of(pred_map.begin(), pred_map.end(),
                                        [](const auto& pred_entry) { return pred_entry.second; });
@@ -1283,8 +1255,8 @@ bool SegmentIterator::_check_all_conditions_passed_inverted_index_for_column(Col
         }
     }
 
-    auto expr_it = _common_expr_inverted_index_status.find(cid);
-    if (expr_it != _common_expr_inverted_index_status.end()) {
+    auto expr_it = _common_expr_index_exec_status.find(cid);
+    if (expr_it != _common_expr_index_exec_status.end()) {
         const auto& expr_map = expr_it->second;
         return std::all_of(expr_map.begin(), expr_map.end(),
                            [](const auto& expr_entry) { return expr_entry.second; });
@@ -1363,20 +1335,6 @@ Status SegmentIterator::_init_return_column_iterators() {
     return Status::OK();
 }
 
-Status SegmentIterator::_init_bitmap_index_iterators() {
-    SCOPED_RAW_TIMER(&_opts.stats->segment_iterator_init_bitmap_index_iterators_timer_ns);
-    if (_cur_rowid >= num_rows()) {
-        return Status::OK();
-    }
-    for (auto cid : _schema->column_ids()) {
-        if (_bitmap_index_iterators[cid] == nullptr) {
-            RETURN_IF_ERROR(_segment->new_bitmap_index_iterator(
-                    _opts.tablet_schema->column(cid), _opts, &_bitmap_index_iterators[cid]));
-        }
-    }
-    return Status::OK();
-}
-
 Status SegmentIterator::_init_index_iterators() {
     SCOPED_RAW_TIMER(&_opts.stats->segment_iterator_init_index_iterators_timer_ns);
     if (_cur_rowid >= num_rows()) {
@@ -1431,14 +1389,14 @@ Status SegmentIterator::_init_index_iterators() {
     for (auto cid : _schema->column_ids()) {
         if (_index_iterators[cid] == nullptr) {
             const auto& column = _opts.tablet_schema->column(cid);
-            int32_t col_unique_id =
-                    column.is_extracted_column() ? column.parent_unique_id() : column.unique_id();
-            RETURN_IF_ERROR(_segment->new_index_iterator(
-                    column,
-                    _segment->_tablet_schema->ann_index(col_unique_id, column.suffix_path()), _opts,
-                    &_index_iterators[cid]));
-            if (_index_iterators[cid] != nullptr) {
-                _index_iterators[cid]->set_context(_index_query_context);
+            const auto* index_meta = _segment->_tablet_schema->ann_index(column);
+            if (index_meta) {
+                RETURN_IF_ERROR(_segment->new_index_iterator(column, index_meta, _opts,
+                                                             &_index_iterators[cid]));
+
+                if (_index_iterators[cid] != nullptr) {
+                    _index_iterators[cid]->set_context(_index_query_context);
+                }
             }
         }
     }
@@ -1632,22 +1590,22 @@ Status SegmentIterator::_seek_columns(const std::vector<ColumnId>& column_ids, r
  *   This is an estimate, if we want more precise cost, statistics collection is necessary(this is a todo).
  *   In short, when returned non-pred columns contains string/hll/bitmap, we using Lazy Materialization.
  *   Otherwise, we disable it.
- *    
+ *
  *   When Lazy Materialization enable, we need to read column at least two times.
  *   First time to read Pred col, second time to read non-pred.
  *   Here's an interesting question to research, whether read Pred col once is the best plan.
  *   (why not read Pred col twice or more?)
  *
  *   When Lazy Materialization disable, we just need to read once.
- *   
- * 
+ *
+ *
  *  2 Whether the predicate type can be evaluate in a fast way(using SIMD to eval pred)
  *    Such as integer type and float type, they can be eval fast.
  *    But for BloomFilter/string/date, they eval slow.
  *    If a type can be eval fast, we use vectorization to eval it.
  *    Otherwise, we use short-circuit to eval it.
- * 
- *  
+ *
+ *
  */
 
 // todo(wb) need a UT here
@@ -2192,12 +2150,8 @@ uint16_t SegmentIterator::_evaluate_vectorization_predicate(uint16_t* sel_rowid_
     for (const auto& pred : _pre_eval_block_predicate) {
         if (!pred->always_true()) {
             all_pred_always_true = false;
-            break;
-        }
-    }
-    if (all_pred_always_true) {
-        for (const auto& pred : _pre_eval_block_predicate) {
-            pred->always_true();
+        } else {
+            pred->update_filter_info(0, 0, selected_size);
         }
     }
 
@@ -2612,7 +2566,6 @@ Status SegmentIterator::_process_eof(vectorized::Block* block) {
     block->clear_column_data();
     // clear and release iterators memory footprint in advance
     _column_iterators.clear();
-    _bitmap_index_iterators.clear();
     _index_iterators.clear();
     return Status::EndOfFile("no more data in segment");
 }
@@ -2716,7 +2669,7 @@ void SegmentIterator::_output_index_result_column_for_expr(uint16_t* sel_rowid_i
     }
     for (auto& expr_ctx : _common_expr_ctxs_push_down) {
         for (auto& inverted_index_result_bitmap_for_expr :
-             expr_ctx->get_inverted_index_context()->get_inverted_index_result_bitmap()) {
+             expr_ctx->get_index_context()->get_index_result_bitmap()) {
             const auto* expr = inverted_index_result_bitmap_for_expr.first;
             const auto& result_bitmap = inverted_index_result_bitmap_for_expr.second;
             const auto& index_result_bitmap = result_bitmap.get_data_bitmap();
@@ -2754,11 +2707,11 @@ void SegmentIterator::_output_index_result_column_for_expr(uint16_t* sel_rowid_i
             DCHECK(block->rows() == vec_match_pred.size());
 
             if (null_map_column) {
-                expr_ctx->get_inverted_index_context()->set_inverted_index_result_column_for_expr(
+                expr_ctx->get_index_context()->set_index_result_column_for_expr(
                         expr, vectorized::ColumnNullable::create(std::move(index_result_column),
                                                                  std::move(null_map_column)));
             } else {
-                expr_ctx->get_inverted_index_context()->set_inverted_index_result_column_for_expr(
+                expr_ctx->get_index_context()->set_index_result_column_for_expr(
                         expr, std::move(index_result_column));
             }
         }
@@ -2813,14 +2766,14 @@ Status SegmentIterator::current_block_row_locations(std::vector<RowLocation>* bl
 }
 
 Status SegmentIterator::_construct_compound_expr_context() {
-    auto inverted_index_context = std::make_shared<vectorized::InvertedIndexContext>(
+    auto inverted_index_context = std::make_shared<vectorized::IndexExecContext>(
             _schema->column_ids(), _index_iterators, _storage_name_and_type,
-            _common_expr_inverted_index_status, _score_runtime);
+            _common_expr_index_exec_status, _score_runtime);
     for (const auto& expr_ctx : _opts.common_expr_ctxs_push_down) {
         vectorized::VExprContextSPtr context;
         // _ann_range_search_runtime will do deep copy.
         RETURN_IF_ERROR(expr_ctx->clone(_opts.runtime_state, context));
-        context->set_inverted_index_context(inverted_index_context);
+        context->set_index_context(inverted_index_context);
         _common_expr_ctxs_push_down.emplace_back(context);
     }
     return Status::OK();
@@ -2862,19 +2815,11 @@ void SegmentIterator::_calculate_expr_in_remaining_conjunct_root() {
                                 if (vir_child->is_slot_ref()) {
                                     auto* inner_slot_ref =
                                             assert_cast<vectorized::VSlotRef*>(vir_child.get());
-                                    _common_expr_inverted_index_status[_schema->column_id(
+                                    _common_expr_index_exec_status[_schema->column_id(
                                             inner_slot_ref->column_id())][expr.get()] = false;
                                     _common_expr_to_slotref_map[root_expr_ctx.get()]
                                                                [inner_slot_ref->column_id()] =
                                                                        expr.get();
-                                    // Print debug info for virtual slot expansion
-                                    LOG(INFO) << fmt::format(
-                                            "common_expr_ctx_ptr: {}, expr_ptr: {}, "
-                                            "virtual_slotref_ptr: {}, inner_slotref_ptr: {}, "
-                                            "column_id: {}",
-                                            fmt::ptr(root_expr_ctx.get()), fmt::ptr(expr.get()),
-                                            fmt::ptr(child.get()), fmt::ptr(vir_child.get()),
-                                            inner_slot_ref->column_id());
                                 }
 
                                 if (!vir_child->children().empty()) {
@@ -2886,8 +2831,8 @@ void SegmentIterator::_calculate_expr_in_remaining_conjunct_root() {
                 }
                 if (child->is_slot_ref()) {
                     auto* column_slot_ref = assert_cast<vectorized::VSlotRef*>(child.get());
-                    _common_expr_inverted_index_status[_schema->column_id(
-                            column_slot_ref->column_id())][expr.get()] = false;
+                    _common_expr_index_exec_status[_schema->column_id(column_slot_ref->column_id())]
+                                                  [expr.get()] = false;
                     _common_expr_to_slotref_map[root_expr_ctx.get()][column_slot_ref->column_id()] =
                             expr.get();
                 }

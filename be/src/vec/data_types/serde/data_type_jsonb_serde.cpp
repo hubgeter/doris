@@ -35,11 +35,10 @@ namespace doris {
 namespace vectorized {
 #include "common/compile_check_begin.h"
 
-template <bool is_binary_format>
-Status DataTypeJsonbSerDe::_write_column_to_mysql(const IColumn& column,
-                                                  MysqlRowBuffer<is_binary_format>& result,
-                                                  int64_t row_idx, bool col_const,
-                                                  const FormatOptions& options) const {
+Status DataTypeJsonbSerDe::write_column_to_mysql_binary(const IColumn& column,
+                                                        MysqlRowBinaryBuffer& result,
+                                                        int64_t row_idx, bool col_const,
+                                                        const FormatOptions& options) const {
     auto& data = assert_cast<const ColumnString&>(column);
     const auto col_index = index_check_const(row_idx, col_const);
     const auto jsonb_val = data.get_data_at(col_index);
@@ -55,20 +54,6 @@ Status DataTypeJsonbSerDe::_write_column_to_mysql(const IColumn& column,
         }
     }
     return Status::OK();
-}
-
-Status DataTypeJsonbSerDe::write_column_to_mysql_binary(const IColumn& column,
-                                                        MysqlRowBinaryBuffer& row_buffer,
-                                                        int64_t row_idx, bool col_const,
-                                                        const FormatOptions& options) const {
-    return _write_column_to_mysql(column, row_buffer, row_idx, col_const, options);
-}
-
-Status DataTypeJsonbSerDe::write_column_to_mysql_text(const IColumn& column,
-                                                      MysqlRowTextBuffer& row_buffer,
-                                                      int64_t row_idx, bool col_const,
-                                                      const FormatOptions& options) const {
-    return _write_column_to_mysql(column, row_buffer, row_idx, col_const, options);
 }
 
 Status DataTypeJsonbSerDe::serialize_column_to_json(const IColumn& column, int64_t start_idx,
@@ -355,11 +340,31 @@ void DataTypeJsonbSerDe::to_string(const IColumn& column, size_t row_num,
     const auto& col = assert_cast<const ColumnString&, TypeCheckOnRelease::DISABLE>(column);
     const auto& data_ref = col.get_data_at(row_num);
     if (data_ref.size > 0) {
+        if (_nesting_level > 1) {
+            bw.write('"');
+        }
+        std::string str = JsonbToJson::jsonb_to_json_string(data_ref.data, data_ref.size);
+        bw.write(str.c_str(), str.size());
+        if (_nesting_level > 1) {
+            bw.write('"');
+        }
+    } else {
+        bw.write("NULL", 4);
+    }
+}
+
+bool DataTypeJsonbSerDe::write_column_to_presto_text(const IColumn& column, BufferWritable& bw,
+                                                     int64_t row_idx) const {
+    const auto& col = assert_cast<const ColumnString&, TypeCheckOnRelease::DISABLE>(column);
+    const auto& data_ref = col.get_data_at(row_idx);
+    if (data_ref.size > 0) {
         std::string str = JsonbToJson::jsonb_to_json_string(data_ref.data, data_ref.size);
         bw.write(str.c_str(), str.size());
     } else {
         bw.write("NULL", 4);
     }
+    return true;
 }
+
 } // namespace vectorized
 } // namespace doris

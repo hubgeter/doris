@@ -301,21 +301,10 @@ DEFINE_mInt32(pipeline_task_exec_time_slice, "100");
 DEFINE_Int32(task_executor_min_concurrency_per_task, "1");
 // task executor max concurrency per task
 DEFINE_Int32(task_executor_max_concurrency_per_task, "-1");
-DEFINE_Validator(task_executor_max_concurrency_per_task, [](const int config) -> bool {
-    if (config == -1) {
-        task_executor_max_concurrency_per_task = std::numeric_limits<int>::max();
-    }
-    return true;
-});
+
 // task task executor inital split max concurrency per task, later concurrency may be adjusted dynamically
 DEFINE_Int32(task_executor_initial_max_concurrency_per_task, "-1");
-DEFINE_Validator(task_executor_initial_max_concurrency_per_task, [](const int config) -> bool {
-    if (config == -1) {
-        CpuInfo::init();
-        task_executor_initial_max_concurrency_per_task = std::max(48, CpuInfo::num_cores() * 2);
-    }
-    return true;
-});
+
 // Enable task executor in internal table scan.
 DEFINE_Bool(enable_task_executor_in_internal_table, "false");
 // Enable task executor in external table scan.
@@ -324,13 +313,7 @@ DEFINE_Bool(enable_task_executor_in_external_table, "true");
 // number of scanner thread pool size for olap table
 // and the min thread num of remote scanner thread pool
 DEFINE_Int32(doris_scanner_thread_pool_thread_num, "-1");
-DEFINE_Validator(doris_scanner_thread_pool_thread_num, [](const int config) -> bool {
-    if (config == -1) {
-        CpuInfo::init();
-        doris_scanner_thread_pool_thread_num = std::max(48, CpuInfo::num_cores() * 2);
-    }
-    return true;
-});
+
 DEFINE_Int32(doris_scanner_min_thread_pool_thread_num, "8");
 DEFINE_Int32(remote_split_source_batch_size, "1000");
 DEFINE_Int32(doris_max_remote_scanner_thread_pool_thread_num, "-1");
@@ -369,6 +352,8 @@ DEFINE_mInt32(unused_rowset_monitor_interval, "30");
 DEFINE_mInt32(quering_rowsets_evict_interval, "30");
 DEFINE_String(storage_root_path, "${DORIS_HOME}/storage");
 DEFINE_mString(broken_storage_path, "");
+DEFINE_Int32(min_active_scan_threads, "-1");
+DEFINE_Int32(min_active_file_scan_threads, "-1");
 
 // Config is used to check incompatible old format hdr_ format
 // whether doris uses strict way. When config is true, process will log fatal
@@ -852,6 +837,11 @@ DEFINE_mInt32(max_tablet_version_num, "2000");
 
 DEFINE_mInt32(time_series_max_tablet_version_num, "20000");
 
+// the max sleep time when meeting high pressure load task
+DEFINE_mInt64(max_load_back_pressure_version_wait_time_ms, "3000");
+// the threshold of rowset number gap that triggers back pressure
+DEFINE_mInt64(load_back_pressure_version_threshold, "80"); // 80%
+
 // Frontend mainly use two thrift sever type: THREAD_POOL, THREADED_SELECTOR. if fe use THREADED_SELECTOR model for thrift server,
 // the thrift_server_type_of_fe should be set THREADED_SELECTOR to make be thrift client to fe constructed with TFramedTransport
 DEFINE_String(thrift_server_type_of_fe, "THREAD_POOL");
@@ -1307,6 +1297,7 @@ DEFINE_String(user_files_secure_path, "${DORIS_HOME}");
 DEFINE_Int32(fe_expire_duration_seconds, "60");
 
 DEFINE_Int32(grace_shutdown_wait_seconds, "120");
+DEFINE_Int32(grace_shutdown_post_delay_seconds, "30");
 
 DEFINE_Int16(bitmap_serialize_version, "1");
 
@@ -1592,14 +1583,15 @@ DEFINE_mInt64(max_csv_line_reader_output_buffer_size, "4294967296");
 // -1 means auto: use 80% of the available CPU cores.
 DEFINE_Int32(omp_threads_limit, "-1");
 DEFINE_Validator(omp_threads_limit, [](const int config) -> bool {
+    if (config > 0) {
+        omp_threads_limit = config;
+        return true;
+    }
     CpuInfo::init();
     int core_cap = config::num_cores > 0 ? config::num_cores : CpuInfo::num_cores();
     core_cap = std::max(1, core_cap);
-    int limit = config;
-    if (limit < 0) {
-        limit = std::max(1, core_cap * 4 / 5);
-    }
-    omp_threads_limit = std::max(1, std::min(limit, core_cap));
+    // Use at most 80% of the available CPU cores.
+    omp_threads_limit = std::max(1, core_cap * 4 / 5);
     return true;
 });
 // The capacity of segment partial column cache, used to cache column readers for each segment.

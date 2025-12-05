@@ -182,7 +182,11 @@ Status RowIDFetcher::_merge_rpc_results(const PMultiGetRequest& request,
         }
         // Merge partial blocks
         vectorized::Block partial_block;
-        RETURN_IF_ERROR(partial_block.deserialize(resp.block()));
+        [[maybe_unused]] size_t uncompressed_size = 0;
+        [[maybe_unused]] int64_t uncompressed_time = 0;
+
+        RETURN_IF_ERROR(
+                partial_block.deserialize(resp.block(), &uncompressed_size, &uncompressed_time));
         if (partial_block.is_empty_column()) {
             return Status::OK();
         }
@@ -493,9 +497,10 @@ Status RowIdStorageReader::read_by_rowids(const PMultiGetRequest& request,
                    << ", be_exec_version:" << request.be_exec_version();
         [[maybe_unused]] size_t compressed_size = 0;
         [[maybe_unused]] size_t uncompressed_size = 0;
+        [[maybe_unused]] int64_t compress_time = 0;
         int be_exec_version = request.has_be_exec_version() ? request.be_exec_version() : 0;
         RETURN_IF_ERROR(result_block.serialize(be_exec_version, response->mutable_block(),
-                                               &uncompressed_size, &compressed_size,
+                                               &uncompressed_size, &compressed_size, &compress_time,
                                                segment_v2::CompressionTypePB::LZ4));
     }
 
@@ -600,10 +605,11 @@ Status RowIdStorageReader::read_by_rowids(const PMultiGetRequestV2& request,
 
             [[maybe_unused]] size_t compressed_size = 0;
             [[maybe_unused]] size_t uncompressed_size = 0;
+            [[maybe_unused]] int64_t compress_time = 0;
             int be_exec_version = request.has_be_exec_version() ? request.be_exec_version() : 0;
-            RETURN_IF_ERROR(result_blocks[i].serialize(be_exec_version, pblock->mutable_block(),
-                                                       &uncompressed_size, &compressed_size,
-                                                       segment_v2::CompressionTypePB::LZ4));
+            RETURN_IF_ERROR(result_blocks[i].serialize(
+                    be_exec_version, pblock->mutable_block(), &uncompressed_size, &compressed_size,
+                    &compress_time, segment_v2::CompressionTypePB::LZ4));
         }
 
         // Build file type statistics string
@@ -825,8 +831,8 @@ Status RowIdStorageReader::read_batch_external_row(
     workload_group_ids.emplace_back(workload_group_id);
     auto wg = ExecEnv::GetInstance()->workload_group_mgr()->get_group(workload_group_ids);
     doris::pipeline::TaskScheduler* exec_sched = nullptr;
-    vectorized::SimplifiedScanScheduler* scan_sched = nullptr;
-    vectorized::SimplifiedScanScheduler* remote_scan_sched = nullptr;
+    vectorized::ScannerScheduler* scan_sched = nullptr;
+    vectorized::ScannerScheduler* remote_scan_sched = nullptr;
     wg->get_query_scheduler(&exec_sched, &scan_sched, &remote_scan_sched);
     DCHECK(remote_scan_sched);
 

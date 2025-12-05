@@ -29,7 +29,6 @@ import org.apache.doris.common.io.Writable;
 import org.apache.doris.common.util.TimeUtils;
 import org.apache.doris.common.util.Util;
 import org.apache.doris.nereids.StatementContext;
-import org.apache.doris.nereids.analyzer.UnboundResultSink;
 import org.apache.doris.nereids.glue.LogicalPlanAdapter;
 import org.apache.doris.nereids.metrics.Event;
 import org.apache.doris.nereids.metrics.EventSwitchParser;
@@ -37,9 +36,6 @@ import org.apache.doris.nereids.parser.Dialect;
 import org.apache.doris.nereids.rules.RuleType;
 import org.apache.doris.nereids.rules.exploration.mv.PreMaterializedViewRewriter.PreRewriteStrategy;
 import org.apache.doris.nereids.rules.expression.ExpressionRuleType;
-import org.apache.doris.nereids.trees.plans.commands.insert.InsertIntoTableCommand;
-import org.apache.doris.nereids.trees.plans.logical.LogicalFileSink;
-import org.apache.doris.nereids.trees.plans.logical.LogicalPlan;
 import org.apache.doris.planner.GroupCommitBlockSink;
 import org.apache.doris.qe.VariableMgr.VarAttr;
 import org.apache.doris.thrift.TGroupCommitMode;
@@ -93,8 +89,10 @@ public class SessionVariable implements Serializable, Writable {
     public static final String EXEC_MEM_LIMIT = "exec_mem_limit";
     public static final String LOCAL_EXCHANGE_FREE_BLOCKS_LIMIT = "local_exchange_free_blocks_limit";
     public static final String SCAN_QUEUE_MEM_LIMIT = "scan_queue_mem_limit";
-    public static final String NUM_SCANNER_THREADS = "num_scanner_threads";
-    public static final String MIN_SCANNER_CONCURRENCY = "min_scanner_concurrnency";
+    public static final String MAX_SCANNERS_CONCURRENCY = "max_scanners_concurrency";
+    public static final String MAX_FILE_SCANNERS_CONCURRENCY = "max_file_scanners_concurrency";
+    public static final String MIN_SCANNERS_CONCURRENCY = "min_scanners_concurrency";
+    public static final String MIN_FILE_SCANNERS_CONCURRENCY = "min_file_scanners_concurrency";
     public static final String MIN_SCAN_SCHEDULER_CONCURRENCY = "min_scan_scheduler_concurrency";
     public static final String QUERY_TIMEOUT = "query_timeout";
     public static final String ANALYZE_TIMEOUT = "analyze_timeout";
@@ -185,6 +183,7 @@ public class SessionVariable implements Serializable, Writable {
     public static final String ENABLE_REWRITE_ELEMENT_AT_TO_SLOT = "enable_rewrite_element_at_to_slot";
     public static final String ENABLE_ODBC_TRANSCATION = "enable_odbc_transcation";
     public static final String ENABLE_BINARY_SEARCH_FILTERING_PARTITIONS = "enable_binary_search_filtering_partitions";
+    public static final String SKIP_PRUNE_PREDICATE = "skip_prune_predicate";
     public static final String ENABLE_SQL_CACHE = "enable_sql_cache";
     public static final String ENABLE_HIVE_SQL_CACHE = "enable_hive_sql_cache";
     public static final String ENABLE_QUERY_CACHE = "enable_query_cache";
@@ -505,6 +504,9 @@ public class SessionVariable implements Serializable, Writable {
     // Split size for ExternalFileScanNode. Default value 0 means use the block size of HDFS/S3.
     public static final String FILE_SPLIT_SIZE = "file_split_size";
 
+    // Target file size in bytes for Iceberg write operations
+    public static final String ICEBERG_WRITE_TARGET_FILE_SIZE_BYTES = "iceberg_write_target_file_size_bytes";
+
     public static final String NUM_PARTITIONS_IN_BATCH_MODE = "num_partitions_in_batch_mode";
 
     public static final String NUM_FILES_IN_BATCH_MODE = "num_files_in_batch_mode";
@@ -596,8 +598,6 @@ public class SessionVariable implements Serializable, Writable {
     public static final String SERDE_DIALECT = "serde_dialect";
 
     public static final String EXPAND_RUNTIME_FILTER_BY_INNER_JION = "expand_runtime_filter_by_inner_join";
-
-    public static final String TEST_QUERY_CACHE_HIT = "test_query_cache_hit";
 
     public static final String ENABLE_AUTO_ANALYZE = "enable_auto_analyze";
 
@@ -882,6 +882,7 @@ public class SessionVariable implements Serializable, Writable {
     public static final String HNSW_EF_SEARCH = "hnsw_ef_search";
     public static final String HNSW_CHECK_RELATIVE_DISTANCE = "hnsw_check_relative_distance";
     public static final String HNSW_BOUNDED_QUEUE = "hnsw_bounded_queue";
+    public static final String IVF_NPROBE = "ivf_nprobe";
 
     public static final String DEFAULT_VARIANT_MAX_SUBCOLUMNS_COUNT = "default_variant_max_subcolumns_count";
 
@@ -968,25 +969,31 @@ public class SessionVariable implements Serializable, Writable {
     // 100MB
     public long maxScanQueueMemByte = 2147483648L / 20;
 
-    @VariableMgr.VarAttr(name = NUM_SCANNER_THREADS, needForward = true, description = {
-            "ScanNode 扫描数据的最大并发，默认为 0，采用 BE 的 doris_scanner_thread_pool_thread_num",
-            "The max threads to read data of ScanNode, "
-                    + "default 0, use doris_scanner_thread_pool_thread_num in be.conf"
-    })
-    public int numScannerThreads = 0;
+    @VariableMgr.VarAttr(name = MAX_SCANNERS_CONCURRENCY, needForward = true, description = {
+            "ScanNode 扫描数据的最大并发，默认为 4", "The max threads to read data of ScanNode, default 4"})
+    public int maxScannersConcurrency = 4;
+
+    @VariableMgr.VarAttr(name = MAX_FILE_SCANNERS_CONCURRENCY, needForward = true, description = {
+            "FileScanNode 扫描数据的最大并发，默认为 16", "The max threads to read data of FileScanNode, default 16"})
+    public int maxFileScannersConcurrency = 16;
 
     @VariableMgr.VarAttr(name = LOCAL_EXCHANGE_FREE_BLOCKS_LIMIT)
     public int localExchangeFreeBlocksLimit = 4;
 
-    @VariableMgr.VarAttr(name = MIN_SCANNER_CONCURRENCY, needForward = true, description = {
+    @VariableMgr.VarAttr(name = MIN_SCANNERS_CONCURRENCY, needForward = true, description = {
         "Scanner 的最小并发度，默认为 1", "The min concurrency of Scanner, default 1"
     })
-    public int minScannerConcurrency = 1;
+    public int minScannersConcurrency = 1;
+
+    @VariableMgr.VarAttr(name = MIN_FILE_SCANNERS_CONCURRENCY, needForward = true, description = {
+        "外表Scanner 的最小并发度，默认为 1", "The min concurrency of Remote Scanner, default 1"
+    })
+    public int minFileScannersConcurrency = 1;
 
     @VariableMgr.VarAttr(name = MIN_SCAN_SCHEDULER_CONCURRENCY, needForward = true, description = {
         "ScanScheduler 的最小并发度，默认值 0 表示使用 Scan 线程池线程数量的两倍", "The min concurrency of ScanScheduler, "
             + "default 0 means use twice the number of Scan thread pool threads"
-    })
+    }, varType = VariableAnnotation.DEPRECATED)
     public int minScanSchedulerConcurrency = 0;
 
     // By default, the number of Limit items after OrderBy is changed from 65535 items
@@ -1286,6 +1293,16 @@ public class SessionVariable implements Serializable, Writable {
     )
     public boolean enableBinarySearchFilteringPartitions = true;
 
+    @VariableMgr.VarAttr(name = SKIP_PRUNE_PREDICATE, fuzzy = true,
+            description = {
+                    "是否跳过“在分区裁剪后删除恒真谓词”的优化。默认为OFF（即执行此优化）。",
+                    "Skips the removal of always-true predicates after partition pruning. "
+                            + "Defaults to OFF (optimization is active)."
+            }
+    )
+    public boolean skipPrunePredicate = false;
+
+
     @VariableMgr.VarAttr(name = ENABLE_SQL_CACHE, fuzzy = true)
     public boolean enableSqlCache = true;
 
@@ -1409,7 +1426,7 @@ public class SessionVariable implements Serializable, Writable {
     @VariableMgr.VarAttr(
             name = ENABLE_LOCAL_SHUFFLE, fuzzy = false, varType = VariableAnnotation.EXPERIMENTAL,
             description = {"是否在 pipelineX 引擎上开启 local shuffle 优化",
-                    "Whether to enable local shuffle on pipelineX engine."})
+                    "Whether to enable local shuffle on pipelineX engine."}, needForward = true)
     private boolean enableLocalShuffle = true;
 
     @VariableMgr.VarAttr(
@@ -2110,6 +2127,11 @@ public class SessionVariable implements Serializable, Writable {
     @VariableMgr.VarAttr(name = FILE_SPLIT_SIZE, needForward = true)
     public long fileSplitSize = 0;
 
+    // Target file size for Iceberg write operations
+    // Default 0 means use config::iceberg_sink_max_file_size
+    @VariableMgr.VarAttr(name = ICEBERG_WRITE_TARGET_FILE_SIZE_BYTES, needForward = true)
+    public long icebergWriteTargetFileSizeBytes = 0L;
+
     @VariableMgr.VarAttr(
             name = NUM_PARTITIONS_IN_BATCH_MODE,
             fuzzy = true,
@@ -2332,13 +2354,6 @@ public class SessionVariable implements Serializable, Writable {
             "Used to set the behavior for newly inserted rows in partial update."
             }, checker = "checkPartialUpdateNewKeyBehavior", options = {"APPEND", "ERROR"})
     public String partialUpdateNewKeyPolicy = "APPEND";
-
-    @VariableMgr.VarAttr(name = TEST_QUERY_CACHE_HIT, description = {
-            "用于测试查询缓存是否命中，如果未命中指定类型的缓存，则会报错",
-            "Used to test whether the query cache is hit. "
-                    + "If the specified type of cache is not hit, an error will be reported."},
-            options = {"none", "sql_cache", "partition_cache"})
-    public String testQueryCacheHit = "none";
 
     @VariableMgr.VarAttr(name = ENABLE_AUTO_ANALYZE,
             description = {"该参数控制是否开启自动收集", "Set false to disable auto analyze"},
@@ -3035,6 +3050,11 @@ public class SessionVariable implements Serializable, Writable {
                     "Whether to use a bounded priority queue to optimize HNSW search performance"})
     public boolean hnswBoundedQueue = true;
 
+    @VariableMgr.VarAttr(name = IVF_NPROBE, needForward = true,
+            description = {"IVF 索引的 nprobe 参数，控制搜索时访问的聚类数量",
+                    "IVF index nprobe parameter, controls the number of clusters to search"})
+    public int ivfNprobe = 1;
+
     @VariableMgr.VarAttr(
             name = DEFAULT_VARIANT_MAX_SUBCOLUMNS_COUNT,
             needForward = true,
@@ -3362,8 +3382,8 @@ public class SessionVariable implements Serializable, Writable {
         return maxScanQueueMemByte;
     }
 
-    public int getNumScannerThreads() {
-        return numScannerThreads;
+    public int getMaxScannersConcurrency() {
+        return maxScannersConcurrency;
     }
 
     public int getQueryTimeoutS() {
@@ -3568,8 +3588,8 @@ public class SessionVariable implements Serializable, Writable {
         this.maxScanQueueMemByte = scanQueueMemByte;
     }
 
-    public void setNumScannerThreads(int numScannerThreads) {
-        this.numScannerThreads = numScannerThreads;
+    public void setMaxScannersConcurrency(int maxScannersConcurrency) {
+        this.maxScannersConcurrency = maxScannersConcurrency;
     }
 
     public boolean isSqlQuoteShowCreate() {
@@ -4094,6 +4114,14 @@ public class SessionVariable implements Serializable, Writable {
         this.fileSplitSize = fileSplitSize;
     }
 
+    public long getIcebergWriteTargetFileSizeBytes() {
+        return icebergWriteTargetFileSizeBytes;
+    }
+
+    public void setIcebergWriteTargetFileSizeBytes(long icebergWriteTargetFileSizeBytes) {
+        this.icebergWriteTargetFileSizeBytes = icebergWriteTargetFileSizeBytes;
+    }
+
     public int getNumPartitionsInBatchMode() {
         return numPartitionsInBatchMode;
     }
@@ -4331,13 +4359,6 @@ public class SessionVariable implements Serializable, Writable {
         if (statementContext != null) {
             StatementBase parsedStatement = statementContext.getParsedStatement();
             if (!(parsedStatement instanceof LogicalPlanAdapter)) {
-                return false;
-            }
-            LogicalPlan logicalPlan = ((LogicalPlanAdapter) parsedStatement).getLogicalPlan();
-            // TODO: support other sink
-            if (!(logicalPlan instanceof UnboundResultSink
-                    || logicalPlan instanceof LogicalFileSink
-                    || logicalPlan instanceof InsertIntoTableCommand)) {
                 return false;
             }
         }
@@ -4658,9 +4679,12 @@ public class SessionVariable implements Serializable, Writable {
         tResult.setMemLimit(maxExecMemByte);
         tResult.setLocalExchangeFreeBlocksLimit(localExchangeFreeBlocksLimit);
         tResult.setScanQueueMemLimit(maxScanQueueMemByte);
-        tResult.setNumScannerThreads(numScannerThreads);
+        tResult.setMaxScannersConcurrency(maxScannersConcurrency);
+        tResult.setMaxFileScannersConcurrency(maxFileScannersConcurrency);
         tResult.setMaxColumnReaderNum(maxColumnReaderNum);
         tResult.setParallelPrepareThreshold(parallelPrepareThreshold);
+        tResult.setMinScannersConcurrency(minScannersConcurrency);
+        tResult.setMinFileScannersConcurrency(minFileScannersConcurrency);
 
         tResult.setQueryTimeout(queryTimeoutS);
         tResult.setEnableProfile(enableProfile);
@@ -4823,8 +4847,13 @@ public class SessionVariable implements Serializable, Writable {
         tResult.setHnswEfSearch(hnswEFSearch);
         tResult.setHnswCheckRelativeDistance(hnswCheckRelativeDistance);
         tResult.setHnswBoundedQueue(hnswBoundedQueue);
+        tResult.setIvfNprobe(ivfNprobe);
         tResult.setMergeReadSliceSize(mergeReadSliceSizeBytes);
         tResult.setEnableExtendedRegex(enableExtendedRegex);
+
+        // Set Iceberg write target file size
+        tResult.setIcebergWriteTargetFileSizeBytes(icebergWriteTargetFileSizeBytes);
+
         return tResult;
     }
 

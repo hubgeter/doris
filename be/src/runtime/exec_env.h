@@ -50,7 +50,6 @@ class MemoryPool;
 namespace doris {
 namespace vectorized {
 class VDataStreamMgr;
-class ScannerScheduler;
 class SpillStreamManager;
 class DeltaWriterV2Pool;
 class DictionaryFactory;
@@ -133,7 +132,10 @@ class IndexPolicyMgr;
 struct SyncRowsetStats;
 class DeleteBitmapAggCache;
 
+// set to true when BE is shutting down
 inline bool k_doris_exit = false;
+// set to true after BE start ready
+inline bool k_is_server_ready = false;
 
 // Execution environment for queries/plan fragments.
 // Contains all required global structures, and handles to
@@ -276,7 +278,6 @@ public:
     StreamLoadExecutor* stream_load_executor() { return _stream_load_executor.get(); }
     RoutineLoadTaskExecutor* routine_load_task_executor() { return _routine_load_task_executor; }
     HeartbeatFlags* heartbeat_flags() { return _heartbeat_flags; }
-    vectorized::ScannerScheduler* scanner_scheduler() { return _scanner_scheduler; }
     FileMetaCache* file_meta_cache() { return _file_meta_cache; }
     MemTableMemoryLimiter* memtable_memory_limiter() { return _memtable_memory_limiter.get(); }
     WalManager* wal_mgr() { return _wal_manager.get(); }
@@ -483,7 +484,6 @@ private:
     RoutineLoadTaskExecutor* _routine_load_task_executor = nullptr;
     SmallFileMgr* _small_file_mgr = nullptr;
     HeartbeatFlags* _heartbeat_flags = nullptr;
-    vectorized::ScannerScheduler* _scanner_scheduler = nullptr;
 
     // To save meta info of external file, such as parquet footer.
     FileMetaCache* _file_meta_cache = nullptr;

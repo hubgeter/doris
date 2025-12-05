@@ -1691,6 +1691,10 @@ public class OlapTable extends Table implements MTMVRelatedTableIf, GsonPostProc
         return getBaseSchema().stream().anyMatch(column -> !column.isVisible());
     }
 
+    public boolean hasGeneratedColumn() {
+        return getBaseSchema().stream().anyMatch(Column::isGeneratedColumn);
+    }
+
     public Type getSequenceType() {
         if (getSequenceCol() == null) {
             return null;
@@ -3442,7 +3446,7 @@ public class OlapTable extends Table implements MTMVRelatedTableIf, GsonPostProc
     public MTMVSnapshotIf getPartitionSnapshot(String partitionName, MTMVRefreshContext context,
             Optional<MvccSnapshot> snapshot)
             throws AnalysisException {
-        Map<String, Long> partitionVersions = context.getBaseVersions().getPartitionVersions();
+        Map<String, Long> partitionVersions = context.getBaseVersions().getPartitionVersions(this);
         long partitionId = getPartitionOrAnalysisException(partitionName).getId();
         long visibleVersion = partitionVersions.containsKey(partitionName) ? partitionVersions.get(partitionName)
                 : getPartitionOrAnalysisException(partitionName).getVisibleVersion();
