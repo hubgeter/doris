@@ -1113,8 +1113,6 @@ DECLARE_Int32(segcompaction_task_max_rows);
 // Max total file size allowed in a single segcompaction task.
 DECLARE_Int64(segcompaction_task_max_bytes);
 
-DECLARE_Int32(segcompaction_wait_for_dbm_task_timeout_s);
-
 // Global segcompaction thread pool size.
 DECLARE_mInt32(segcompaction_num_threads);
 
@@ -1663,6 +1661,8 @@ DECLARE_mInt64(max_csv_line_reader_output_buffer_size);
 DECLARE_Int32(omp_threads_limit);
 // The capacity of segment partial column cache, used to cache column readers for each segment.
 DECLARE_mInt32(max_segment_partial_column_cache_size);
+// Chunk size for ANN/vector index building per training/adding batch
+DECLARE_mInt64(ann_index_build_chunk_size);
 
 DECLARE_mBool(enable_prefill_output_dbm_agg_cache_after_compaction);
 DECLARE_mBool(enable_prefill_all_dbm_agg_cache_after_compaction);
