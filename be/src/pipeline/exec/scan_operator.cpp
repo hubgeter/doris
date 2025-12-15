@@ -136,6 +136,7 @@ Status ScanLocalState<Derived>::open(RuntimeState* state) {
     if (_opened) {
         return Status::OK();
     }
+    auto start = std::chrono::high_resolution_clock::now();
     RETURN_IF_ERROR(PipelineXLocalState<>::open(state));
     auto& p = _parent->cast<typename Derived::Parent>();
 
@@ -146,14 +147,18 @@ Status ScanLocalState<Derived>::open(RuntimeState* state) {
             state->set_id_file_map();
         }
     }
-
+    auto start2 = std::chrono::high_resolution_clock::now();
     _common_expr_ctxs_push_down.resize(p._common_expr_ctxs_push_down.size());
     for (size_t i = 0; i < _common_expr_ctxs_push_down.size(); i++) {
         RETURN_IF_ERROR(
                 p._common_expr_ctxs_push_down[i]->clone(state, _common_expr_ctxs_push_down[i]));
     }
     RETURN_IF_ERROR(_helper.acquire_runtime_filter(state, _conjuncts, p.row_descriptor()));
+    auto end2 = std::chrono::high_resolution_clock::now();
+    auto duration2 =
+            std::chrono::duration_cast<std::chrono::microseconds>(end2 - start2);
 
+    auto start3 = std::chrono::high_resolution_clock::now();
     // Disable condition cache in topn filter valid. TODO:: Try to support the topn filter in condition cache
     if (state->query_options().condition_cache_digest && p._topn_filter_source_node_ids.empty()) {
         _condition_cache_digest = state->query_options().condition_cache_digest;
@@ -166,7 +171,10 @@ Status ScanLocalState<Derived>::open(RuntimeState* state) {
     } else {
         _condition_cache_digest = 0;
     }
+    auto end3 = std::chrono::high_resolution_clock::now();
+    auto duration3 = std::chrono::duration_cast<std::chrono::microseconds>(end3 - start3);
 
+    auto start4 = std::chrono::high_resolution_clock::now();
     _stale_expr_ctxs.resize(p._stale_expr_ctxs.size());
     for (size_t i = 0; i < _stale_expr_ctxs.size(); i++) {
         RETURN_IF_ERROR(p._stale_expr_ctxs[i]->clone(state, _stale_expr_ctxs[i]));
@@ -179,6 +187,17 @@ Status ScanLocalState<Derived>::open(RuntimeState* state) {
         DCHECK(!_eos && _num_scanners->value() > 0);
         RETURN_IF_ERROR(_scanner_ctx->init());
     }
+    auto end4 = std::chrono::high_resolution_clock::now();
+    auto duration4 = std::chrono::duration_cast<std::chrono::microseconds>(end4 - start4);
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+    std::cout << fmt::format(
+            "duration: {} us, duration2: {} us, duration3: {} us, "
+            "duration4: {} us, duration5: {} us\n",
+            duration.count(), duration2.count(), duration3.count(), duration4.count(),
+            (end4 - start4).count());
+
     _opened = true;
     return status;
 }

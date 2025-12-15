@@ -382,7 +382,7 @@ Status ParquetReader::init_reader(
         }
     }
     // build column predicates for column lazy read
-    _lazy_read_ctx.conjuncts = conjuncts;
+    _lazy_read_ctx.conjuncts = &conjuncts;
     return Status::OK();
 }
 
@@ -408,11 +408,18 @@ bool ParquetReader::_type_matches(const VSlotRef* slot_ref) const {
            !is_complex_type(table_col_type->get_primitive_type());
 }
 
-Status ParquetReader::set_fill_columns(
-        const std::unordered_map<std::string, std::tuple<std::string, const SlotDescriptor*>>&
-                partition_columns,
-        const std::unordered_map<std::string, VExprContextSPtr>& missing_columns) {
-    SCOPED_RAW_TIMER(&_statistics.parse_meta_time);
+
+Status ParquetReader::_update_lazy_read_ctx() {
+    RowGroupReader::LazyReadContext new_lazy_read_ctx;
+    new_lazy_read_ctx.conjuncts = _lazy_read_ctx.conjuncts;
+    new_lazy_read_ctx.fill_partition_columns = _lazy_read_ctx.fill_partition_columns;
+    new_lazy_read_ctx.fill_missing_columns = _lazy_read_ctx.fill_missing_columns;
+    _lazy_read_ctx = std::move(new_lazy_read_ctx);
+
+    _top_runtime_vexprs.clear();
+    _push_down_predicates.clear();
+    _useless_predicates.clear();
+
     // std::unordered_map<column_name, std::pair<col_id, slot_id>>
     std::unordered_map<std::string, std::pair<uint32_t, int>> predicate_columns;
     // visit_slot for lazy mat.
@@ -432,7 +439,7 @@ Status ParquetReader::set_fill_columns(
         }
     };
 
-    for (const auto& conjunct : _lazy_read_ctx.conjuncts) {
+    for (const auto& conjunct : *_lazy_read_ctx.conjuncts) {
         auto expr = conjunct->root();
 
         if (expr->is_rf_wrapper()) {
@@ -454,8 +461,8 @@ Status ParquetReader::set_fill_columns(
 
                 int max_in_size =
                         _state->query_options().__isset.max_pushdown_conditions_per_column
-                                ? _state->query_options().max_pushdown_conditions_per_column
-                                : 1024;
+                        ? _state->query_options().max_pushdown_conditions_per_column
+                        : 1024;
                 if (direct_in_predicate->get_set_func()->size() == 0 ||
                     direct_in_predicate->get_set_func()->size() > max_in_size) {
                     continue;
@@ -519,7 +526,7 @@ Status ParquetReader::set_fill_columns(
         _lazy_read_ctx.all_predicate_col_ids.emplace_back(_row_id_column_iterator_pair.second);
     }
 
-    for (auto& kv : partition_columns) {
+    for (auto& kv : *_lazy_read_ctx.fill_partition_columns) {
         auto iter = predicate_columns.find(kv.first);
         if (iter == predicate_columns.end()) {
             _lazy_read_ctx.partition_columns.emplace(kv.first, kv.second);
@@ -529,7 +536,7 @@ Status ParquetReader::set_fill_columns(
         }
     }
 
-    for (auto& kv : missing_columns) {
+    for (auto& kv : *_lazy_read_ctx.fill_missing_columns) {
         auto iter = predicate_columns.find(kv.first);
         if (iter == predicate_columns.end()) {
             _lazy_read_ctx.missing_columns.emplace(kv.first, kv.second);
@@ -560,6 +567,19 @@ Status ParquetReader::set_fill_columns(
             _lazy_read_ctx.missing_columns.emplace(kv.first, kv.second);
         }
     }
+
+    return Status::OK();
+}
+
+Status ParquetReader::set_fill_columns(
+        const std::unordered_map<std::string, std::tuple<std::string, const SlotDescriptor*>>&
+                partition_columns,
+        const std::unordered_map<std::string, VExprContextSPtr>& missing_columns) {
+//    SCOPED_RAW_TIMER(&_statistics.parse_meta_time);
+
+    _lazy_read_ctx.fill_partition_columns = &partition_columns;
+    _lazy_read_ctx.fill_missing_columns = &missing_columns;
+    RETURN_IF_ERROR(_update_lazy_read_ctx());
 
     if (_filter_groups && (_total_groups == 0 || _t_metadata->num_rows == 0 || _range_size < 0)) {
         return Status::EndOfFile("No row group to read");
@@ -698,6 +718,12 @@ Status ParquetReader::_next_row_group_reader() {
             continue;
         }
 
+
+        bool has_late_rf_cond = false;
+        RETURN_IF_ERROR(_call_late_rf_func(&has_late_rf_cond));
+        if (has_late_rf_cond) {
+            RETURN_IF_ERROR(_update_lazy_read_ctx());
+        }
         size_t before_predicate_size = _push_down_predicates.size();
         _push_down_predicates.reserve(before_predicate_size + _top_runtime_vexprs.size());
         for (const auto& vexpr : _top_runtime_vexprs) {

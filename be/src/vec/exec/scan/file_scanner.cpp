@@ -357,8 +357,10 @@ Status FileScanner::_process_conjuncts() {
     return Status::OK();
 }
 
-Status FileScanner::_process_late_arrival_conjuncts() {
+Status FileScanner::_process_late_arrival_conjuncts(bool* changed) {
+    *changed = false;
     if (_push_down_conjuncts.size() < _conjuncts.size()) {
+        *changed = true;
         _push_down_conjuncts.clear();
         _push_down_conjuncts.resize(_conjuncts.size());
         for (size_t i = 0; i != _conjuncts.size(); ++i) {
@@ -1052,8 +1054,17 @@ Status FileScanner::_get_next_reader() {
             // see IcebergTableReader::init_row_filters for example.
             parquet_reader->set_push_down_agg_type(_get_push_down_agg_type());
             if (push_down_predicates) {
-                RETURN_IF_ERROR(_process_late_arrival_conjuncts());
+                bool changed = false;
+                RETURN_IF_ERROR(_process_late_arrival_conjuncts(&changed));
             }
+            std::function<Status(bool*)> update_late_rf = [&](bool* changed) -> Status {
+                if (!_is_load) {
+                    RETURN_IF_ERROR(try_append_late_arrival_runtime_filter());
+                    RETURN_IF_ERROR(_process_late_arrival_conjuncts(changed));
+                }
+                return Status::OK();
+            };
+            parquet_reader->set_update_late_rf_func(std::move(update_late_rf));
             RETURN_IF_ERROR(_init_parquet_reader(std::move(parquet_reader), file_meta_cache_ptr));
 
             need_to_get_parsed_schema = true;
@@ -1074,7 +1085,8 @@ Status FileScanner::_get_next_reader() {
 
             orc_reader->set_push_down_agg_type(_get_push_down_agg_type());
             if (push_down_predicates) {
-                RETURN_IF_ERROR(_process_late_arrival_conjuncts());
+                bool changed = false;
+                RETURN_IF_ERROR(_process_late_arrival_conjuncts(&changed));
             }
             RETURN_IF_ERROR(_init_orc_reader(std::move(orc_reader), file_meta_cache_ptr));
 

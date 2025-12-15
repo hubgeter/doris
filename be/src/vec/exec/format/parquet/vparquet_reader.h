@@ -165,6 +165,17 @@ public:
 
     bool count_read_rows() override { return true; }
 
+    void set_update_late_rf_func(std::function<Status(bool*)>&& func) {
+        _call_late_rf_func = std::move(func);
+    }
+
+    std::function<Status(bool*)> _call_late_rf_func = [](bool* changed) {
+        *changed = false;
+        return Status::OK();
+    };
+
+    Status _update_lazy_read_ctx();
+
 protected:
     void _collect_profile_before_close() override;
 
@@ -345,6 +356,7 @@ private:
     std::vector<std::unique_ptr<MutilColumnBlockPredicate>> _push_down_predicates;
     std::vector<std::shared_ptr<ColumnPredicate>> _useless_predicates;
     Arena _arena;
+
 };
 #include "common/compile_check_end.h"
 

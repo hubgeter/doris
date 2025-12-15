@@ -100,6 +100,9 @@ public:
 
     void update_realtime_counters() override;
 
+
+
+
 protected:
     Status _get_block_impl(RuntimeState* state, Block* block, bool* eof) override;
 
@@ -251,7 +254,7 @@ private:
     void _init_runtime_filter_partition_prune_block();
     Status _process_runtime_filters_partition_prune(bool& is_partition_pruned);
     Status _process_conjuncts();
-    Status _process_late_arrival_conjuncts();
+    Status _process_late_arrival_conjuncts(bool* changed);
     void _get_slot_ids(VExpr* expr, std::vector<int>* slot_ids);
     Status _generate_truncate_columns(bool need_to_get_parsed_schema);
     Status _set_fill_or_truncate_columns(bool need_to_get_parsed_schema);

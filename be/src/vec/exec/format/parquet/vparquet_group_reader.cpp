@@ -318,7 +318,7 @@ Status RowGroupReader::next_batch(Block* block, size_t batch_size, size_t* read_
 
         RETURN_IF_ERROR(_fill_row_id_columns(block, *read_rows, modify_row_ids));
 
-        Status st = VExprContext::filter_block(_lazy_read_ctx.conjuncts, block, block->columns());
+        Status st = VExprContext::filter_block(*_lazy_read_ctx.conjuncts, block, block->columns());
         *read_rows = block->rows();
         return st;
     }
@@ -349,7 +349,7 @@ Status RowGroupReader::next_batch(Block* block, size_t batch_size, size_t* read_
             for (uint32_t i = 0; i < column_to_keep; ++i) {
                 columns_to_filter[i] = i;
             }
-            if (!_lazy_read_ctx.conjuncts.empty()) {
+            if (!_lazy_read_ctx.conjuncts->empty()) {
                 std::vector<IColumn::Filter*> filters;
                 if (_position_delete_ctx.has_filter) {
                     filters.push_back(_pos_delete_filter_ptr.get());
