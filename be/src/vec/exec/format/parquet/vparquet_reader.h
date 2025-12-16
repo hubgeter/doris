@@ -163,6 +163,10 @@ public:
 
     bool count_read_rows() override { return true; }
 
+    void set_update_late_rf_func(std::function<Status(bool*, VExprContextSPtrs&)>&& func) {
+        _call_late_rf_func = std::move(func);
+    }
+
 protected:
     void _collect_profile_before_close() override;
 
@@ -254,6 +258,9 @@ private:
     bool _exists_in_file(const VSlotRef* slot) const override;
     bool _type_matches(const VSlotRef*) const override;
 
+    // update lazy read context when runtime filter changed
+    Status _update_lazy_read_ctx(const VExprContextSPtrs& new_conjuncts);
+
     RuntimeProfile* _profile = nullptr;
     const TFileScanRangeParams& _scan_params;
     const TFileRangeDesc& _scan_range;
@@ -341,6 +348,13 @@ private:
     std::vector<std::unique_ptr<MutilColumnBlockPredicate>> _push_down_predicates;
     std::vector<std::unique_ptr<ColumnPredicate>> _useless_predicates;
     Arena _arena;
+
+    // when create new row group reader, call this function to get lasted runtime filter conjuncts.
+    std::function<Status(bool*, VExprContextSPtrs&)> _call_late_rf_func = [](bool* changed,
+                                                                             VExprContextSPtrs&) {
+        *changed = false;
+        return Status::OK();
+    };
 };
 #include "common/compile_check_end.h"
 
