@@ -87,6 +87,7 @@ public:
 
     Status read_deletion_vector(const std::string& data_file_path,
                                 const TIcebergDeleteFileDesc& delete_file_desc);
+
 protected:
     struct IcebergProfile {
         RuntimeProfile::Counter* num_delete_files;
@@ -107,7 +108,7 @@ protected:
      * Sorting by position allows filtering rows while scanning, to avoid keeping deletes in memory.
      */
     static void _sort_delete_rows(const std::vector<std::vector<int64_t>*>& delete_rows_array,
-                           int64_t num_delete_rows, std::vector<int64_t>& result);
+                                  int64_t num_delete_rows, std::vector<int64_t>& result);
 
     PositionDeleteRange _get_range(const ColumnDictI32& file_path_column);
 
@@ -132,7 +133,7 @@ protected:
     ShardedKVCache* _kv_cache;
     IcebergProfile _iceberg_profile;
     // _iceberg_delete_rows from kv_cache
-    const std::vector<int64_t> *_iceberg_delete_rows = nullptr;
+    const std::vector<int64_t>* _iceberg_delete_rows = nullptr;
     std::vector<std::string> _expand_col_names;
     std::vector<ColumnWithTypeAndName> _expand_columns;
     std::vector<std::string> _all_required_col_names;

@@ -16,57 +16,54 @@
 // under the License.
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
-#include <memory>
 
-#include "common/status.h"
-#include "io/fs/file_reader.h"
-#include "util/slice.h"
-#include "roaring/roaring64map.hh"
-#include "io/fs/file_reader.h"
-#include "util/profile_collector.h"
-#include "vec/exec/format/generic_reader.h"
 #include "common/status.h"
 #include "io/file_factory.h"
 #include "io/fs/buffered_reader.h"
+#include "io/fs/file_reader.h"
+#include "roaring/roaring64map.hh"
+#include "util/profile_collector.h"
+#include "util/slice.h"
+#include "vec/exec/format/generic_reader.h"
 
 namespace io {
-    struct IOContext;
+struct IOContext;
 } // namespace io
 
-
 namespace doris {
-    namespace vectorized {
-        class DeletionVectorReader {
-            ENABLE_FACTORY_CREATOR(DeletionVectorReader);
-        public:
-            DeletionVectorReader(RuntimeState* state, RuntimeProfile* profile , const TFileScanRangeParams& params,
-                         const TFileRangeDesc& range,io::IOContext* io_ctx)
-                    :  _state(state), _profile(profile),_range(range),_params(params) ,_io_ctx(io_ctx) {
-            }
-            ~DeletionVectorReader() = default;
-            Status open();
-            Status read_at(size_t offset, Slice result);
-        private:
+namespace vectorized {
+class DeletionVectorReader {
+    ENABLE_FACTORY_CREATOR(DeletionVectorReader);
 
-            void _init_system_properties();
-            void _init_file_description();
-            Status _create_file_reader();
+public:
+    DeletionVectorReader(RuntimeState* state, RuntimeProfile* profile,
+                         const TFileScanRangeParams& params, const TFileRangeDesc& range,
+                         io::IOContext* io_ctx)
+            : _state(state), _profile(profile), _range(range), _params(params), _io_ctx(io_ctx) {}
+    ~DeletionVectorReader() = default;
+    Status open();
+    Status read_at(size_t offset, Slice result);
 
-        private:
-            RuntimeState* _state = nullptr;
-            RuntimeProfile* _profile = nullptr;
-            const TFileRangeDesc& _range;
-            const TFileScanRangeParams& _params;
-            io::IOContext* _io_ctx = nullptr;
+private:
+    void _init_system_properties();
+    void _init_file_description();
+    Status _create_file_reader();
 
-            io::FileSystemProperties _system_properties;
-            io::FileDescription _file_description;
-            io::FileReaderSPtr _file_reader;
-            int64_t _file_size = 0;
-            bool _is_opened = false;
-        };
-    } // namespace vectorized
+private:
+    RuntimeState* _state = nullptr;
+    RuntimeProfile* _profile = nullptr;
+    const TFileRangeDesc& _range;
+    const TFileScanRangeParams& _params;
+    io::IOContext* _io_ctx = nullptr;
+
+    io::FileSystemProperties _system_properties;
+    io::FileDescription _file_description;
+    io::FileReaderSPtr _file_reader;
+    int64_t _file_size = 0;
+    bool _is_opened = false;
+};
+} // namespace vectorized
 } // namespace doris
-

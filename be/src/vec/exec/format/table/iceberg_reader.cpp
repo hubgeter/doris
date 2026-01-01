@@ -53,11 +53,11 @@
 #include "vec/exec/format/orc/vorc_reader.h"
 #include "vec/exec/format/parquet/schema_desc.h"
 #include "vec/exec/format/parquet/vparquet_column_chunk_reader.h"
+#include "vec/exec/format/table/deletion_vector_reader.h"
 #include "vec/exec/format/table/iceberg/iceberg_orc_nested_column_utils.h"
 #include "vec/exec/format/table/iceberg/iceberg_parquet_nested_column_utils.h"
 #include "vec/exec/format/table/nested_column_access_helper.h"
 #include "vec/exec/format/table/table_format_reader.h"
-#include "vec/exec/format/table/deletion_vector_reader.h"
 
 namespace cctz {
 #include "common/compile_check_begin.h"
@@ -135,7 +135,6 @@ Status IcebergTableReader::init_row_filters() {
             equality_delete_files.emplace_back(desc);
         } else if (desc.content == DELETION_VECTOR) {
             deletion_vector_files.emplace_back(desc);
-
         }
     }
 
@@ -153,7 +152,8 @@ Status IcebergTableReader::init_row_filters() {
              */
             return Status::DataQualityError("This iceberg data file has multiple DVs.");
         }
-        RETURN_IF_ERROR(read_deletion_vector(table_desc.original_file_path, deletion_vector_files[0]));
+        RETURN_IF_ERROR(
+                read_deletion_vector(table_desc.original_file_path, deletion_vector_files[0]));
 
         _file_format_reader->set_push_down_agg_type(TPushAggOp::NONE);
         // Readers can safely ignore position delete files if there is a DV for a data file.
@@ -333,16 +333,17 @@ Status IcebergTableReader::_position_delete_base(
     // multiple splits, avoiding excessive memory usage when delete rows are large.
     if (num_delete_rows > 0) {
         SCOPED_TIMER(_iceberg_profile.delete_rows_sort_time);
-        _iceberg_delete_rows = _kv_cache->get<DeleteRows>(
-                data_file_path,
-                [&]() -> DeleteRows* {
-                    auto* data_file_position_delete = new DeleteRows;
-                    _sort_delete_rows(delete_rows_array, num_delete_rows, *data_file_position_delete);
+        _iceberg_delete_rows =
+                _kv_cache->get<DeleteRows>(data_file_path,
+                                           [&]() -> DeleteRows* {
+                                               auto* data_file_position_delete = new DeleteRows;
+                                               _sort_delete_rows(delete_rows_array, num_delete_rows,
+                                                                 *data_file_position_delete);
 
-                    return data_file_position_delete;
-                }
+                                               return data_file_position_delete;
+                                           }
 
-        );
+                );
         set_delete_rows();
         COUNTER_UPDATE(_iceberg_profile.num_delete_rows, num_delete_rows);
     }
@@ -396,15 +397,15 @@ IcebergTableReader::PositionDeleteRange IcebergTableReader::_get_range(
  * Sorting by file_path allows filter pushdown by file in columnar storage formats.
  * Sorting by position allows filtering rows while scanning, to avoid keeping deletes in memory.
  */
-void IcebergTableReader::_sort_delete_rows(const std::vector<std::vector<int64_t>*>& delete_rows_array,
-                                           int64_t num_delete_rows, std::vector<int64_t>& result) {
+void IcebergTableReader::_sort_delete_rows(
+        const std::vector<std::vector<int64_t>*>& delete_rows_array, int64_t num_delete_rows,
+        std::vector<int64_t>& result) {
     if (delete_rows_array.empty()) {
         return;
     }
     if (delete_rows_array.size() == 1) {
         result.resize(num_delete_rows);
-        memcpy(result.data(), delete_rows_array.front()->data(),
-               sizeof(int64_t) * num_delete_rows);
+        memcpy(result.data(), delete_rows_array.front()->data(), sizeof(int64_t) * num_delete_rows);
         return;
     }
     if (delete_rows_array.size() == 2) {
@@ -786,84 +787,82 @@ Status IcebergOrcReader::_read_position_delete_file(const TFileRangeDesc* delete
 // These two fields indicate the location of a blob in storage.
 // Since the current format is `deletion-vector-v1`, which does not
 // compress any blobs, we can temporarily skip parsing the Puffin footer.
-Status IcebergTableReader::read_deletion_vector(const std::string& data_file_path, const TIcebergDeleteFileDesc& delete_file_desc) {
+Status IcebergTableReader::read_deletion_vector(const std::string& data_file_path,
+                                                const TIcebergDeleteFileDesc& delete_file_desc) {
     Status create_status = Status::OK();
     SCOPED_TIMER(_iceberg_profile.delete_files_read_time);
-    _iceberg_delete_rows = _kv_cache->get<DeleteRows>(
-            data_file_path,
-            [&]()-> DeleteRows* {
-                auto* delete_rows = new DeleteRows;
+    _iceberg_delete_rows = _kv_cache->get<DeleteRows>(data_file_path, [&]() -> DeleteRows* {
+        auto* delete_rows = new DeleteRows;
 
-                TFileRangeDesc delete_range;
-                // must use __set() method to make sure __isset is true
-                delete_range.__set_fs_name(_range.fs_name);
-                delete_range.path = delete_file_desc.path;
-                delete_range.start_offset = delete_file_desc.content_offset;
-                delete_range.size = delete_file_desc.content_size_in_bytes;
-                delete_range.file_size = -1;
+        TFileRangeDesc delete_range;
+        // must use __set() method to make sure __isset is true
+        delete_range.__set_fs_name(_range.fs_name);
+        delete_range.path = delete_file_desc.path;
+        delete_range.start_offset = delete_file_desc.content_offset;
+        delete_range.size = delete_file_desc.content_size_in_bytes;
+        delete_range.file_size = -1;
 
-                // We may consider caching the DeletionVectorReader when reading Puffin files,
-                // where the underlying reader is an `InMemoryFileReader` and a single data file is
-                // split into multiple splits. However, we need to ensure that the underlying
-                // reader supports multi-threaded access.
-                DeletionVectorReader dv_reader(_state, _profile, _params,  delete_range, _io_ctx);
-                create_status = dv_reader.open();
-                if (!create_status.ok()) [[unlikely]] {
-                    return nullptr;
-                }
+        // We may consider caching the DeletionVectorReader when reading Puffin files,
+        // where the underlying reader is an `InMemoryFileReader` and a single data file is
+        // split into multiple splits. However, we need to ensure that the underlying
+        // reader supports multi-threaded access.
+        DeletionVectorReader dv_reader(_state, _profile, _params, delete_range, _io_ctx);
+        create_status = dv_reader.open();
+        if (!create_status.ok()) [[unlikely]] {
+            return nullptr;
+        }
 
-                size_t buffer_size = delete_range.size;
-                std::vector<char> buf(buffer_size);
-                if (buffer_size < 12) [[unlikely]] {
-                    create_status = Status::DataQualityError(
-                            "Deletion vector file size too small: {}", buffer_size);
-                    return nullptr;
-                }
+        size_t buffer_size = delete_range.size;
+        std::vector<char> buf(buffer_size);
+        if (buffer_size < 12) [[unlikely]] {
+            create_status = Status::DataQualityError("Deletion vector file size too small: {}",
+                                                     buffer_size);
+            return nullptr;
+        }
 
-                create_status = dv_reader.read_at(delete_range.start_offset, {buf.data(), buffer_size});
-                if (!create_status) [[unlikely]] {
-                    return nullptr;
-                }
-                // The serialized blob contains:
-                //
-                // Combined length of the vector and magic bytes stored as 4 bytes, big-endian
-                // A 4-byte magic sequence, D1 D3 39 64
-                // The vector, serialized as described below
-                // A CRC-32 checksum of the magic bytes and serialized vector as 4 bytes, big-endian
+        create_status = dv_reader.read_at(delete_range.start_offset, {buf.data(), buffer_size});
+        if (!create_status) [[unlikely]] {
+            return nullptr;
+        }
+        // The serialized blob contains:
+        //
+        // Combined length of the vector and magic bytes stored as 4 bytes, big-endian
+        // A 4-byte magic sequence, D1 D3 39 64
+        // The vector, serialized as described below
+        // A CRC-32 checksum of the magic bytes and serialized vector as 4 bytes, big-endian
 
-                auto total_length = BigEndian::Load32(buf.data());
-                if (total_length + 8 != buffer_size) [[unlikely]] {
-                    create_status = Status::DataQualityError(
-                            "Deletion vector length mismatch, expected: {}, actual: {}",
-                            total_length + 8, buffer_size);
-                    return nullptr;
-                }
+        auto total_length = BigEndian::Load32(buf.data());
+        if (total_length + 8 != buffer_size) [[unlikely]] {
+            create_status = Status::DataQualityError(
+                    "Deletion vector length mismatch, expected: {}, actual: {}", total_length + 8,
+                    buffer_size);
+            return nullptr;
+        }
 
-//                constexpr static char MAGIC_NUMBER[] = {'\xD1', '\xD3', '\x39', '\x64'};
-//                if (memcmp(buf.data() + sizeof(total_length), MAGIC_NUMBER, 4), 0 != 0) [[unlikely]] {
-//                    create_status = Status::DataQualityError(
-//                            "Deletion vector magic number mismatch");
-//                    return nullptr;
-//                }
+        //                constexpr static char MAGIC_NUMBER[] = {'\xD1', '\xD3', '\x39', '\x64'};
+        //                if (memcmp(buf.data() + sizeof(total_length), MAGIC_NUMBER, 4), 0 != 0) [[unlikely]] {
+        //                    create_status = Status::DataQualityError(
+        //                            "Deletion vector magic number mismatch");
+        //                    return nullptr;
+        //                }
 
-                roaring::Roaring64Map bitmap;
-                SCOPED_TIMER(_iceberg_profile.parse_delete_file_time);
-                try {
-                    bitmap = roaring::Roaring64Map::readSafe(buf.data() + 8, buffer_size - 12);
-                } catch(const std::runtime_error& e) {
-                    create_status = Status::DataQualityError("Decode roaring bitmap failed, {}", e.what());
-                    return nullptr;
-                }
-                // skip CRC-32 checksum
+        roaring::Roaring64Map bitmap;
+        SCOPED_TIMER(_iceberg_profile.parse_delete_file_time);
+        try {
+            bitmap = roaring::Roaring64Map::readSafe(buf.data() + 8, buffer_size - 12);
+        } catch (const std::runtime_error& e) {
+            create_status = Status::DataQualityError("Decode roaring bitmap failed, {}", e.what());
+            return nullptr;
+        }
+        // skip CRC-32 checksum
 
-                delete_rows->reserve(bitmap.cardinality());
-                for (auto it = bitmap.begin(); it != bitmap.end() ; it++) {
-                    delete_rows->push_back(*it);
-                }
-                COUNTER_UPDATE(_iceberg_profile.num_delete_rows, delete_rows->size());
-                return delete_rows;
-            }
-    );
+        delete_rows->reserve(bitmap.cardinality());
+        for (auto it = bitmap.begin(); it != bitmap.end(); it++) {
+            delete_rows->push_back(*it);
+        }
+        COUNTER_UPDATE(_iceberg_profile.num_delete_rows, delete_rows->size());
+        return delete_rows;
+    });
 
     RETURN_IF_ERROR(create_status);
     if (!_iceberg_delete_rows->empty()) [[likely]] {
@@ -874,4 +873,3 @@ Status IcebergTableReader::read_deletion_vector(const std::string& data_file_pat
 
 #include "common/compile_check_end.h"
 } // namespace doris::vectorized
-
