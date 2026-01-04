@@ -58,7 +58,7 @@ echo "Script paimon total: {} executed in $EXECUTION_TIME2 seconds"
 
 ls /mnt/scripts/create_preinstalled_scripts/iceberg_scala/*.scala | xargs -n 1 -I {} bash -c '
     START_TIME=$(date +%s)
-    spark-shell --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions -i {} 
+    spark-shell --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions -I {} 
     END_TIME=$(date +%s)
     EXECUTION_TIME=$((END_TIME - START_TIME))
     echo "Script: {} executed in $EXECUTION_TIME seconds"
