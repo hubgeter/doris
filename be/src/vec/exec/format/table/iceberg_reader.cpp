@@ -23,11 +23,9 @@
 #include <gen_cpp/parquet_types.h>
 #include <glog/logging.h>
 #include <parallel_hashmap/phmap.h>
-#include <rapidjson/allocators.h>
 #include <rapidjson/document.h>
 
 #include <algorithm>
-#include <boost/iterator/iterator_facade.hpp>
 #include <cstring>
 #include <functional>
 #include <memory>
@@ -37,8 +35,7 @@
 #include "runtime/define_primitive_type.h"
 #include "runtime/primitive_type.h"
 #include "runtime/runtime_state.h"
-#include "runtime/types.h"
-#include "util/string_util.h"
+#include "util/coding.h"
 #include "vec/aggregate_functions/aggregate_function.h"
 #include "vec/columns/column.h"
 #include "vec/columns/column_string.h"
@@ -815,6 +812,7 @@ Status IcebergTableReader::read_deletion_vector(const std::string& data_file_pat
         size_t buffer_size = delete_range.size;
         std::vector<char> buf(buffer_size);
         if (buffer_size < 12) [[unlikely]] {
+            // Minimum size: 4 bytes length + 4 bytes magic + 4 bytes CRC32
             create_status = Status::DataQualityError("Deletion vector file size too small: {}",
                                                      buffer_size);
             return nullptr;
@@ -839,12 +837,11 @@ Status IcebergTableReader::read_deletion_vector(const std::string& data_file_pat
             return nullptr;
         }
 
-        //                constexpr static char MAGIC_NUMBER[] = {'\xD1', '\xD3', '\x39', '\x64'};
-        //                if (memcmp(buf.data() + sizeof(total_length), MAGIC_NUMBER, 4), 0 != 0) [[unlikely]] {
-        //                    create_status = Status::DataQualityError(
-        //                            "Deletion vector magic number mismatch");
-        //                    return nullptr;
-        //                }
+        constexpr static char MAGIC_NUMBER[] = {'\xD1', '\xD3', '\x39', '\x64'};
+        if (memcmp(buf.data() + sizeof(total_length), MAGIC_NUMBER, 4)) [[unlikely]] {
+            create_status = Status::DataQualityError("Deletion vector magic number mismatch");
+            return nullptr;
+        }
 
         roaring::Roaring64Map bitmap;
         SCOPED_TIMER(_iceberg_profile.parse_delete_file_time);
