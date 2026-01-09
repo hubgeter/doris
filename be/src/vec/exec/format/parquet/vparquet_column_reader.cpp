@@ -381,7 +381,7 @@ Status ScalarColumnReader::_read_nested_column(ColumnPtr& doris_column, DataType
             // Update current_filter_map to nested_filter_map
             current_filter_map = nested_filter_map.get();
         }
-    } else {
+    } else if (!align_rows) {
         // case : required child columns in struct type
         parsed_rows = std::min(remaining_values, batch_size);
         remaining_values -= parsed_rows;
