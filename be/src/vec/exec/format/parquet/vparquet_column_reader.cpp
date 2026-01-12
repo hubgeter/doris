@@ -577,7 +577,7 @@ Status ScalarColumnReader<IN_COLLECTION, OFFSET_INDEX>::read_column_data(
     } else {
         right_row = _chunk_reader->page_end_row();
     }
-    auto before_filter_map_index = _filter_map_index;
+//    auto before_filter_map_index = _filter_map_index;
 
     do {
         // generate the row ranges that should be read
