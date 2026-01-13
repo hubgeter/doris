@@ -119,7 +119,7 @@ Status ParquetColumnReader::create(io::FileReaderSPtr file, FieldSchema* field,
                                element_reader, max_buf_size, col_offsets, true, column_ids,
                                filter_column_ids));
         auto array_reader = ArrayColumnReader::create_unique(row_ranges, total_rows, ctz, io_ctx);
-        array_reader->set_column_in_nested();
+        element_reader->set_column_in_nested();
         RETURN_IF_ERROR(array_reader->init(std::move(element_reader), field));
         array_reader->_filter_column_ids = filter_column_ids;
         reader.reset(array_reader.release());

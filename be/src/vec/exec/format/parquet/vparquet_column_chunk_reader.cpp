@@ -462,7 +462,7 @@ Status ColumnChunkReader<IN_COLLECTION, OFFSET_INDEX>::load_page_nested_rows(
     _current_row += *result_rows;
 
     auto need_check_cross_page = [&]() -> bool {
-        return !OFFSET_INDEX && _remaining_rep_nums == 0 && !_page_reader->is_header_v2() &&
+        return !OFFSET_INDEX && IN_COLLECTION && _remaining_rep_nums == 0 && !_page_reader->is_header_v2() &&
                has_next_page();
     };
     *cross_page = need_check_cross_page();
