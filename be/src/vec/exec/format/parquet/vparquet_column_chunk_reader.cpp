@@ -447,11 +447,11 @@ Status ColumnChunkReader<IN_COLLECTION, OFFSET_INDEX>::load_page_nested_rows(
     *result_rows = 0;
     rep_levels.reserve(rep_levels.size() + _remaining_rep_nums);
     while (_remaining_rep_nums) {
-        level_t rep_level = _rep_level_decoder.get_next();
+        level_t rep_level = _rep_level_get_next();
         if (rep_level == 0) {               // rep_level 0 indicates start of new row
             if (*result_rows == max_rows) { // this page contain max_rows, page no end.
                 _current_row += max_rows;
-                _rep_level_decoder.rewind_one();
+                _rep_level_rewind_one();
                 return Status::OK();
             }
             (*result_rows)++;
@@ -478,10 +478,10 @@ Status ColumnChunkReader<IN_COLLECTION, OFFSET_INDEX>::load_cross_page_nested_ro
 
     *cross_page = has_next_page();
     while (_remaining_rep_nums) {
-        level_t rep_level = _rep_level_decoder.get_next();
+        level_t rep_level = _rep_level_get_next();
         if (rep_level == 0) { // rep_level 0 indicates start of new row
             *cross_page = false;
-            _rep_level_decoder.rewind_one();
+            _rep_level_rewind_one();
             break;
         }
         _remaining_rep_nums--;
