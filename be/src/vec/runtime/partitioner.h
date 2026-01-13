@@ -18,10 +18,15 @@
 #pragma once
 
 #include <algorithm>
+#include <memory>
+#include <vector>
 
+#include "common/cast_set.h"
+#include "vec/columns/column_const.h"
 #include "vec/core/block.h"
 #include "vec/exprs/vexpr.h"
 #include "vec/exprs/vexpr_context.h"
+#include "vec/runtime/writer_assigner.h"
 
 namespace doris::vectorized {
 #include "common/compile_check_begin.h"
@@ -56,11 +61,62 @@ protected:
     const HashValType _partition_count;
 };
 
-template <typename ChannelIds>
-class Crc32HashPartitioner : public PartitionerBase {
+class PartitionFunction {
 public:
-    Crc32HashPartitioner(int partition_count) : PartitionerBase(partition_count) {}
-    ~Crc32HashPartitioner() override = default;
+    using HashValType = PartitionerBase::HashValType;
+
+    virtual ~PartitionFunction() = default;
+
+    virtual Status init(const std::vector<TExpr>& texprs) = 0;
+
+    virtual Status prepare(RuntimeState* state, const RowDescriptor& row_desc) = 0;
+
+    virtual Status open(RuntimeState* state) = 0;
+
+    virtual Status close(RuntimeState* state) = 0;
+
+    virtual Status get_partitions(RuntimeState* state, Block* block, size_t partition_count,
+                                  std::vector<HashValType>& partitions) const = 0;
+
+    virtual HashValType partition_count() const = 0;
+
+    virtual Status clone(RuntimeState* state,
+                         std::unique_ptr<PartitionFunction>& function) const = 0;
+};
+
+enum class ShuffleHashMethod {
+    CRC32,
+    CRC32C,
+};
+
+inline void initialize_shuffle_hashes(std::vector<PartitionerBase::HashValType>& hashes,
+                                      size_t rows, ShuffleHashMethod method) {
+    hashes.resize(rows);
+    if (method == ShuffleHashMethod::CRC32C) {
+        // Golden ratio seed reduces collision with other hash functions (e.g. hash tables).
+        constexpr PartitionerBase::HashValType kShuffleSeed = 0x9E3779B9U;
+        std::fill(hashes.begin(), hashes.end(), kShuffleSeed);
+    } else {
+        std::fill(hashes.begin(), hashes.end(), 0);
+    }
+}
+
+inline void update_shuffle_hashes(const ColumnPtr& column, const DataTypePtr& type,
+                                  PartitionerBase::HashValType* hashes, ShuffleHashMethod method) {
+    if (method == ShuffleHashMethod::CRC32C) {
+        column->update_crc32c_batch(hashes, nullptr);
+    } else {
+        column->update_crcs_with_value(hashes, type->get_primitive_type(),
+                                       cast_set<PartitionerBase::HashValType>(column->size()));
+    }
+}
+
+template <typename ChannelIds>
+class HashPartitionFunction final : public PartitionFunction {
+public:
+    HashPartitionFunction(HashValType partition_count, ShuffleHashMethod method)
+            : _partition_count(partition_count), _hash_method(method) {}
+    ~HashPartitionFunction() override = default;
 
     Status init(const std::vector<TExpr>& texprs) override {
         return VExpr::create_expr_trees(texprs, _partition_expr_ctxs);
@@ -74,37 +130,29 @@ public:
 
     Status close(RuntimeState* state) override { return Status::OK(); }
 
-    Status do_partitioning(RuntimeState* state, Block* block) const override;
+    Status get_partitions(RuntimeState* state, Block* block, size_t partition_count,
+                          std::vector<HashValType>& partitions) const override;
 
-    const std::vector<HashValType>& get_channel_ids() const override { return _hash_vals; }
+    HashValType partition_count() const override { return _partition_count; }
 
-    Status clone(RuntimeState* state, std::unique_ptr<PartitionerBase>& partitioner) override;
+    Status clone(RuntimeState* state, std::unique_ptr<PartitionFunction>& function) const override;
+
+#ifdef BE_TEST
+    VExprContextSPtrs& mutable_partition_expr_ctxs_for_test() { return _partition_expr_ctxs; }
+#endif
 
 protected:
-    Status _get_partition_column_result(Block* block, std::vector<int>& result) const {
-        int counter = 0;
-        for (auto ctx : _partition_expr_ctxs) {
-            RETURN_IF_ERROR(ctx->execute(block, &result[counter++]));
+    Status _clone_expr_ctxs(RuntimeState* state, VExprContextSPtrs& dst) const {
+        dst.resize(_partition_expr_ctxs.size());
+        for (size_t i = 0; i < _partition_expr_ctxs.size(); ++i) {
+            RETURN_IF_ERROR(_partition_expr_ctxs[i]->clone(state, dst[i]));
         }
         return Status::OK();
     }
 
-    Status _clone_expr_ctxs(RuntimeState* state, VExprContextSPtrs& new_partition_expr_ctxs) const {
-        new_partition_expr_ctxs.resize(_partition_expr_ctxs.size());
-        for (size_t i = 0; i < _partition_expr_ctxs.size(); i++) {
-            RETURN_IF_ERROR(_partition_expr_ctxs[i]->clone(state, new_partition_expr_ctxs[i]));
-        }
-        return Status::OK();
-    }
-
-    virtual void _do_hash(const ColumnPtr& column, HashValType* __restrict result, int idx) const;
-    virtual void _initialize_hash_vals(size_t rows) const {
-        _hash_vals.resize(rows);
-        std::ranges::fill(_hash_vals, 0);
-    }
-
+    const HashValType _partition_count;
+    const ShuffleHashMethod _hash_method;
     VExprContextSPtrs _partition_expr_ctxs;
-    mutable std::vector<HashValType> _hash_vals;
 };
 
 struct ShuffleChannelIds {
@@ -135,22 +183,72 @@ struct ShiftChannelIds {
     HashValType operator()(HashValType l, size_t r) { return crc32c_shuffle_mix(l) % r; }
 };
 
-class Crc32CHashPartitioner : public Crc32HashPartitioner<ShiftChannelIds> {
+template <typename ChannelIds>
+class Crc32HashPartitioner : public PartitionerBase {
 public:
-    Crc32CHashPartitioner(int partition_count)
-            : Crc32HashPartitioner<ShiftChannelIds>(partition_count) {}
+    Crc32HashPartitioner(int partition_count, ShuffleHashMethod method = ShuffleHashMethod::CRC32)
+            : PartitionerBase(partition_count),
+              _hash_method(method),
+              _partition_function(std::make_unique<HashPartitionFunction<ChannelIds>>(
+                      static_cast<HashValType>(partition_count), method)),
+              _writer_assigner(std::make_unique<IdentityWriterAssigner>()) {}
+
+    ~Crc32HashPartitioner() override = default;
+
+    Status init(const std::vector<TExpr>& texprs) override {
+        return _partition_function->init(texprs);
+    }
+
+    Status prepare(RuntimeState* state, const RowDescriptor& row_desc) override {
+        return _partition_function->prepare(state, row_desc);
+    }
+
+    Status open(RuntimeState* state) override { return _partition_function->open(state); }
+
+    Status close(RuntimeState* state) override { return _partition_function->close(state); }
+
+    Status do_partitioning(RuntimeState* state, Block* block) const override;
+
+    const std::vector<HashValType>& get_channel_ids() const override { return _hash_vals; }
 
     Status clone(RuntimeState* state, std::unique_ptr<PartitionerBase>& partitioner) override;
 
-private:
-    void _do_hash(const ColumnPtr& column, HashValType* __restrict result, int idx) const override;
-
-    void _initialize_hash_vals(size_t rows) const override {
-        _hash_vals.resize(rows);
-        // use golden ratio to initialize hash values to avoid collision with hash table's hash function
-        constexpr HashValType CRC32C_SHUFFLE_SEED = 0x9E3779B9U;
-        std::ranges::fill(_hash_vals, CRC32C_SHUFFLE_SEED);
+#ifdef BE_TEST
+    VExprContextSPtrs& mutable_partition_expr_ctxs_for_test() {
+        auto* function = static_cast<HashPartitionFunction<ChannelIds>*>(_partition_function.get());
+        return function->mutable_partition_expr_ctxs_for_test();
     }
+#endif
+
+protected:
+    const ShuffleHashMethod _hash_method;
+    std::unique_ptr<PartitionFunction> _partition_function;
+    std::unique_ptr<WriterAssigner> _writer_assigner;
+    mutable std::vector<HashValType> _hash_vals;
+};
+
+inline void apply_shuffle_channel_ids(std::vector<PartitionerBase::HashValType>& hashes,
+                                      size_t partition_count, ShuffleHashMethod method) {
+    if (partition_count == 0) {
+        return;
+    }
+    if (method == ShuffleHashMethod::CRC32C) {
+        for (auto& hash : hashes) {
+            hash = ShiftChannelIds()(hash, partition_count);
+        }
+    } else {
+        for (auto& hash : hashes) {
+            hash = ShuffleChannelIds()(hash, partition_count);
+        }
+    }
+}
+
+class Crc32CHashPartitioner : public Crc32HashPartitioner<ShiftChannelIds> {
+public:
+    Crc32CHashPartitioner(int partition_count)
+            : Crc32HashPartitioner<ShiftChannelIds>(partition_count, ShuffleHashMethod::CRC32C) {}
+
+    Status clone(RuntimeState* state, std::unique_ptr<PartitionerBase>& partitioner) override;
 };
 
 #include "common/compile_check_end.h"

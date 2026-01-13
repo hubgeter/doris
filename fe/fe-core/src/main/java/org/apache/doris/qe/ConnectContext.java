@@ -273,6 +273,8 @@ public class ConnectContext {
     }
 
     private StatementContext statementContext;
+    // internal flag to expose Iceberg rowid metadata during analysis/planning
+    private boolean needIcebergRowId = false;
 
     // new planner
     private Map<String, PreparedStatementContext> preparedStatementContextMap = Maps.newHashMap();
@@ -1007,6 +1009,14 @@ public class ConnectContext {
 
     public void setStatementContext(StatementContext statementContext) {
         this.statementContext = statementContext;
+    }
+
+    public boolean needIcebergRowId() {
+        return needIcebergRowId;
+    }
+
+    public void setNeedIcebergRowId(boolean needIcebergRowId) {
+        this.needIcebergRowId = needIcebergRowId;
     }
 
     public void setResultSinkType(TResultSinkType resultSinkType) {

@@ -42,6 +42,8 @@ enum TDataSinkType {
     ICEBERG_TABLE_SINK = 14,
     DICTIONARY_SINK = 15,
     BLACKHOLE_SINK = 16,
+    ICEBERG_DELETE_SINK = 17,
+    ICEBERG_MERGE_SINK = 18,
 }
 
 enum TResultSinkType {
@@ -403,6 +405,14 @@ struct TIcebergCommitData {
     4: optional TFileContent file_content
     5: optional list<string> partition_values 
     6: optional list<string> referenced_data_files
+    // For equality delete files: field IDs of columns used for equality matching
+    7: optional list<i32> equality_field_ids
+    // For position delete files: the data file path that this delete file references
+    8: optional string referenced_data_file_path
+    // Partition spec ID for delete files
+    9: optional i32 partition_spec_id
+    // Partition data JSON for delete files
+    10: optional string partition_data_json
 }
 
 struct TSortField {
@@ -430,6 +440,46 @@ struct TIcebergTableSink {
     // Key: partition column name, Value: partition value as string
     // When set, BE should use these values directly instead of computing from data
     15: optional map<string, string> static_partition_values;
+}
+
+struct TIcebergDeleteSink {
+    1: optional string db_name
+    2: optional string tb_name
+    3: optional TFileContent delete_type  // POSITION_DELETES or EQUALITY_DELETES
+    4: optional list<i32> equality_field_ids  // For equality delete
+    5: optional PlanNodes.TFileFormatType file_format
+    6: optional PlanNodes.TFileCompressType compress_type
+    7: optional string output_path
+    8: optional string table_location
+    9: optional map<string, string> hadoop_config
+    10: optional Types.TFileType file_type
+    11: optional i32 partition_spec_id
+    12: optional string partition_data_json
+    13: optional list<Types.TNetworkAddress> broker_addresses;
+}
+
+// Merge sink for Iceberg UPDATE: mix of position delete + data insert
+struct TIcebergMergeSink {
+    // table write side (same as TIcebergTableSink)
+    1: optional string db_name
+    2: optional string tb_name
+    3: optional string schema_json
+    4: optional map<i32, string> partition_specs_json
+    5: optional i32 partition_spec_id
+    6: optional list<TSortField> sort_fields
+    7: optional PlanNodes.TFileFormatType file_format
+    8: optional PlanNodes.TFileCompressType compression_type
+    9: optional string output_path
+    10: optional string original_output_path
+    11: optional map<string, string> hadoop_config
+    12: optional Types.TFileType file_type
+    13: optional list<Types.TNetworkAddress> broker_addresses;
+
+    // delete side (position delete only)
+    20: optional TFileContent delete_type
+    21: optional string table_location
+    22: optional i32 partition_spec_id_for_delete
+    23: optional string partition_data_json_for_delete
 }
 
 enum TDictLayoutType {
@@ -468,4 +518,6 @@ struct TDataSink {
   14: optional TIcebergTableSink iceberg_table_sink
   15: optional TDictionarySink dictionary_sink
   16: optional TBlackholeSink blackhole_sink
+  17: optional TIcebergDeleteSink iceberg_delete_sink
+  18: optional TIcebergMergeSink iceberg_merge_sink
 }

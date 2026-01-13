@@ -62,6 +62,8 @@
 #include "pipeline/exec/hashjoin_build_sink.h"
 #include "pipeline/exec/hashjoin_probe_operator.h"
 #include "pipeline/exec/hive_table_sink_operator.h"
+#include "pipeline/exec/iceberg_delete_sink_operator.h"
+#include "pipeline/exec/iceberg_merge_sink_operator.h"
 #include "pipeline/exec/iceberg_table_sink_operator.h"
 #include "pipeline/exec/jdbc_scan_operator.h"
 #include "pipeline/exec/jdbc_table_sink_operator.h"
@@ -1073,9 +1075,25 @@ Status PipelineFragmentContext::_create_data_sink(ObjectPool* pool, const TDataS
     }
     case TDataSinkType::ICEBERG_TABLE_SINK: {
         if (!thrift_sink.__isset.iceberg_table_sink) {
-            return Status::InternalError("Missing hive table sink.");
+            return Status::InternalError("Missing iceberg table sink.");
         }
         _sink = std::make_shared<IcebergTableSinkOperatorX>(pool, next_sink_operator_id(), row_desc,
+                                                            output_exprs);
+        break;
+    }
+    case TDataSinkType::ICEBERG_DELETE_SINK: {
+        if (!thrift_sink.__isset.iceberg_delete_sink) {
+            return Status::InternalError("Missing iceberg delete sink.");
+        }
+        _sink = std::make_shared<IcebergDeleteSinkOperatorX>(pool, next_sink_operator_id(),
+                                                             row_desc, output_exprs);
+        break;
+    }
+    case TDataSinkType::ICEBERG_MERGE_SINK: {
+        if (!thrift_sink.__isset.iceberg_merge_sink) {
+            return Status::InternalError("Missing iceberg merge sink.");
+        }
+        _sink = std::make_shared<IcebergMergeSinkOperatorX>(pool, next_sink_operator_id(), row_desc,
                                                             output_exprs);
         break;
     }
