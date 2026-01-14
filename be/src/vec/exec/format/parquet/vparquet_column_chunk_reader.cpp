@@ -361,7 +361,7 @@ Status ColumnChunkReader<IN_COLLECTION, OFFSET_INDEX>::seek_to_nested_row(size_t
     } else {
         while (true) {
             RETURN_IF_ERROR(parse_page_header());
-            if (_page_reader->is_header_v2()) {
+            if (_page_reader->is_header_v2() || !IN_COLLECTION) {
                 if (_page_reader->start_row() <= left_row && left_row < _page_reader->end_row()) {
                     RETURN_IF_ERROR(load_page_data());
                     // this page contain this row.
