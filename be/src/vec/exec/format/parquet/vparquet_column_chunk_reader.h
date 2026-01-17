@@ -219,7 +219,6 @@ private:
         }
     }
 
-
     ColumnChunkReaderState _state = NOT_INIT;
     FieldSchema* _field_schema = nullptr;
     const level_t _max_rep_level;

@@ -141,9 +141,8 @@ public:
     virtual void reset_filter_map_index() = 0;
 
     FieldSchema* get_field_schema() const { return _field_schema; }
-    void set_column_in_nested() {
-        _in_nested = true;
-    }
+    void set_column_in_nested() { _in_nested = true; }
+
 protected:
     void _generate_read_ranges(RowRange page_row_range, RowRanges* result_ranges) const;
 
