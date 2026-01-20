@@ -55,13 +55,6 @@ Status VExprContext::execute(vectorized::Block* block, int* result_column_id) {
     RETURN_IF_CATCH_EXCEPTION({
         st = _root->execute(this, block, result_column_id);
         _last_result_column_id = *result_column_id;
-<<<<<<< HEAD
-=======
-        // We should first check the status, as some expressions might incorrectly set result_column_id, even if the st is not ok.
-        if (st.ok() && _last_result_column_id != -1) {
-            block->get_by_position(*result_column_id).column->sanity_check();
-        }
->>>>>>> 71fa00d1298 ([Chore](column) enable sanity_check for ColumnNullable/ColumnArray/ColumnMap/ColumnStruct (#51858))
     });
     return st;
 }
