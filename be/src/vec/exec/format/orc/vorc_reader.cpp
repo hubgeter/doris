@@ -2246,6 +2246,9 @@ Status OrcReader::_get_next_block_impl(Block* block, size_t* read_rows, bool* eo
                     col_name, column_ptr, column_type,
                     _table_info_node_ptr->get_children_node(col_name), _type_map[file_column_name],
                     batch_vec[orc_col_idx->second], _batch->numElements));
+#ifndef NDEBUG
+            column_ptr->sanity_check();
+#endif
         }
 
         RETURN_IF_ERROR(_fill_partition_columns(block, _batch->numElements,
@@ -2262,8 +2265,20 @@ Status OrcReader::_get_next_block_impl(Block* block, size_t* read_rows, bool* eo
             return Status::OK();
         }
         {
+#ifndef NDEBUG
+            for (auto col : *block) {
+                col.column->sanity_check();
+                DCHECK(block->rows() == col.column->size());
+            }
+#endif
             SCOPED_RAW_TIMER(&_statistics.predicate_filter_time);
             _execute_filter_position_delete_rowids(*_filter);
+#ifndef NDEBUG
+            for (auto col : *block) {
+                col.column->sanity_check();
+                DCHECK(block->rows() == col.column->size());
+            }
+#endif
             {
                 SCOPED_RAW_TIMER(&_statistics.decode_null_map_time);
                 RETURN_IF_CATCH_EXCEPTION(
@@ -2272,6 +2287,12 @@ Status OrcReader::_get_next_block_impl(Block* block, size_t* read_rows, bool* eo
             Block::erase_useless_column(block, column_to_keep);
             RETURN_IF_ERROR(_convert_dict_cols_to_string_cols(block, &batch_vec));
             *read_rows = block->rows();
+#ifndef NDEBUG
+            for (auto col : *block) {
+                col.column->sanity_check();
+                DCHECK(block->rows() == col.column->size());
+            }
+#endif
         }
     } else {
         uint64_t rr;
@@ -2343,6 +2364,9 @@ Status OrcReader::_get_next_block_impl(Block* block, size_t* read_rows, bool* eo
                     col_name, column_ptr, column_type,
                     _table_info_node_ptr->get_children_node(col_name), _type_map[file_column_name],
                     batch_vec[orc_col_idx->second], _batch->numElements));
+#ifndef NDEBUG
+            column_ptr->sanity_check();
+#endif
         }
 
         RETURN_IF_ERROR(_fill_partition_columns(block, _batch->numElements,
@@ -2522,6 +2546,9 @@ Status OrcReader::filter(orc::ColumnVectorBatch& data, uint16_t* sel, uint16_t s
                 table_col_name, column_ptr, column_type,
                 _table_info_node_ptr->get_children_node(table_col_name),
                 _type_map[file_column_name], batch_vec[orc_col_idx->second], data.numElements));
+#ifndef NDEBUG
+        column_ptr->sanity_check();
+#endif
     }
     RETURN_IF_ERROR(
             _fill_partition_columns(block, size, _lazy_read_ctx.predicate_partition_columns));
