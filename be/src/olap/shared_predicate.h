@@ -176,8 +176,10 @@ public:
 
     bool evaluate_and(vectorized::ParquetPredicate::CachedPageIndexStat* statistic,
                       RowRanges* row_ranges) const override {
+        std::shared_lock<std::shared_mutex> lock(*_mtx);
         if (!_nested) {
             // at the begining _nested will be null, so return true.
+            row_ranges = statistic->row_group_range;
             return true;
         }
         return _nested->evaluate_and(statistic, row_ranges);
