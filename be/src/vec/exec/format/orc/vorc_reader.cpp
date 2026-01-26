@@ -2268,7 +2268,10 @@ Status OrcReader::_get_next_block_impl(Block* block, size_t* read_rows, bool* eo
 #ifndef NDEBUG
             for (auto col : *block) {
                 col.column->sanity_check();
-                DCHECK(block->rows() == col.column->size());
+
+                DCHECK(block->rows() == col.column->size())
+                        << absl::Substitute("block rows = $0 , column rows = $1, col name = $2",
+                                            block->rows(), col.column->size(), col.name);
             }
 #endif
             SCOPED_RAW_TIMER(&_statistics.predicate_filter_time);
@@ -2276,7 +2279,9 @@ Status OrcReader::_get_next_block_impl(Block* block, size_t* read_rows, bool* eo
 #ifndef NDEBUG
             for (auto col : *block) {
                 col.column->sanity_check();
-                DCHECK(block->rows() == col.column->size());
+                DCHECK(block->rows() == col.column->size())
+                        << absl::Substitute("block rows = $0 , column rows = $1, col name = $2",
+                                            block->rows(), col.column->size(), col.name);
             }
 #endif
             {
@@ -2290,7 +2295,9 @@ Status OrcReader::_get_next_block_impl(Block* block, size_t* read_rows, bool* eo
 #ifndef NDEBUG
             for (auto col : *block) {
                 col.column->sanity_check();
-                DCHECK(block->rows() == col.column->size());
+                DCHECK(block->rows() == col.column->size())
+                        << absl::Substitute("block rows = $0 , column rows = $1, col name = $2",
+                                            block->rows(), col.column->size(), col.name);
             }
 #endif
         }
@@ -2383,6 +2390,14 @@ Status OrcReader::_get_next_block_impl(Block* block, size_t* read_rows, bool* eo
             return Status::OK();
         }
 
+#ifndef NDEBUG
+        for (auto col : *block) {
+            col.column->sanity_check();
+            DCHECK(block->rows() == col.column->size())
+                    << absl::Substitute("block rows = $0 , column rows = $1, col name = $2",
+                                        block->rows(), col.column->size(), col.name);
+        }
+#endif
         {
             SCOPED_RAW_TIMER(&_statistics.predicate_filter_time);
             _build_delete_row_filter(block, _batch->numElements);
@@ -2436,7 +2451,23 @@ Status OrcReader::_get_next_block_impl(Block* block, size_t* read_rows, bool* eo
                 Block::erase_useless_column(block, column_to_keep);
             }
         }
+#ifndef NDEBUG
+        for (auto col : *block) {
+            col.column->sanity_check();
+            DCHECK(block->rows() == col.column->size())
+                    << absl::Substitute("block rows = $0 , column rows = $1, col name = $2",
+                                        block->rows(), col.column->size(), col.name);
+        }
+#endif
         RETURN_IF_ERROR(_convert_dict_cols_to_string_cols(block, &batch_vec));
+#ifndef NDEBUG
+        for (auto col : *block) {
+            col.column->sanity_check();
+            DCHECK(block->rows() == col.column->size())
+                    << absl::Substitute("block rows = $0 , column rows = $1, col name = $2",
+                                        block->rows(), col.column->size(), col.name);
+        }
+#endif
         *read_rows = block->rows();
     }
     return Status::OK();
