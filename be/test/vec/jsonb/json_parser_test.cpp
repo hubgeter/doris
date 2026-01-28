@@ -21,6 +21,7 @@
 
 #include <vector>
 
+#include "common/config.h"
 #include "vec/common/string_ref.h"
 
 using doris::vectorized::JSONDataParser;
@@ -343,4 +344,85 @@ TEST(JsonParserTest, TestHandleNewPathElseBranch) {
     // Verify nested_sizes_by_key was updated
     EXPECT_EQ(ctx.nested_sizes_by_key.at(doris::StringRef("nested_key")).size(), 3);
     EXPECT_EQ(ctx.nested_sizes_by_key.at(doris::StringRef("nested_key"))[1], 0);
+}
+
+TEST(JsonParserTest, ParseUInt64) {
+    JSONDataParser<SimdJSONParser> parser;
+    ParseConfig config;
+
+    std::string json = R"({"a": 18446744073709551615})";
+    auto result = parser.parse(json.c_str(), json.size(), config);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->values.size(), 1);
+    EXPECT_EQ(result->paths.size(), 1);
+    EXPECT_EQ(result->paths[0].get_path(), "a");
+    EXPECT_EQ(result->values[0].get_type(), doris::PrimitiveType::TYPE_LARGEINT);
+    EXPECT_EQ(result->values[0].get<doris::PrimitiveType::TYPE_LARGEINT>(),
+              18446744073709551615ULL);
+
+    std::string array_json = R"({"a": [18446744073709551615]})";
+    result = parser.parse(array_json.c_str(), array_json.size(), config);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->values.size(), 1);
+    EXPECT_EQ(result->paths.size(), 1);
+    EXPECT_EQ(result->paths[0].get_path(), "a");
+    EXPECT_EQ(result->values[0].get_type(), doris::PrimitiveType::TYPE_ARRAY);
+    auto& array_field = result->values[0].get<doris::PrimitiveType::TYPE_ARRAY>();
+    EXPECT_EQ(array_field.size(), 1);
+    EXPECT_EQ(array_field[0].get_type(), doris::PrimitiveType::TYPE_LARGEINT);
+    EXPECT_EQ(array_field[0].get<doris::PrimitiveType::TYPE_LARGEINT>(), 18446744073709551615ULL);
+
+    std::string nested_json = R"({"a": [{"b": 18446744073709551615}]})";
+    config.enable_flatten_nested = true;
+    result = parser.parse(nested_json.c_str(), nested_json.size(), config);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->values.size(), 1);
+    EXPECT_EQ(result->paths.size(), 1);
+    EXPECT_EQ(result->values[0].get_type(), doris::PrimitiveType::TYPE_ARRAY);
+    auto& array_field_2 = result->values[0].get<doris::PrimitiveType::TYPE_ARRAY>();
+    EXPECT_EQ(array_field_2.size(), 1);
+    EXPECT_EQ(array_field_2[0].get_type(), doris::PrimitiveType::TYPE_LARGEINT);
+    EXPECT_EQ(array_field_2[0].get<doris::PrimitiveType::TYPE_LARGEINT>(), 18446744073709551615ULL);
+}
+
+TEST(JsonParserTest, KeyLengthLimitByConfig) {
+    struct ScopedMaxJsonKeyLength {
+        int32_t old_value;
+        explicit ScopedMaxJsonKeyLength(int32_t new_value)
+                : old_value(doris::config::variant_max_json_key_length) {
+            doris::config::variant_max_json_key_length = new_value;
+        }
+        ~ScopedMaxJsonKeyLength() { doris::config::variant_max_json_key_length = old_value; }
+    };
+
+    JSONDataParser<SimdJSONParser> parser;
+    ParseConfig config;
+
+    {
+        ScopedMaxJsonKeyLength guard(10);
+        std::string key11(11, 'a');
+
+        std::string obj_json = "{\"" + key11 + "\": 1}";
+        EXPECT_ANY_THROW(parser.parse(obj_json.c_str(), obj_json.size(), config));
+
+        config.enable_flatten_nested = false;
+        std::string jsonb_json = "{\"a\": [{\"" + key11 + "\": 1}]}";
+        EXPECT_ANY_THROW(parser.parse(jsonb_json.c_str(), jsonb_json.size(), config));
+    }
+
+    {
+        ScopedMaxJsonKeyLength guard(255);
+        std::string key255(255, 'b');
+
+        std::string obj_json = "{\"" + key255 + "\": 1}";
+        auto result = parser.parse(obj_json.c_str(), obj_json.size(), config);
+        ASSERT_TRUE(result.has_value());
+
+        config.enable_flatten_nested = false;
+        std::string jsonb_json = "{\"a\": [{\"" + key255 + "\": 1}]}";
+        result = parser.parse(jsonb_json.c_str(), jsonb_json.size(), config);
+        ASSERT_TRUE(result.has_value());
+        ASSERT_EQ(result->values.size(), 1);
+        EXPECT_EQ(result->values[0].get_type(), doris::PrimitiveType::TYPE_JSONB);
+    }
 }
