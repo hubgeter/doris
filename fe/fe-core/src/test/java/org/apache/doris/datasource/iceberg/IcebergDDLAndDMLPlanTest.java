@@ -448,6 +448,7 @@ public class IcebergDDLAndDMLPlanTest extends TestWithFeService {
 
             PhysicalIcebergMergeSink<?> sink =
                     getSinglePhysicalSink(physicalPlan, PhysicalIcebergMergeSink.class);
+            ExprId operationExprId = findOperationExprId(sink.child().getOutput());
             ExprId rowIdExprId = findRowIdExprId(sink.child().getOutput());
             ExprId partitionExprId = findExprIdByName(sink.child().getOutput(), "age");
             Assertions.assertTrue(sink.child() instanceof PhysicalDistribute,
@@ -487,6 +488,7 @@ public class IcebergDDLAndDMLPlanTest extends TestWithFeService {
 
             PhysicalIcebergMergeSink<?> sink =
                     getSinglePhysicalSink(physicalPlan, PhysicalIcebergMergeSink.class);
+            ExprId operationExprId = findOperationExprId(sink.child().getOutput());
             ExprId rowIdExprId = findRowIdExprId(sink.child().getOutput());
             Assertions.assertTrue(sink.child() instanceof PhysicalDistribute,
                     "Missing merge partition exchange\n" + physicalPlan.treeString());
