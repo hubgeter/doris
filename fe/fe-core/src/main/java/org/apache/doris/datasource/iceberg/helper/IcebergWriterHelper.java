@@ -182,16 +182,14 @@ public class IcebergWriterHelper {
                 if (commitData.getPartitionValues() != null && !commitData.getPartitionValues().isEmpty()) {
                     // Convert partition values to PartitionData
                     List<String> partitionValues = commitData.getPartitionValues().stream()
-                            .map(s -> s.equals("null") ? null : s)
+                            .map(s -> s == null || "null".equals(s) ? null : s)
                             .collect(Collectors.toList());
                     partitionData = convertToPartitionData(partitionValues, spec);
                 } else if (commitData.getPartitionDataJson() != null && !commitData.getPartitionDataJson().isEmpty()) {
-                    List<String> partitionValues = IcebergUtils.parsePartitionValuesFromJson(
-                            commitData.getPartitionDataJson());
-                    if (!partitionValues.isEmpty()) {
-                        partitionData = convertToPartitionData(partitionValues, spec);
-                    } else {
-                        partitionData = new PartitionData(spec.partitionType());
+                    partitionData = IcebergUtils.parsePartitionDataFromJson(
+                            commitData.getPartitionDataJson(), spec);
+                    if (partitionData == null) {
+                        throw new VerifyException("Invalid partition data json for partitioned table");
                     }
                 } else {
                     throw new VerifyException("No partition data for partitioned table");

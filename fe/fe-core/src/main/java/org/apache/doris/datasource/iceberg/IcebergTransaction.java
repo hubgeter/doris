@@ -39,6 +39,7 @@ import org.apache.iceberg.DeleteFile;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.OverwriteFiles;
+import org.apache.iceberg.PartitionData;
 import org.apache.iceberg.PartitionField;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.ReplacePartitions;
@@ -656,12 +657,7 @@ public class IcebergTransaction implements Transaction {
                 return Optional.empty();
             }
 
-            List<String> partitionValues = extractPartitionValues(commitData);
-            if (partitionValues.isEmpty() || partitionValues.size() != spec.fields().size()) {
-                return Optional.empty();
-            }
-
-            Expression partitionExpr = buildIdentityPartitionExpression(spec, schema, partitionValues);
+            Expression partitionExpr = buildIdentityPartitionExpression(spec, schema, commitData);
             if (partitionExpr == null) {
                 return Optional.empty();
             }
@@ -680,7 +676,26 @@ public class IcebergTransaction implements Transaction {
     }
 
     private Expression buildIdentityPartitionExpression(PartitionSpec spec, Schema schema,
+            TIcebergCommitData commitData) {
+        List<String> partitionValues = commitData.getPartitionValues();
+        if (partitionValues != null && !partitionValues.isEmpty()) {
+            return buildIdentityPartitionExpression(spec, schema, partitionValues);
+        }
+        if (commitData.getPartitionDataJson() != null && !commitData.getPartitionDataJson().isEmpty()) {
+            PartitionData partitionData = IcebergUtils.parsePartitionDataFromJson(
+                    commitData.getPartitionDataJson(), spec);
+            if (partitionData != null) {
+                return buildIdentityPartitionExpression(spec, schema, partitionData);
+            }
+        }
+        return null;
+    }
+
+    private Expression buildIdentityPartitionExpression(PartitionSpec spec, Schema schema,
             List<String> partitionValues) {
+        if (partitionValues.isEmpty() || partitionValues.size() != spec.fields().size()) {
+            return null;
+        }
         Expression expression = null;
         List<PartitionField> fields = spec.fields();
         for (int i = 0; i < fields.size(); i++) {
@@ -690,7 +705,7 @@ public class IcebergTransaction implements Transaction {
                 return null;
             }
             String valueStr = partitionValues.get(i);
-            if ("null".equals(valueStr)) {
+            if (valueStr == null || "null".equals(valueStr)) {
                 valueStr = null;
             }
             Object value = IcebergUtils.parsePartitionValueFromString(valueStr, sourceField.type());
@@ -702,17 +717,26 @@ public class IcebergTransaction implements Transaction {
         return expression;
     }
 
-    private List<String> extractPartitionValues(TIcebergCommitData commitData) {
-        if (commitData == null) {
-            return Collections.emptyList();
+    private Expression buildIdentityPartitionExpression(PartitionSpec spec, Schema schema,
+            PartitionData partitionData) {
+        if (partitionData == null || partitionData.size() != spec.fields().size()) {
+            return null;
         }
-        if (commitData.getPartitionValues() != null && !commitData.getPartitionValues().isEmpty()) {
-            return commitData.getPartitionValues();
+        Expression expression = null;
+        List<PartitionField> fields = spec.fields();
+        for (int i = 0; i < fields.size(); i++) {
+            PartitionField field = fields.get(i);
+            Types.NestedField sourceField = schema.findField(field.sourceId());
+            if (sourceField == null) {
+                return null;
+            }
+            Object value = partitionData.get(i);
+            Expression predicate = value == null
+                    ? Expressions.isNull(sourceField.name())
+                    : Expressions.equal(sourceField.name(), value);
+            expression = expression == null ? predicate : Expressions.and(expression, predicate);
         }
-        if (commitData.getPartitionDataJson() != null && !commitData.getPartitionDataJson().isEmpty()) {
-            return IcebergUtils.parsePartitionValuesFromJson(commitData.getPartitionDataJson());
-        }
-        return Collections.emptyList();
+        return expression;
     }
 
     private boolean isSerializableIsolationLevel(Table icebergTable) {

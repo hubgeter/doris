@@ -68,6 +68,11 @@ import org.apache.doris.nereids.util.DateUtils;
 import org.apache.doris.persist.gson.GsonUtils;
 import org.apache.doris.thrift.TExprOpcode;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.google.common.annotations.VisibleForTesting;
@@ -118,7 +123,9 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
+import java.io.StringWriter;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.ByteBuffer;
 import java.time.DateTimeException;
 import java.time.Instant;
@@ -180,6 +187,10 @@ public class IcebergUtils {
     public static final String HOUR = "hour";
     public static final String IDENTITY = "identity";
     public static final int PARTITION_DATA_ID_START = 1000; // org.apache.iceberg.PartitionSpec
+    private static final String PARTITION_VALUES_FIELD = "partitionValues";
+    private static final JsonFactory PARTITION_JSON_FACTORY = new JsonFactory();
+    private static final ObjectMapper PARTITION_JSON_MAPPER = new ObjectMapper(PARTITION_JSON_FACTORY)
+            .configure(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS, true);
 
     private static final Pattern SNAPSHOT_ID = Pattern.compile("\\d+");
 
@@ -700,8 +711,7 @@ public class IcebergUtils {
 
     public static String getPartitionDataJson(PartitionData partitionData, PartitionSpec partitionSpec,
             String timeZone) {
-        List<String> partitionValues = getPartitionValues(partitionData, partitionSpec, timeZone);
-        return GsonUtils.GSON.toJson(partitionValues);
+        return toPartitionDataJson(partitionData);
     }
 
     public static List<String> parsePartitionValuesFromJson(String partitionDataJson) {
@@ -714,6 +724,120 @@ public class IcebergUtils {
         } catch (Exception e) {
             LOG.warn("Failed to parse partition data JSON: {}", partitionDataJson, e);
             return Lists.newArrayList();
+        }
+    }
+
+    public static PartitionData parsePartitionDataFromJson(String partitionDataJson, PartitionSpec partitionSpec) {
+        if (StringUtils.isBlank(partitionDataJson) || partitionSpec == null) {
+            return null;
+        }
+        try {
+            JsonNode root = PARTITION_JSON_MAPPER.readTree(partitionDataJson);
+            if (root == null || root.isNull()) {
+                return null;
+            }
+            JsonNode valuesNode = root.get(PARTITION_VALUES_FIELD);
+            if (valuesNode == null || !valuesNode.isArray()) {
+                throw new IllegalArgumentException("Invalid partition data json: " + partitionDataJson);
+            }
+            Types.StructType partitionType = partitionSpec.partitionType();
+            List<NestedField> fields = partitionType.fields();
+            if (valuesNode.size() != fields.size()) {
+                throw new IllegalArgumentException(String.format(
+                        "Partition data json size %d doesn't match partition fields size %d: %s",
+                        valuesNode.size(), fields.size(), partitionDataJson));
+            }
+            PartitionData partitionData = new PartitionData(partitionType);
+            for (int i = 0; i < fields.size(); i++) {
+                JsonNode valueNode = valuesNode.get(i);
+                Object value = parsePartitionValueFromJson(valueNode, fields.get(i).type());
+                partitionData.set(i, value);
+            }
+            return partitionData;
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Failed to parse partition data json: " + partitionDataJson, e);
+        }
+    }
+
+    private static String toPartitionDataJson(PartitionData partitionData) {
+        if (partitionData == null) {
+            return null;
+        }
+        StringWriter writer = new StringWriter();
+        try {
+            JsonGenerator generator = PARTITION_JSON_FACTORY.createGenerator(writer);
+            generator.writeStartObject();
+            generator.writeArrayFieldStart(PARTITION_VALUES_FIELD);
+            for (int i = 0; i < partitionData.size(); i++) {
+                generator.writeObject(partitionData.get(i));
+            }
+            generator.writeEndArray();
+            generator.writeEndObject();
+            generator.flush();
+            return writer.toString();
+        } catch (IOException e) {
+            LOG.warn("Failed to serialize Iceberg partition data: {}", partitionData, e);
+            return "";
+        }
+    }
+
+    private static Object parsePartitionValueFromJson(JsonNode valueNode, org.apache.iceberg.types.Type type) {
+        if (valueNode == null || valueNode.isNull()) {
+            return null;
+        }
+        switch (type.typeId()) {
+            case BOOLEAN:
+                return valueNode.asBoolean();
+            case INTEGER:
+                return valueNode.isTextual() ? Integer.parseInt(valueNode.asText()) : valueNode.asInt();
+            case DATE:
+                if (valueNode.isTextual()) {
+                    return parsePartitionValueFromString(valueNode.asText(), type);
+                }
+                return valueNode.asInt();
+            case LONG:
+                return valueNode.isTextual() ? Long.parseLong(valueNode.asText()) : valueNode.asLong();
+            case TIME:
+                if (valueNode.isTextual()) {
+                    return parseTimeToMicros(valueNode.asText());
+                }
+                return valueNode.asLong();
+            case TIMESTAMP:
+                if (valueNode.isTextual()) {
+                    return parseTimestampToMicros(valueNode.asText(), (TimestampType) type);
+                }
+                return valueNode.asLong();
+            case TIMESTAMP_NANO:
+                if (valueNode.isTextual()) {
+                    return parseTimestampToNanos(valueNode.asText(), (TimestampType) type);
+                }
+                return valueNode.asLong();
+            case FLOAT:
+                return "NaN".equalsIgnoreCase(valueNode.asText()) ? Float.NaN : valueNode.floatValue();
+            case DOUBLE:
+                return "NaN".equalsIgnoreCase(valueNode.asText()) ? Double.NaN : valueNode.doubleValue();
+            case STRING:
+                return valueNode.asText();
+            case UUID:
+                return UUID.fromString(valueNode.asText());
+            case FIXED:
+            case BINARY:
+                try {
+                    return valueNode.binaryValue();
+                } catch (IOException e) {
+                    throw new IllegalArgumentException("Failed to decode binary partition value", e);
+                }
+            case DECIMAL:
+                Types.DecimalType decimalType = (Types.DecimalType) type;
+                BigDecimal decimal = valueNode.isTextual()
+                        ? new BigDecimal(valueNode.asText())
+                        : valueNode.decimalValue();
+                if (decimal.scale() != decimalType.scale()) {
+                    decimal = decimal.setScale(decimalType.scale(), RoundingMode.UNNECESSARY);
+                }
+                return decimal;
+            default:
+                throw new UnsupportedOperationException("Unsupported type for partition data: " + type);
         }
     }
 
@@ -763,6 +887,16 @@ public class IcebergUtils {
                             .toLocalDateTime();
                 }
                 return timestamp.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+            case BINARY:
+            case FIXED:
+                if (value == null) {
+                    return null;
+                }
+                ByteBuffer buffer = value instanceof ByteBuffer ? ((ByteBuffer) value).duplicate()
+                        : ByteBuffer.wrap((byte[]) value);
+                byte[] bytes = new byte[buffer.remaining()];
+                buffer.get(bytes);
+                return java.util.Base64.getEncoder().encodeToString(bytes);
             default:
                 throw new UnsupportedOperationException("Unsupported type for serializePartitionValue: " + type);
         }
@@ -836,6 +970,11 @@ public class IcebergUtils {
                 }
             case FIXED:
             case BINARY:
+                try {
+                    return Literal.of(ByteBuffer.wrap(java.util.Base64.getDecoder().decode(value)));
+                } catch (IllegalArgumentException e) {
+                    throw new IllegalArgumentException("Invalid Base64 string: " + value, e);
+                }
             case GEOMETRY:
             case GEOGRAPHY:
                 return Literal.of(ByteBuffer.wrap(value.getBytes()));
@@ -884,10 +1023,22 @@ public class IcebergUtils {
                 case DATE:
                     // Parse date string (format: yyyy-MM-dd) to epoch day
                     return (int) LocalDate.parse(valueStr, DateTimeFormatter.ISO_LOCAL_DATE).toEpochDay();
+                case TIME:
+                    return parseTimeToMicros(valueStr);
                 case TIMESTAMP:
                     return parseTimestampToMicros(valueStr, (TimestampType) icebergType);
+                case TIMESTAMP_NANO:
+                    return parseTimestampToNanos(valueStr, (TimestampType) icebergType);
                 case DECIMAL:
                     return new BigDecimal(valueStr);
+                case BINARY:
+                case FIXED:
+                    try {
+                        return java.util.Base64.getDecoder().decode(valueStr);
+                    } catch (IllegalArgumentException e) {
+                        throw new IllegalArgumentException(
+                                "Failed to decode base64 partition value: " + valueStr, e);
+                    }
                 default:
                     throw new IllegalArgumentException("Unsupported partition value type: " + icebergType);
             }
@@ -937,6 +1088,41 @@ public class IcebergUtils {
         long microSecond = DateUtils.getOrDefault(temporal, ChronoField.NANO_OF_SECOND) / 1_000L;
 
         return epochSecond * 1_000_000L + microSecond;
+    }
+
+    private static long parseTimestampToNanos(String valueStr, TimestampType timestampType) {
+        Result<TemporalAccessor, org.apache.doris.nereids.exceptions.AnalysisException> parseResult =
+                org.apache.doris.nereids.trees.expressions.literal.DateLiteral.parseDateTime(valueStr);
+
+        if (parseResult.isError()) {
+            throw new IllegalArgumentException(
+                    String.format("Failed to parse timestamp string '%s'", valueStr));
+        }
+
+        TemporalAccessor temporal = parseResult.get();
+
+        LocalDateTime ldt = LocalDateTime.of(
+                DateUtils.getOrDefault(temporal, ChronoField.YEAR),
+                DateUtils.getOrDefault(temporal, ChronoField.MONTH_OF_YEAR),
+                DateUtils.getOrDefault(temporal, ChronoField.DAY_OF_MONTH),
+                DateUtils.getHourOrDefault(temporal),
+                DateUtils.getOrDefault(temporal, ChronoField.MINUTE_OF_HOUR),
+                DateUtils.getOrDefault(temporal, ChronoField.SECOND_OF_MINUTE),
+                DateUtils.getOrDefault(temporal, ChronoField.NANO_OF_SECOND));
+
+        ZoneId zone = timestampType.shouldAdjustToUTC()
+                ? DateUtils.getTimeZone()
+                : ZoneId.of("UTC");
+
+        long epochSecond = ldt.atZone(zone).toInstant().getEpochSecond();
+        long nanoSecond = DateUtils.getOrDefault(temporal, ChronoField.NANO_OF_SECOND);
+
+        return epochSecond * 1_000_000_000L + nanoSecond;
+    }
+
+    private static long parseTimeToMicros(String valueStr) {
+        LocalTime time = LocalTime.parse(valueStr, DateTimeFormatter.ISO_LOCAL_TIME);
+        return time.toNanoOfDay() / 1_000L;
     }
 
     private static void updateIcebergColumnUniqueId(Column column, Types.NestedField icebergField) {
