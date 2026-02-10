@@ -310,6 +310,13 @@ MaxComputeTableDescriptor::MaxComputeTableDescriptor(const TTableDescriptor& tde
         _init_status =
                 Status::InvalidArgument("fail to init MaxComputeTableDescriptor, missing quota.");
     }
+
+    if (tdesc.mcTable.__isset.properties) {
+        _props = tdesc.mcTable.properties;
+    } else {
+        _init_status = Status::InvalidArgument(
+                "fail to init MaxComputeTableDescriptor, missing properties.");
+    }
 }
 
 MaxComputeTableDescriptor::~MaxComputeTableDescriptor() = default;

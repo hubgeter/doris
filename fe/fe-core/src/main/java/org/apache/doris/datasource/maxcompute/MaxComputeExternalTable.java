@@ -322,8 +322,9 @@ public class MaxComputeExternalTable extends ExternalTable {
         TMCTable tMcTable = new TMCTable();
         MaxComputeExternalCatalog mcCatalog = ((MaxComputeExternalCatalog) catalog);
 
-        tMcTable.setAccessKey(mcCatalog.getAccessKey());
-        tMcTable.setSecretKey(mcCatalog.getSecretKey());
+        tMcTable.setAccessKey("deprecated");
+        tMcTable.setSecretKey("deprecated");
+        tMcTable.setProperties(mcCatalog.getProperties());
         tMcTable.setOdpsUrl("deprecated");
         tMcTable.setRegion("deprecated");
         tMcTable.setEndpoint(mcCatalog.getEndpoint());
