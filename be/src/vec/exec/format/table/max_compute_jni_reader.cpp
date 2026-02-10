@@ -64,10 +64,6 @@ MaxComputeJniReader::MaxComputeJniReader(const MaxComputeTableDescriptor* mc_des
     }
 
     auto properties = _table_desc->properties();
-    for (auto [a, b] : properties) {
-        std::cout << "" << a << ":" << b << std::endl;
-    }
-
     properties["endpoint"] = _table_desc->endpoint();
     properties["quota"] = _table_desc->quota();
     properties["project"] = _table_desc->project();
