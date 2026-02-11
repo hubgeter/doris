@@ -322,18 +322,11 @@ public class MaxComputeExternalTable extends ExternalTable {
         TMCTable tMcTable = new TMCTable();
         MaxComputeExternalCatalog mcCatalog = ((MaxComputeExternalCatalog) catalog);
 
-        tMcTable.setAccessKey("deprecated");
-        tMcTable.setSecretKey("deprecated");
         tMcTable.setProperties(mcCatalog.getProperties());
-        tMcTable.setOdpsUrl("deprecated");
-        tMcTable.setRegion("deprecated");
         tMcTable.setEndpoint(mcCatalog.getEndpoint());
         // use mc project as dbName
         tMcTable.setProject(dbName);
         tMcTable.setQuota(mcCatalog.getQuota());
-
-        tMcTable.setTunnelUrl("deprecated");
-        tMcTable.setProject("deprecated");
         tMcTable.setTable(name);
         TTableDescriptor tTableDescriptor = new TTableDescriptor(getId(), TTableType.MAX_COMPUTE_TABLE,
                 schema.size(), 0, getName(), dbName);
