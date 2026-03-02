@@ -1202,6 +1202,15 @@ Status FileScanner::_init_parquet_reader(std::unique_ptr<ParquetReader>&& parque
                     : phmap::flat_hash_map<int, std::vector<std::shared_ptr<ColumnPredicate>>> {};
     if (range.__isset.table_format_params &&
         range.table_format_params.table_format_type == "iceberg") {
+        auto row_lineage_columns = std::make_shared<RowGroupReader::RowLineageColumns>();
+        row_lineage_columns->row_id_column_idx = _row_lineage_columns->row_id_column_idx;
+        row_lineage_columns->last_updated_sequence_number_column_idx =
+                _row_lineage_columns->last_updated_sequence_number_column_idx;
+        row_lineage_columns->first_row_id = range.table_format_params.iceberg_params.first_row_id;
+        row_lineage_columns->last_updated_sequence_number =
+                range.table_format_params.iceberg_params.last_updated_sequence_number;
+        parquet_reader->set_row_lineage_columns(row_lineage_columns);
+
         std::unique_ptr<IcebergParquetReader> iceberg_reader = IcebergParquetReader::create_unique(
                 std::move(parquet_reader), _profile, _state, *_params, range, _kv_cache,
                 _io_ctx.get(), file_meta_cache_ptr);
@@ -1603,6 +1612,15 @@ Status FileScanner::_generate_missing_columns() {
                 continue;
             }
 
+            //            if (slot_desc->col_name().starts_with("_row_id")){
+            //                std::cout  <<"pass missing _row_id\n";
+            //                continue;
+            //            }
+            //            if(slot_desc->col_name().starts_with("_last_updated_sequence_number")) {
+            //                std::cout  <<"pass missing _last_updated_sequence_number\n";
+            //                continue;
+            //            }
+
             auto it = _col_default_value_ctx.find(slot_desc->col_name());
             if (it == _col_default_value_ctx.end()) {
                 return Status::InternalError("failed to find default value expr for slot: {}",
@@ -1651,6 +1669,16 @@ Status FileScanner::_init_expr_ctxes() {
         if (it->second->col_name().starts_with(BeConsts::GLOBAL_ROWID_COL)) {
             _row_id_column_iterator_pair.second = _default_val_row_desc->get_column_id(slot_id);
             continue;
+        }
+        if (it->second->col_name().starts_with("_row_id")) {
+            _row_lineage_columns = std::make_shared<RowGroupReader::RowLineageColumns>();
+            _row_lineage_columns->row_id_column_idx = _default_val_row_desc->get_column_id(slot_id);
+            //            continue;
+        }
+        if (it->second->col_name().starts_with("_last_updated_sequence_number")) {
+            _row_lineage_columns->last_updated_sequence_number_column_idx =
+                    _default_val_row_desc->get_column_id(slot_id);
+            //            continue;
         }
 
         if (slot_info.is_file_slot) {

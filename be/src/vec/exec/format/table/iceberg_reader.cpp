@@ -514,6 +514,14 @@ Status IcebergParquetReader::init_reader(
     }
 
     _all_required_col_names = file_col_names;
+    //    static std::mutex mtx;
+    //    {
+    //        std::unique_lock<std::mutex> lck(mtx);
+    //        for (auto a : _all_required_col_names) {
+    //            std::cout << a << ", ";
+    //        }
+    //        std::cout <<std::endl;
+    //    }
 
     auto column_id_result = _create_column_ids(field_desc, tuple_descriptor);
     auto& column_ids = column_id_result.column_ids;

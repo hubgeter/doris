@@ -312,6 +312,8 @@ struct TIcebergFileDesc {
     6: optional string original_file_path;
     // Deprecated
     7: optional i64 row_count;
+    8: optional i64 first_row_id;
+    9: optional i64 last_updated_sequence_number;
 }
 
 struct TPaimonDeletionFileDesc {

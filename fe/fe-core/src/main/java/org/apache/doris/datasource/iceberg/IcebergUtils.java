@@ -76,6 +76,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Range;
 import com.google.common.collect.Sets;
 import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.apache.iceberg.BaseTable;
 import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.FileScanTask;
@@ -177,6 +178,9 @@ public class IcebergUtils {
     public static final String HOUR = "hour";
     public static final String IDENTITY = "identity";
     public static final int PARTITION_DATA_ID_START = 1000; // org.apache.iceberg.PartitionSpec
+    private static final int ICEBERG_ROW_LINEAGE_MIN_VERSION = 3;
+    private static final String ICEBERG_ROW_ID_COL = "_row_id";
+    private static final String ICEBERG_LAST_UPDATED_SEQUENCE_NUMBER_COL = "_last_updated_sequence_number";
 
     private static final Pattern SNAPSHOT_ID = Pattern.compile("\\d+");
 
@@ -1535,6 +1539,7 @@ public class IcebergUtils {
         if (!isView) {
             // get table partition column info
             Table table = IcebergUtils.getIcebergTable(dorisTable);
+            schema = appendRowLineageColumnsIfNeeded(schema, table);
             PartitionSpec spec = table.spec();
             for (PartitionField field : spec.fields()) {
                 Types.NestedField col = table.schema().findField(field.sourceId());
@@ -1547,6 +1552,37 @@ public class IcebergUtils {
             }
         }
         return Optional.of(new IcebergSchemaCacheValue(schema, tmpColumns));
+    }
+
+    private static List<Column> appendRowLineageColumnsIfNeeded(List<Column> schema, Table table) {
+        int formatVersion = -1;
+        if (table instanceof BaseTable) {
+            formatVersion = ((BaseTable) table).operations().current().formatVersion();
+        } else if (table != null && table.properties() != null) {
+            String version = table.properties().get(TableProperties.FORMAT_VERSION);
+            if (version != null) {
+                try {
+                    formatVersion = Integer.parseInt(version);
+                } catch (NumberFormatException ignored) {
+                    // ignore
+                }
+            }
+        }
+
+        if (formatVersion < ICEBERG_ROW_LINEAGE_MIN_VERSION) {
+            return schema;
+        }
+
+        List<Column> newSchema = Lists.newArrayList(schema);
+        Column rowIdColumn = new Column(ICEBERG_ROW_ID_COL, Type.BIGINT, true);
+        rowIdColumn.setUniqueId(2147483540);
+        Column lastUpdatedSequenceNumberColumn =
+                new Column(ICEBERG_LAST_UPDATED_SEQUENCE_NUMBER_COL, Type.BIGINT, true);
+        lastUpdatedSequenceNumberColumn.setUniqueId(2147483539);
+
+        newSchema.add(rowIdColumn);
+        newSchema.add(lastUpdatedSequenceNumberColumn);
+        return newSchema;
     }
 
     public static String showCreateView(IcebergExternalTable icebergExternalTable) {

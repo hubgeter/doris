@@ -65,6 +65,7 @@ import com.google.common.collect.Lists;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.iceberg.BaseFileScanTask;
 import org.apache.iceberg.BaseTable;
+import org.apache.iceberg.DataFile;
 import org.apache.iceberg.DeleteFile;
 import org.apache.iceberg.DeleteFileIndex;
 import org.apache.iceberg.FileContent;
@@ -223,6 +224,14 @@ public class IcebergScanNode extends FileQueryScanNode {
         TIcebergFileDesc fileDesc = new TIcebergFileDesc();
         fileDesc.setFormatVersion(formatVersion);
         fileDesc.setOriginalFilePath(icebergSplit.getOriginalPath());
+        if (formatVersion >= 3) {
+            if (icebergSplit.getFirstRowId() != null) {
+                fileDesc.setFirstRowId(icebergSplit.getFirstRowId());
+            }
+            if (icebergSplit.getLastUpdatedSequenceNumber() != null) {
+                fileDesc.setLastUpdatedSequenceNumber(icebergSplit.getLastUpdatedSequenceNumber());
+            }
+        }
         if (formatVersion < MIN_DELETE_FILE_SUPPORT_VERSION) {
             fileDesc.setContent(FileContent.DATA.id());
         } else {
@@ -677,18 +686,29 @@ public class IcebergScanNode extends FileQueryScanNode {
     }
 
     private Split createIcebergSplit(FileScanTask fileScanTask) {
-        String originalPath = fileScanTask.file().path().toString();
+        DataFile dataFile = fileScanTask.file();
+        String originalPath = dataFile.path().toString();
         LocationPath locationPath = createLocationPathWithCache(originalPath);
         IcebergSplit split = new IcebergSplit(
                 locationPath,
                 fileScanTask.start(),
                 fileScanTask.length(),
-                fileScanTask.file().fileSizeInBytes(),
+                dataFile.fileSizeInBytes(),
                 new String[0],
                 formatVersion,
                 storagePropertiesMap,
                 new ArrayList<>(),
                 originalPath);
+        if (formatVersion >= 3) {
+            Long firstRowId = dataFile.firstRowId();
+            if (firstRowId != null) {
+                split.setFirstRowId(firstRowId);
+            }
+            Long fileSequenceNumber = dataFile.fileSequenceNumber();
+            if (fileSequenceNumber != null) {
+                split.setLastUpdatedSequenceNumber(fileSequenceNumber);
+            }
+        }
         if (!fileScanTask.deletes().isEmpty()) {
             split.setDeleteFileFilters(getDeleteFileFilters(fileScanTask));
         }

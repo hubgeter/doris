@@ -159,6 +159,18 @@ public:
         PositionDeleteContext(const PositionDeleteContext& filter) = default;
     };
 
+    struct RowLineageColumns {
+        int row_id_column_idx = -1;
+        int last_updated_sequence_number_column_idx = -1;
+        int64_t first_row_id = 0;
+        int64_t last_updated_sequence_number = 0;
+
+        bool need_row_ids() const { return row_id_column_idx >= 0; }
+        bool has_last_updated_sequence_number_column() const {
+            return last_updated_sequence_number_column_idx >= 0;
+        }
+    };
+
     RowGroupReader(io::FileReaderSPtr file_reader, const std::vector<std::string>& read_columns,
                    const int32_t row_group_id, const tparquet::RowGroup& row_group,
                    const cctz::time_zone* ctz, io::IOContext* io_ctx,
@@ -187,6 +199,10 @@ public:
             const std::pair<std::shared_ptr<segment_v2::RowIdColumnIteratorV2>, int>&
                     iterator_pair) {
         _row_id_column_iterator_pair = iterator_pair;
+    }
+
+    void set_row_lineage_columns(std::shared_ptr<RowLineageColumns> row_lineage_columns) {
+        _row_lineage_columns = std::move(row_lineage_columns);
     }
 
     void set_current_row_group_idx(RowGroupIndex row_group_idx) {
@@ -250,6 +266,7 @@ private:
     const cctz::time_zone* _ctz = nullptr;
     io::IOContext* _io_ctx = nullptr;
     PositionDeleteContext _position_delete_ctx;
+    std::shared_ptr<RowLineageColumns> _row_lineage_columns;
     // merge the row ranges generated from page index and position delete.
     RowRanges _read_ranges;
 

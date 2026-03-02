@@ -164,6 +164,11 @@ public:
         _row_id_column_iterator_pair = iterator_pair;
     }
 
+    void set_row_lineage_columns(
+            std::shared_ptr<RowGroupReader::RowLineageColumns> row_lineage_columns) {
+        _row_lineage_columns = row_lineage_columns;
+    }
+
     bool count_read_rows() override { return true; }
 
 protected:
@@ -335,6 +340,7 @@ private:
 
     std::pair<std::shared_ptr<RowIdColumnIteratorV2>, int> _row_id_column_iterator_pair = {nullptr,
                                                                                            -1};
+    std::shared_ptr<RowGroupReader::RowLineageColumns> _row_lineage_columns;
     bool _filter_groups = true;
 
     std::set<uint64_t> _column_ids;
