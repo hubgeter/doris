@@ -3100,6 +3100,13 @@ public class SessionVariable implements Serializable, Writable {
     )
     public int defaultVariantSparseHashShardCount = 0;
 
+    public static final String ADJUST_TABLET_READER_BATCH_SIZE_BY_LIMIT = "adjust_tablet_reader_batch_size_by_limit";
+    @VariableMgr.VarAttr(name = ADJUST_TABLET_READER_BATCH_SIZE_BY_LIMIT, needForward = true, description = {
+            "是否根据查询中的 limit 调整 tablet reader 的 batch size。默认为 false。",
+            "Whether to adjust the batch size of tablet reader based on the limit in the query. The default is false."
+    })
+    public boolean adjustTabletReaderBatchSizeByLimit = false;
+
     // If this fe is in fuzzy mode, then will use initFuzzyModeVariables to generate some variables,
     // not the default value set in the code.
     @SuppressWarnings("checkstyle:Indentation")
@@ -4856,6 +4863,7 @@ public class SessionVariable implements Serializable, Writable {
 
         // Set Iceberg write target file size
         tResult.setIcebergWriteTargetFileSizeBytes(icebergWriteTargetFileSizeBytes);
+        tResult.setAdjustTabletReaderBatchSizeByLimit(adjustTabletReaderBatchSizeByLimit);
 
         return tResult;
     }
