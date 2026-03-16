@@ -68,9 +68,11 @@ import com.google.common.collect.Lists;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.iceberg.BaseFileScanTask;
 import org.apache.iceberg.BaseTable;
+import org.apache.iceberg.DataFile;
 import org.apache.iceberg.DeleteFile;
 import org.apache.iceberg.DeleteFileIndex;
 import org.apache.iceberg.FileContent;
+import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.ManifestContent;
 import org.apache.iceberg.ManifestFile;
@@ -156,6 +158,10 @@ public class IcebergScanNode extends FileQueryScanNode {
     private String cachedFsIdentifier;
 
     private Boolean isBatchMode = null;
+
+    // ReferencedDataFile path -> List<DeleteFile> / List<TIcebergDeleteFileDesc>
+    public Map<String, List<DeleteFile>> deleteFilesByReferencedDataFile = new HashMap<>();
+    public Map<String, List<TIcebergDeleteFileDesc>> deleteFilesDescByReferencedDataFile = new HashMap<>();
 
     // for test
     @VisibleForTesting
@@ -278,6 +284,10 @@ public class IcebergScanNode extends FileQueryScanNode {
         if (icebergSplit.getPartitionDataJson() != null) {
             fileDesc.setPartitionDataJson(icebergSplit.getPartitionDataJson());
         }
+        if (formatVersion >= 3) {
+            fileDesc.setFirstRowId(icebergSplit.getFirstRowId());
+            fileDesc.setLastUpdatedSequenceNumber(icebergSplit.getLastUpdatedSequenceNumber());
+        }
         if (formatVersion < MIN_DELETE_FILE_SUPPORT_VERSION) {
             fileDesc.setContent(FileContent.DATA.id());
         } else {
@@ -286,6 +296,7 @@ public class IcebergScanNode extends FileQueryScanNode {
                 String deleteFilePath = filter.getDeleteFilePath();
                 LocationPath locationPath = LocationPath.of(deleteFilePath, icebergSplit.getConfig());
                 deleteFileDesc.setPath(locationPath.toStorageLocation().toString());
+                setDeleteFileFormat(deleteFileDesc, filter.getFileformat());
                 if (filter instanceof IcebergDeleteFileFilter.PositionDelete) {
                     IcebergDeleteFileFilter.PositionDelete positionDelete =
                             (IcebergDeleteFileFilter.PositionDelete) filter;
@@ -301,8 +312,8 @@ public class IcebergScanNode extends FileQueryScanNode {
 
                     if (filter instanceof IcebergDeleteFileFilter.DeletionVector) {
                         IcebergDeleteFileFilter.DeletionVector dv = (IcebergDeleteFileFilter.DeletionVector) filter;
-                        deleteFileDesc.setContentOffset((int) dv.getContentOffset());
-                        deleteFileDesc.setContentSizeInBytes((int) dv.getContentLength());
+                        deleteFileDesc.setContentOffset(dv.getContentOffset());
+                        deleteFileDesc.setContentSizeInBytes(dv.getContentLength());
                         deleteFileDesc.setContent(IcebergDeleteFileFilter.DeletionVector.type());
                     }
                 } else {
@@ -313,6 +324,8 @@ public class IcebergScanNode extends FileQueryScanNode {
                 }
                 fileDesc.addToDeleteFiles(deleteFileDesc);
             }
+            deleteFilesByReferencedDataFile.put(icebergSplit.getOriginalPath(), icebergSplit.getDeleteFiles());
+            deleteFilesDescByReferencedDataFile.put(icebergSplit.getOriginalPath(), fileDesc.getDeleteFiles());
         }
         tableFormatFileDesc.setIcebergParams(fileDesc);
         Map<String, String> partitionValues = icebergSplit.getIcebergPartitionValues();
@@ -356,6 +369,14 @@ public class IcebergScanNode extends FileQueryScanNode {
             }
         }
         return deleteFiles;
+    }
+
+    private void setDeleteFileFormat(TIcebergDeleteFileDesc deleteFileDesc, FileFormat fileFormat) {
+        if (fileFormat == FileFormat.PARQUET) {
+            deleteFileDesc.setFileFormat(TFileFormatType.FORMAT_PARQUET);
+        } else if (fileFormat == FileFormat.ORC) {
+            deleteFileDesc.setFileFormat(TFileFormatType.FORMAT_ORC);
+        }
     }
 
     private String getDeleteFileContentType(int content) {
@@ -762,20 +783,28 @@ public class IcebergScanNode extends FileQueryScanNode {
     }
 
     private Split createIcebergSplit(FileScanTask fileScanTask) {
-        String originalPath = fileScanTask.file().path().toString();
+        DataFile dataFile = fileScanTask.file();
+        String originalPath = dataFile.path().toString();
         LocationPath locationPath = createLocationPathWithCache(originalPath);
         IcebergSplit split = new IcebergSplit(
                 locationPath,
                 fileScanTask.start(),
                 fileScanTask.length(),
-                fileScanTask.file().fileSizeInBytes(),
+                dataFile.fileSizeInBytes(),
                 new String[0],
                 formatVersion,
                 storagePropertiesMap,
                 new ArrayList<>(),
                 originalPath);
+        if (formatVersion >= 3) {
+            // -1 means that this table was just upgraded from v2 to v3.
+            // _row_id and _last_updated_sequence_number column is NULL.
+            split.setFirstRowId(dataFile.firstRowId() != null ? dataFile.firstRowId() : -1);
+            split.setLastUpdatedSequenceNumber(
+                    dataFile.fileSequenceNumber() != null ? dataFile.fileSequenceNumber() : -1);
+        }
         if (!fileScanTask.deletes().isEmpty()) {
-            split.setDeleteFileFilters(getDeleteFileFilters(fileScanTask));
+            split.setDeleteFileFilters(fileScanTask.deletes(), getDeleteFileFilters(fileScanTask));
         }
         split.setTableFormatType(TableFormatType.ICEBERG);
         split.setTargetSplitSize(targetSplitSize);

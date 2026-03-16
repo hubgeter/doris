@@ -82,6 +82,7 @@
 #include "exprs/vin_predicate.h"
 #include "exprs/vruntimefilter_wrapper.h"
 #include "format/orc/orc_file_reader.h"
+#include "format/table/iceberg_reader.h"
 #include "format/table/transactional_hive_common.h"
 #include "io/fs/buffered_reader.h"
 #include "io/fs/file_reader.h"
@@ -1530,13 +1531,46 @@ Status OrcReader::_fill_missing_columns(
 }
 
 Status OrcReader::_fill_row_id_columns(Block* block, int64_t start_row) {
+    size_t fill_size = _batch->numElements;
     if (_row_id_column_iterator_pair.first != nullptr) {
         RETURN_IF_ERROR(_row_id_column_iterator_pair.first->seek_to_ordinal(start_row));
-        size_t fill_size = _batch->numElements;
-
         auto col = block->get_by_position(_row_id_column_iterator_pair.second)
                            .column->assume_mutable();
         RETURN_IF_ERROR(_row_id_column_iterator_pair.first->next_batch(&fill_size, col));
+    }
+
+    if (_row_lineage_columns != nullptr && _row_lineage_columns->need_row_ids()
+            && _row_lineage_columns->first_row_id >= 0) {
+        auto col = block->get_by_position(_row_lineage_columns->row_id_column_idx)
+                           .column->assume_mutable();
+        auto* nullable_column = assert_cast<ColumnNullable*>(col.get());
+        auto& null_map = nullable_column->get_null_map_data();
+        auto& data = assert_cast<ColumnInt64&>(*nullable_column->get_nested_column_ptr()).get_data();
+        for (size_t i = 0; i < fill_size; ++i) {
+            if (null_map[i] != 0) {
+                null_map[i] = 0;
+                data[i] = _row_lineage_columns->first_row_id + start_row + static_cast<int64_t>(i);
+            }
+        }
+    }
+
+    if (_row_lineage_columns != nullptr
+            && _row_lineage_columns->has_last_updated_sequence_number_column()
+            && _row_lineage_columns->last_updated_sequence_number >= 0
+            && _row_lineage_columns->first_row_id >= 0
+            && _row_lineage_columns->need_row_ids()) {
+        auto col = block->get_by_position(
+                _row_lineage_columns->last_updated_sequence_number_column_idx)
+                           .column->assume_mutable();
+        auto* nullable_column = assert_cast<ColumnNullable*>(col.get());
+        auto& null_map = nullable_column->get_null_map_data();
+        auto& data = assert_cast<ColumnInt64&>(*nullable_column->get_nested_column_ptr()).get_data();
+        for (size_t i = 0; i < fill_size; ++i) {
+            if (null_map[i] != 0) {
+                null_map[i] = 0;
+                data[i] = _row_lineage_columns->last_updated_sequence_number;
+            }
+        }
     }
 
     return Status::OK();
