@@ -37,6 +37,8 @@ HeapSorter::HeapSorter(VSortExecExprs& vsort_exec_exprs, RuntimeState* state, in
 
 Status HeapSorter::append_block(Block* block) {
     auto tmp_block = std::make_shared<Block>(block->clone_empty());
+    // std::cout <<"block=>\n" << block->dump_data() << std::endl;
+    // std::cout<< "tmp_block=>\n" << tmp_block->dump_data() << std::endl;
     if (!_have_runtime_predicate && _queue.is_valid() && _queue_row_num >= _heap_size) {
         RETURN_IF_ERROR(_prepare_sort_columns(*block, *tmp_block, false));
         if (_materialize_sort_exprs) {

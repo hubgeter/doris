@@ -151,13 +151,14 @@ static void read_parquet_lines(std::vector<std::string> numeric_types,
     runtime_state.set_desc_tbl(desc_tbl);
 
     std::unordered_map<std::string, ColumnValueRangeType> colname_to_value_range;
-    phmap::flat_hash_map<int, std::vector<std::shared_ptr<ColumnPredicate>>> tmp;
-    static_cast<void>(p_reader->init_reader(column_names, &col_name_to_block_idx, {}, tmp, nullptr,
-                                            nullptr, nullptr, nullptr, nullptr));
-    std::unordered_map<std::string, std::tuple<std::string, const SlotDescriptor*>>
-            partition_columns;
-    std::unordered_map<std::string, VExprContextSPtr> missing_columns;
-    static_cast<void>(p_reader->set_fill_columns(partition_columns, missing_columns));
+    ParquetInitContext pq_ctx;
+    pq_ctx.column_names = column_names;
+    pq_ctx.col_name_to_block_idx = &col_name_to_block_idx;
+    pq_ctx.params = &scan_params;
+    pq_ctx.range = &scan_range;
+    static_cast<void>(p_reader->init_reader(&pq_ctx));
+    // set_fill_columns logic is now inlined in _do_init_reader,
+    // so no separate call is needed.
     BlockUPtr block = Block::create_unique();
     for (const auto& slot_desc : tuple_desc->slots()) {
         auto data_type = make_nullable(slot_desc->type());

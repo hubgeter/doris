@@ -15,27 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#pragma once
-
-#include <memory>
-#include <set>
-#include <string>
-#include <unordered_map>
-#include <vector>
-
-#include "format/table/table_schema_change_helper.h"
+#include "format/generic_reader.h"
 
 namespace doris {
-#include "common/compile_check_begin.h"
-
-struct FieldSchema;
-
-class HiveParquetNestedColumnUtils {
-public:
-    static void extract_nested_column_ids(const FieldSchema& field_schema,
-                                          const std::vector<std::vector<std::string>>& paths,
-                                          std::set<uint64_t>& column_ids);
-};
-
-#include "common/compile_check_end.h"
+// GenericReader has no out-of-line method implementations.
+// Column-filling logic lives in TableFormatReader (table_format_reader.cpp).
 } // namespace doris
