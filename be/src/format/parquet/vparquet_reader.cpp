@@ -562,6 +562,14 @@ Status ParquetReader::set_fill_columns(
                 if (auto row_lineage_idx = check_iceberg_row_lineage_column_idx(read_table_col);
                     row_lineage_idx != -1) {
                     _lazy_read_ctx.predicate_columns.first.emplace_back(read_table_col);
+                    // row lineage column can not dict filter.
+                    int slot_id = 0;
+                    for (auto slot : _tuple_descriptor->slots()) {
+                        if (slot->col_name_lower_case() == read_table_col) {
+                            slot_id = slot->id();
+                        }
+                    }
+                    _lazy_read_ctx.predicate_columns.second.emplace_back(slot_id);
                     _lazy_read_ctx.all_predicate_col_ids.emplace_back(row_lineage_idx);
                 } else {
                     _lazy_read_ctx.lazy_read_columns.emplace_back(read_table_col);

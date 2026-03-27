@@ -397,12 +397,15 @@ public class IcebergMergeCommand extends Command implements ForwardWithSync, Exp
                 rowIdExpr = rowIdSlot.get();
             }
         }
+        boolean hasRowLineageColumns = columns.stream().anyMatch(IcebergUtils::isIcebergRowLineageColumn);
         List<NamedExpression> outputProjections = new ArrayList<>();
         outputProjections.add(new UnboundStar(ImmutableList.of()));
         if (!Util.showHiddenColumns()) {
             outputProjections.add((NamedExpression) rowIdExpr);
-            outputProjections.add(getTargetRowLineageSlot(IcebergUtils.ICEBERG_ROW_ID_COL));
-            outputProjections.add(getTargetRowLineageSlot(IcebergUtils.ICEBERG_LAST_UPDATED_SEQUENCE_NUMBER_COL));
+            if (hasRowLineageColumns) {
+                outputProjections.add(getTargetRowLineageSlot(IcebergUtils.ICEBERG_ROW_ID_COL));
+                outputProjections.add(getTargetRowLineageSlot(IcebergUtils.ICEBERG_LAST_UPDATED_SEQUENCE_NUMBER_COL));
+            }
         }
         outputProjections.add(generateBranchLabel(rowIdExpr));
         plan = new LogicalProject<>(outputProjections, plan);

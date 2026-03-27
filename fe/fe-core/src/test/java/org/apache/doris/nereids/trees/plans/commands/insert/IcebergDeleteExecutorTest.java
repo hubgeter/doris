@@ -94,6 +94,8 @@ public class IcebergDeleteExecutorTest {
         NereidsPlanner planner = mockPlanner(Collections.singletonList(scanNode));
         ConnectContext ctx = new ConnectContext();
         ctx.setQueryId(new TUniqueId(1L, 2L));
+        ctx.getSessionVariable().setEnableNereidsDistributePlanner(false);
+        ctx.setThreadLocalInfo();
 
         IcebergDeleteExecutor executor = new IcebergDeleteExecutor(ctx, table, "label", planner, false, -1L);
         IcebergDeleteSink sink = new IcebergDeleteSink(table, new org.apache.doris.nereids.trees.plans.commands.delete.DeleteCommandContext());

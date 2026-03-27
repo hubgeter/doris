@@ -20,6 +20,7 @@ package org.apache.doris.datasource.iceberg.source;
 import org.apache.doris.analysis.TupleDescriptor;
 import org.apache.doris.analysis.TupleId;
 import org.apache.doris.common.util.LocationPath;
+import org.apache.doris.datasource.TableFormatType;
 import org.apache.doris.planner.PlanNodeId;
 import org.apache.doris.planner.ScanContext;
 import org.apache.doris.qe.SessionVariable;
@@ -89,6 +90,7 @@ public class IcebergScanNodeTest {
         String deletePath = "file:///tmp/delete-shared.puffin";
         IcebergSplit split = new IcebergSplit(LocationPath.of(dataPath), 0, 128, 128, new String[0],
                 3, Collections.emptyMap(), new ArrayList<>(), dataPath);
+        split.setTableFormatType(TableFormatType.ICEBERG);
         split.setFirstRowId(10L);
         split.setLastUpdatedSequenceNumber(20L);
         split.setDeleteFileFilters(Collections.emptyList(), Collections.singletonList(
@@ -123,6 +125,7 @@ public class IcebergScanNodeTest {
         String deletePath = "file:///tmp/delete-file.orc";
         IcebergSplit split = new IcebergSplit(LocationPath.of(dataPath), 0, 128, 128, new String[0],
                 2, Collections.emptyMap(), new ArrayList<>(), dataPath);
+        split.setTableFormatType(TableFormatType.ICEBERG);
         split.setDeleteFileFilters(Collections.emptyList(), Collections.singletonList(
                 new IcebergDeleteFileFilter.PositionDelete(deletePath, -1L, -1L, 256L,
                         org.apache.iceberg.FileFormat.ORC)));

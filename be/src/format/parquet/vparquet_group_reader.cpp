@@ -217,6 +217,12 @@ Status RowGroupReader::init(
         const std::vector<int>& predicate_col_slot_ids = _lazy_read_ctx.predicate_columns.second;
         for (size_t i = 0; i < predicate_col_names.size(); ++i) {
             const std::string& predicate_col_name = predicate_col_names[i];
+            if (predicate_col_name == IcebergTableReader::ROW_LINEAGE_ROW_ID ||
+                predicate_col_name == IcebergTableReader::ROW_LINEAGE_LAST_UPDATED_SEQ_NUMBER) {
+                // row lineage column can not dict filter.
+                continue;
+            }
+
             int slot_id = predicate_col_slot_ids[i];
             auto predicate_file_col_name =
                     _table_info_node_ptr->children_file_column_name(predicate_col_name);

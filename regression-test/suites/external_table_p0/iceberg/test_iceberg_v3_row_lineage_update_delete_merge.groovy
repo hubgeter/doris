@@ -65,7 +65,7 @@ suite("test_iceberg_v3_row_lineage_update_delete_merge", "p0,external,iceberg,ex
     }
 
     def assertAtLeastOneCurrentDataFileHasRowLineageColumns = { tableName, format ->
-        def currentFiles = sql("""select file_path, lower(file_format) from ${tableName}\$files order by file_path""")
+        def currentFiles = sql("""select file_path, lower(file_format) from ${tableName}\$data_files order by file_path""")
         log.info("Checking current data files for physical row lineage columns in ${tableName}: ${currentFiles}")
         assertTrue(currentFiles.size() > 0, "Current data files should exist for ${tableName}")
 
@@ -151,12 +151,9 @@ suite("test_iceberg_v3_row_lineage_update_delete_merge", "p0,external,iceberg,ex
                     )
                 """
 
-                sql """
-                    insert into ${updateDeleteTable} values
-                    (1, 'Alice', 25),
-                    (2, 'Bob', 30),
-                    (3, 'Charlie', 35)
-                """
+                sql """insert into ${updateDeleteTable} values (1, 'Alice', 25) """ 
+                sql """insert into ${updateDeleteTable} values (2, 'Bob', 30) """ 
+                sql """insert into ${updateDeleteTable} values (3, 'Charlie', 35)""" 
 
                 def updateDeleteLineageBefore = lineageMap(updateDeleteTable)
                 log.info("Lineage before UPDATE/DELETE on ${updateDeleteTable}: ${updateDeleteLineageBefore}")
@@ -219,12 +216,9 @@ suite("test_iceberg_v3_row_lineage_update_delete_merge", "p0,external,iceberg,ex
                     )
                 """
 
-                sql """
-                    insert into ${mergeTable} values
-                    (1, 'Penny', 21, '2024-01-01'),
-                    (2, 'Quinn', 22, '2024-01-02'),
-                    (3, 'Rita', 23, '2024-01-03')
-                """
+                sql """ insert into ${mergeTable} values (1, 'Penny', 21, '2024-01-01') """
+                sql """ insert into ${mergeTable} values (2, 'Quinn', 22, '2024-01-02') """
+                sql """ insert into ${mergeTable} values (3, 'Rita', 23, '2024-01-03') """
 
                 def mergeLineageBefore = lineageMap(mergeTable)
                 log.info("Lineage before MERGE on ${mergeTable}: ${mergeLineageBefore}")

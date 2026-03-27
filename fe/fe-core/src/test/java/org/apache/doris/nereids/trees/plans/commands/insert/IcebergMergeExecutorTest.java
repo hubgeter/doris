@@ -95,6 +95,8 @@ public class IcebergMergeExecutorTest {
         NereidsPlanner planner = mockPlanner(Collections.singletonList(scanNode));
         ConnectContext ctx = new ConnectContext();
         ctx.setQueryId(new TUniqueId(3L, 4L));
+        ctx.getSessionVariable().setEnableNereidsDistributePlanner(false);
+        ctx.setThreadLocalInfo();
 
         IcebergMergeExecutor executor = new IcebergMergeExecutor(ctx, table, "label", planner, false, -1L);
         IcebergMergeSink sink = new IcebergMergeSink(table, new org.apache.doris.nereids.trees.plans.commands.delete.DeleteCommandContext());

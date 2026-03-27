@@ -180,11 +180,11 @@ suite("test_iceberg_v3_row_lineage_query_insert", "p0,external,iceberg,external_
                 """
 
                 sql """
-                    insert into ${unpartitionedTable} values
-                    (1, 'Alice', 25),
-                    (2, 'Bob', 30),
-                    (3, 'Charlie', 35)
+                    insert into ${unpartitionedTable} values(1, 'Alice', 25);
                 """
+                sql """ insert into ${unpartitionedTable} values(2, 'Bob', 30) """
+                sql """ insert into ${unpartitionedTable} values(3, 'Charlie', 35) """
+
                 log.info("Inserted initial rows into ${unpartitionedTable}")
 
                 // Assert baseline:
@@ -232,12 +232,10 @@ suite("test_iceberg_v3_row_lineage_query_insert", "p0,external,iceberg,external_
                     )
                 """
 
-                sql """
-                    insert into ${partitionedTable} values
-                    (11, 'Penny', 21, '2024-01-01'),
-                    (12, 'Quinn', 22, '2024-01-02'),
-                    (13, 'Rita', 23, '2024-01-03')
-                """
+                sql """ insert into ${partitionedTable} values(11, 'Penny', 21, '2024-01-01')"""
+                sql """ insert into ${partitionedTable} values(12, 'Quinn', 22, '2024-01-02')"""
+                sql """ insert into ${partitionedTable} values(13, 'Rita', 23, '2024-01-03')"""        
+                
                 log.info("Inserted initial rows into ${partitionedTable}")
 
                 // Assert baseline:

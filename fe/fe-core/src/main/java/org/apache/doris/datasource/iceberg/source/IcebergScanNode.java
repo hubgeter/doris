@@ -159,7 +159,7 @@ public class IcebergScanNode extends FileQueryScanNode {
 
     private Boolean isBatchMode = null;
 
-    // ReferencedDataFile path -> List<DeleteFile> / List<TIcebergDeleteFileDesc>
+    // ReferencedDataFile path -> List<DeleteFile> / List<TIcebergDeleteFileDesc> (exclude equal delete)
     public Map<String, List<DeleteFile>> deleteFilesByReferencedDataFile = new HashMap<>();
     public Map<String, List<TIcebergDeleteFileDesc>> deleteFilesDescByReferencedDataFile = new HashMap<>();
 
@@ -324,8 +324,22 @@ public class IcebergScanNode extends FileQueryScanNode {
                 }
                 fileDesc.addToDeleteFiles(deleteFileDesc);
             }
-            deleteFilesByReferencedDataFile.put(icebergSplit.getOriginalPath(), icebergSplit.getDeleteFiles());
-            deleteFilesDescByReferencedDataFile.put(icebergSplit.getOriginalPath(), fileDesc.getDeleteFiles());
+
+            // Filter out equality delete files from deleteFilesByReferencedDataFile as well.
+            List<DeleteFile> nonEqualityDeleteFiles = new ArrayList<>();
+            for (DeleteFile df : icebergSplit.getDeleteFiles()) {
+                if (df.content() != FileContent.EQUALITY_DELETES) {
+                    nonEqualityDeleteFiles.add(df);
+                }
+            }
+            deleteFilesByReferencedDataFile.put(icebergSplit.getOriginalPath(), nonEqualityDeleteFiles);
+            List<TIcebergDeleteFileDesc> nonEqualityDeleteFileDesc = new ArrayList<>();
+            for (TIcebergDeleteFileDesc df : fileDesc.getDeleteFiles()) {
+                if (df.getContent() != EqualityDelete.type()) {
+                    nonEqualityDeleteFileDesc.add(df);
+                }
+            }
+            deleteFilesDescByReferencedDataFile.put(icebergSplit.getOriginalPath(), nonEqualityDeleteFileDesc);
         }
         tableFormatFileDesc.setIcebergParams(fileDesc);
         Map<String, String> partitionValues = icebergSplit.getIcebergPartitionValues();
