@@ -1232,16 +1232,31 @@ Status OrcReader::set_fill_columns(
                 TransactionalHive::READ_ROW_COLUMN_NAMES.end());
     }
 
+    auto check_iceberg_row_lineage_column_idx = [&](const auto& col_name) -> int {
+        if (_row_lineage_columns != nullptr) {
+            if (col_name == IcebergTableReader::ROW_LINEAGE_ROW_ID) {
+                return _row_lineage_columns->row_id_column_idx;
+            } else if (col_name == IcebergTableReader::ROW_LINEAGE_LAST_UPDATED_SEQ_NUMBER) {
+                return _row_lineage_columns->last_updated_sequence_number_column_idx;
+            }
+        }
+        return -1;
+    };
+
     for (auto& read_table_col : _read_table_cols) {
         _lazy_read_ctx.all_read_columns.emplace_back(read_table_col);
         if (!predicate_table_columns.empty()) {
             auto iter = predicate_table_columns.find(read_table_col);
             if (iter == predicate_table_columns.end()) {
-                if (!_is_acid ||
-                    std::find(TransactionalHive::READ_ROW_COLUMN_NAMES_LOWER_CASE.begin(),
-                              TransactionalHive::READ_ROW_COLUMN_NAMES_LOWER_CASE.end(),
-                              read_table_col) ==
-                            TransactionalHive::READ_ROW_COLUMN_NAMES_LOWER_CASE.end()) {
+                if (auto row_lineage_idx = check_iceberg_row_lineage_column_idx(read_table_col);
+                    row_lineage_idx != -1) {
+                    _lazy_read_ctx.predicate_columns.first.emplace_back(read_table_col);
+                    _lazy_read_ctx.all_predicate_col_ids.emplace_back(row_lineage_idx);
+                } else if (!_is_acid ||
+                           std::find(TransactionalHive::READ_ROW_COLUMN_NAMES_LOWER_CASE.begin(),
+                                     TransactionalHive::READ_ROW_COLUMN_NAMES_LOWER_CASE.end(),
+                                     read_table_col) ==
+                                   TransactionalHive::READ_ROW_COLUMN_NAMES_LOWER_CASE.end()) {
                     _lazy_read_ctx.lazy_read_columns.emplace_back(read_table_col);
                 }
             } else {
@@ -1265,20 +1280,23 @@ Status OrcReader::set_fill_columns(
 
     for (const auto& kv : missing_columns) {
         auto iter = predicate_table_columns.find(kv.first);
-        if (iter == predicate_table_columns.end()) {
-            _lazy_read_ctx.missing_columns.emplace(kv.first, kv.second);
-        } else {
+        if (iter != predicate_table_columns.end()) {
             //For check missing column :   missing column == xx, missing column is null,missing column is not null.
             if (_slot_id_to_filter_conjuncts->find(iter->second.second) !=
                 _slot_id_to_filter_conjuncts->end()) {
                 for (const auto& ctx :
                      _slot_id_to_filter_conjuncts->find(iter->second.second)->second) {
-                    _filter_conjuncts.emplace_back(ctx); //  todo ??????
+                    _filter_conjuncts.emplace_back(ctx);
                 }
             }
 
             // predicate_missing_columns is VLiteral.To fill in default values for missing columns.
             _lazy_read_ctx.predicate_missing_columns.emplace(kv.first, kv.second);
+        } else if (auto row_lineage_idx = check_iceberg_row_lineage_column_idx(kv.first);
+                   row_lineage_idx != -1) {
+            _lazy_read_ctx.predicate_missing_columns.emplace(kv.first, kv.second);
+        } else {
+            _lazy_read_ctx.missing_columns.emplace(kv.first, kv.second);
         }
     }
 

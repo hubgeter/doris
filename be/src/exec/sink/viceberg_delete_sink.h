@@ -93,7 +93,9 @@ private:
         std::string referenced_data_file;
         int32_t partition_spec_id = 0;
         std::string partition_data_json;
-        int64_t row_count = 0;
+        int64_t delete_count = 0; // The number of rows deleted in this delete operation.
+        int64_t merged_count =
+                0; // The number of rows after merging the old deletion vector and position delete.
         int64_t content_offset = 0;
         int64_t content_size_in_bytes = 0;
         std::vector<char> blob_data;

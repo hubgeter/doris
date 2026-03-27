@@ -522,13 +522,13 @@ TEST_F(VIcebergDeleteSinkTest, TestWriteDeletionVectorsToSingleSharedPuffin) {
     auto [file1_it, file1_inserted] =
             file_deletions.emplace("file1.parquet", IcebergFileDeletion(1, "[\"p=1\"]"));
     ASSERT_TRUE(file1_inserted);
-    file1_it->second.rows_to_delete.add(10);
-    file1_it->second.rows_to_delete.add(20);
+    file1_it->second.rows_to_delete.add((uint32_t)10);
+    file1_it->second.rows_to_delete.add((uint32_t)20);
 
     auto [file2_it, file2_inserted] =
             file_deletions.emplace("file2.parquet", IcebergFileDeletion(2, "[\"p=2\"]"));
     ASSERT_TRUE(file2_inserted);
-    file2_it->second.rows_to_delete.add(30);
+    file2_it->second.rows_to_delete.add((uint32_t)30);
 
     ASSERT_TRUE(sink->_write_deletion_vector_files(file_deletions).ok());
     ASSERT_EQ(2, sink->_commit_data_list.size());

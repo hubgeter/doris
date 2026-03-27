@@ -53,8 +53,8 @@ constexpr const char* ICEBERG_FILE_PATH = "file_path";
 constexpr const char* ICEBERG_ROW_POS = "pos";
 
 const std::vector<std::string> DELETE_COL_NAMES {ICEBERG_FILE_PATH, ICEBERG_ROW_POS};
-const std::unordered_map<std::string, uint32_t> DELETE_COL_NAME_TO_BLOCK_IDX = {
-        {ICEBERG_FILE_PATH, 0}, {ICEBERG_ROW_POS, 1}};
+std::unordered_map<std::string, uint32_t> DELETE_COL_NAME_TO_BLOCK_IDX = {{ICEBERG_FILE_PATH, 0},
+                                                                          {ICEBERG_ROW_POS, 1}};
 
 Status validate_position_delete_file_format(const TIcebergDeleteFileDesc& delete_file,
                                             TFileFormatType::type* file_format) {
@@ -120,11 +120,11 @@ Status init_parquet_delete_reader(ParquetReader* reader, bool* dictionary_coded)
         return Status::InvalidArgument("invalid parquet delete reader arguments");
     }
 
-    auto name_to_block_idx = DELETE_COL_NAME_TO_BLOCK_IDX;
     phmap::flat_hash_map<int, std::vector<std::shared_ptr<ColumnPredicate>>> slot_id_to_predicates;
-    RETURN_IF_ERROR(reader->init_reader(
-            DELETE_COL_NAMES, &name_to_block_idx, {}, slot_id_to_predicates, nullptr, nullptr,
-            nullptr, nullptr, nullptr, TableSchemaChangeHelper::ConstNode::get_instance(), false));
+    RETURN_IF_ERROR(reader->init_reader(DELETE_COL_NAMES, &DELETE_COL_NAME_TO_BLOCK_IDX, {},
+                                        slot_id_to_predicates, nullptr, nullptr, nullptr, nullptr,
+                                        nullptr, TableSchemaChangeHelper::ConstNode::get_instance(),
+                                        false));
 
     std::unordered_map<std::string, std::tuple<std::string, const SlotDescriptor*>>
             partition_columns;
@@ -148,9 +148,8 @@ Status init_orc_delete_reader(OrcReader* reader) {
         return Status::InvalidArgument("orc delete reader is null");
     }
 
-    auto name_to_block_idx = DELETE_COL_NAME_TO_BLOCK_IDX;
-    RETURN_IF_ERROR(reader->init_reader(&DELETE_COL_NAMES, &name_to_block_idx, {}, false, nullptr,
-                                        nullptr, nullptr, nullptr,
+    RETURN_IF_ERROR(reader->init_reader(&DELETE_COL_NAMES, &DELETE_COL_NAME_TO_BLOCK_IDX, {}, false,
+                                        nullptr, nullptr, nullptr, nullptr,
                                         TableSchemaChangeHelper::ConstNode::get_instance()));
 
     std::unordered_map<std::string, std::tuple<std::string, const SlotDescriptor*>>

@@ -575,8 +575,9 @@ Status VIcebergDeleteSink::_write_deletion_vector_files(
         if (deletion.rows_to_delete.isEmpty()) {
             continue;
         }
-
         roaring::Roaring64Map merged_rows = deletion.rows_to_delete;
+        DeletionVectorBlob blob;
+        blob.delete_count = static_cast<int64_t>(merged_rows.cardinality());
         auto previous_delete_it = _rewritable_delete_files.find(data_file_path);
         if (previous_delete_it != _rewritable_delete_files.end()) {
             roaring::Roaring64Map previous_rows;
@@ -587,11 +588,10 @@ Status VIcebergDeleteSink::_write_deletion_vector_files(
         }
 
         size_t bitmap_size = merged_rows.getSizeInBytes();
-        DeletionVectorBlob blob;
         blob.referenced_data_file = data_file_path;
         blob.partition_spec_id = deletion.partition_spec_id;
         blob.partition_data_json = deletion.partition_data_json;
-        blob.row_count = static_cast<int64_t>(merged_rows.cardinality());
+        blob.merged_count = static_cast<int64_t>(merged_rows.cardinality());
         blob.content_size_in_bytes = static_cast<int64_t>(4 + 4 + bitmap_size + 4);
         blob.blob_data.resize(static_cast<size_t>(blob.content_size_in_bytes));
         merged_rows.write(blob.blob_data.data() + 8);
@@ -620,7 +620,7 @@ Status VIcebergDeleteSink::_write_deletion_vector_files(
     for (const auto& blob : blobs) {
         TIcebergCommitData commit_data;
         commit_data.__set_file_path(puffin_path);
-        commit_data.__set_row_count(blob.row_count);
+        commit_data.__set_row_count(blob.delete_count);
         commit_data.__set_file_size(puffin_file_size);
         commit_data.__set_file_content(TFileContent::DELETION_VECTOR);
         commit_data.__set_content_offset(blob.content_offset);
@@ -711,7 +711,7 @@ std::string VIcebergDeleteSink::_build_puffin_footer_json(
         writer.Key("referenced-data-file");
         writer.String(blob.referenced_data_file.c_str(),
                       static_cast<rapidjson::SizeType>(blob.referenced_data_file.size()));
-        std::string cardinality = std::to_string(blob.row_count);
+        std::string cardinality = std::to_string(blob.merged_count);
         writer.Key("cardinality");
         writer.String(cardinality.c_str(), static_cast<rapidjson::SizeType>(cardinality.size()));
         writer.EndObject();
