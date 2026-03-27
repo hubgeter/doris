@@ -66,7 +66,8 @@ Status validate_position_delete_file_format(const TIcebergDeleteFileDesc& delete
     }
     if (delete_file.file_format != TFileFormatType::FORMAT_PARQUET &&
         delete_file.file_format != TFileFormatType::FORMAT_ORC) {
-        return Status::NotSupported("Unsupported Iceberg delete file format {}", delete_file.file_format);
+        return Status::NotSupported("Unsupported Iceberg delete file format {}",
+                                    delete_file.file_format);
     }
     *file_format = delete_file.file_format;
     return Status::OK();
@@ -95,9 +96,8 @@ Status visit_position_delete_block(const Block& block, size_t read_rows,
     if (const auto* string_column = check_and_get_column<ColumnString>(path_column);
         string_column != nullptr) {
         for (size_t i = 0; i < read_rows; ++i) {
-            RETURN_IF_ERROR(
-                    visitor->visit(string_column->get_data_at(i).to_string(),
-                                   pos_column->get_element(i)));
+            RETURN_IF_ERROR(visitor->visit(string_column->get_data_at(i).to_string(),
+                                           pos_column->get_element(i)));
         }
         return Status::OK();
     }
@@ -124,8 +124,7 @@ Status init_parquet_delete_reader(ParquetReader* reader, bool* dictionary_coded)
     phmap::flat_hash_map<int, std::vector<std::shared_ptr<ColumnPredicate>>> slot_id_to_predicates;
     RETURN_IF_ERROR(reader->init_reader(
             DELETE_COL_NAMES, &name_to_block_idx, {}, slot_id_to_predicates, nullptr, nullptr,
-            nullptr, nullptr, nullptr, TableSchemaChangeHelper::ConstNode::get_instance(),
-            false));
+            nullptr, nullptr, nullptr, TableSchemaChangeHelper::ConstNode::get_instance(), false));
 
     std::unordered_map<std::string, std::tuple<std::string, const SlotDescriptor*>>
             partition_columns;
@@ -150,9 +149,9 @@ Status init_orc_delete_reader(OrcReader* reader) {
     }
 
     auto name_to_block_idx = DELETE_COL_NAME_TO_BLOCK_IDX;
-    RETURN_IF_ERROR(reader->init_reader(&DELETE_COL_NAMES, &name_to_block_idx, {}, false,
-                                            nullptr, nullptr, nullptr, nullptr,
-                                            TableSchemaChangeHelper::ConstNode::get_instance()));
+    RETURN_IF_ERROR(reader->init_reader(&DELETE_COL_NAMES, &name_to_block_idx, {}, false, nullptr,
+                                        nullptr, nullptr, nullptr,
+                                        TableSchemaChangeHelper::ConstNode::get_instance()));
 
     std::unordered_map<std::string, std::tuple<std::string, const SlotDescriptor*>>
             partition_columns;
@@ -244,9 +243,9 @@ Status read_iceberg_position_delete_file(const TIcebergDeleteFileDesc& delete_fi
     RETURN_IF_ERROR(validate_position_delete_file_format(delete_file, &file_format));
 
     if (file_format == TFileFormatType::FORMAT_PARQUET) {
-        ParquetReader reader(options.profile, *options.scan_params, delete_range, options.batch_size,
-                             &options.state->timezone_obj(), options.io_ctx, options.state,
-                             options.meta_cache);
+        ParquetReader reader(options.profile, *options.scan_params, delete_range,
+                             options.batch_size, &options.state->timezone_obj(), options.io_ctx,
+                             options.state, options.meta_cache);
         bool dictionary_coded = false;
         RETURN_IF_ERROR(init_parquet_delete_reader(&reader, &dictionary_coded));
 
@@ -258,8 +257,9 @@ Status read_iceberg_position_delete_file(const TIcebergDeleteFileDesc& delete_fi
                         ColumnDictI32::create(FieldType::OLAP_FIELD_TYPE_VARCHAR),
                         std::make_shared<DataTypeString>(), ICEBERG_FILE_PATH));
             } else {
-                block.insert(ColumnWithTypeAndName(
-                        ColumnString::create(), std::make_shared<DataTypeString>(), ICEBERG_FILE_PATH));
+                block.insert(ColumnWithTypeAndName(ColumnString::create(),
+                                                   std::make_shared<DataTypeString>(),
+                                                   ICEBERG_FILE_PATH));
             }
             block.insert(ColumnWithTypeAndName(ColumnInt64::create(),
                                                std::make_shared<DataTypeInt64>(), ICEBERG_ROW_POS));
@@ -311,12 +311,13 @@ Status read_iceberg_deletion_vector(const TIcebergDeleteFileDesc& delete_file,
     delete_range.start_offset = delete_file.content_offset;
     delete_range.size = delete_file.content_size_in_bytes;
 
-    DeletionVectorReader dv_reader(options.state, options.profile, *options.scan_params, delete_range,
-                                   options.io_ctx);
+    DeletionVectorReader dv_reader(options.state, options.profile, *options.scan_params,
+                                   delete_range, options.io_ctx);
     RETURN_IF_ERROR(dv_reader.open());
 
     std::vector<char> buf(delete_range.size);
-    RETURN_IF_ERROR(dv_reader.read_at(delete_range.start_offset, {buf.data(), cast_set<size_t>(delete_range.size)}));
+    RETURN_IF_ERROR(dv_reader.read_at(delete_range.start_offset,
+                                      {buf.data(), cast_set<size_t>(delete_range.size)}));
     return decode_deletion_vector_buffer(buf.data(), delete_range.size, rows_to_delete);
 }
 

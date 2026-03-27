@@ -45,9 +45,9 @@
 #include "format/parquet/schema_desc.h"
 #include "format/parquet/vparquet_column_chunk_reader.h"
 #include "format/table/deletion_vector_reader.h"
-#include "format/table/iceberg_delete_file_reader_helper.h"
 #include "format/table/iceberg/iceberg_orc_nested_column_utils.h"
 #include "format/table/iceberg/iceberg_parquet_nested_column_utils.h"
+#include "format/table/iceberg_delete_file_reader_helper.h"
 #include "format/table/nested_column_access_helper.h"
 #include "format/table/table_format_reader.h"
 #include "runtime/runtime_state.h"
@@ -79,7 +79,8 @@ public:
             std::allocator<std::pair<const std::string, std::unique_ptr<DeleteRows>>>, 8,
             std::mutex>;
 
-    explicit GroupedDeleteRowsVisitor(DeleteFile* position_delete) : _position_delete(position_delete) {}
+    explicit GroupedDeleteRowsVisitor(DeleteFile* position_delete)
+            : _position_delete(position_delete) {}
 
     Status visit(const std::string& file_path, int64_t pos) override {
         if (_position_delete == nullptr) {

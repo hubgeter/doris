@@ -175,9 +175,7 @@ public:
     void set_iceberg_rowid_params(const std::string& file_path, int32_t partition_spec_id,
                                   const std::string& partition_data_json, int row_id_column_pos);
 
-
-    void set_row_lineage_columns(
-            std::shared_ptr<RowLineageColumns> row_lineage_columns) {
+    void set_row_lineage_columns(std::shared_ptr<RowLineageColumns> row_lineage_columns) {
         _row_lineage_columns = std::move(row_lineage_columns);
     }
 

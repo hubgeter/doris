@@ -73,7 +73,8 @@ struct RowLineageColumns {
 class IcebergTableReader : public TableFormatReader, public TableSchemaChangeHelper {
 public:
     static constexpr const char* ROW_LINEAGE_ROW_ID = "_row_id";
-    static constexpr const char* ROW_LINEAGE_LAST_UPDATED_SEQ_NUMBER = "_last_updated_sequence_number";
+    static constexpr const char* ROW_LINEAGE_LAST_UPDATED_SEQ_NUMBER =
+            "_last_updated_sequence_number";
 
     IcebergTableReader(std::unique_ptr<GenericReader> file_format_reader, RuntimeProfile* profile,
                        RuntimeState* state, const TFileScanRangeParams& params,
@@ -104,7 +105,6 @@ public:
     void set_row_lineage_columns(std::shared_ptr<RowLineageColumns> row_lineage_columns) {
         _row_lineage_columns = std::move(row_lineage_columns);
     }
-
 
 protected:
     struct IcebergProfile {

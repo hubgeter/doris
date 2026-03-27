@@ -1721,7 +1721,8 @@ Status FileScanner::_init_expr_ctxes() {
         }
 
         if (it->second->col_name() == IcebergTableReader::ROW_LINEAGE_LAST_UPDATED_SEQ_NUMBER) {
-            _row_lineage_columns.last_updated_sequence_number_column_idx = _default_val_row_desc->get_column_id(slot_id);
+            _row_lineage_columns.last_updated_sequence_number_column_idx =
+                    _default_val_row_desc->get_column_id(slot_id);
         }
 
         if (slot_info.is_file_slot) {

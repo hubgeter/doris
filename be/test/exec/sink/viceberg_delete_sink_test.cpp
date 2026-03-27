@@ -508,8 +508,8 @@ TEST_F(VIcebergDeleteSinkTest, TestUnsupportedDeleteType) {
 }
 
 TEST_F(VIcebergDeleteSinkTest, TestWriteDeletionVectorsToSingleSharedPuffin) {
-    std::filesystem::path temp_dir =
-            std::filesystem::temp_directory_path() / ("iceberg_delete_sink_test_" + generate_uuid_string());
+    std::filesystem::path temp_dir = std::filesystem::temp_directory_path() /
+                                     ("iceberg_delete_sink_test_" + generate_uuid_string());
     ASSERT_TRUE(std::filesystem::create_directories(temp_dir));
 
     TDataSink t_data_sink = build_local_delete_sink(temp_dir.string(), 3);
@@ -550,7 +550,8 @@ TEST_F(VIcebergDeleteSinkTest, TestWriteDeletionVectorsToSingleSharedPuffin) {
 
     std::ifstream input(first_commit.file_path, std::ios::binary);
     ASSERT_TRUE(input.good());
-    std::string file_bytes((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    std::string file_bytes((std::istreambuf_iterator<char>(input)),
+                           std::istreambuf_iterator<char>());
     ASSERT_EQ(static_cast<size_t>(first_commit.file_size), file_bytes.size());
     ASSERT_GE(file_bytes.size(), 16);
     ASSERT_EQ("PFA1", std::string(file_bytes.data(), 4));

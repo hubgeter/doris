@@ -27,11 +27,13 @@ import org.apache.doris.datasource.iceberg.IcebergExternalTable;
 import org.apache.doris.datasource.iceberg.IcebergTransaction;
 import org.apache.doris.datasource.iceberg.source.IcebergScanNode;
 import org.apache.doris.nereids.NereidsPlanner;
+import org.apache.doris.planner.BaseExternalTableDataSink;
 import org.apache.doris.planner.IcebergDeleteSink;
 import org.apache.doris.planner.PlanNodeId;
 import org.apache.doris.planner.ScanContext;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.qe.SessionVariable;
+import org.apache.doris.thrift.TDataSink;
 import org.apache.doris.thrift.TIcebergDeleteFileDesc;
 import org.apache.doris.thrift.TUniqueId;
 import org.apache.doris.transaction.TransactionManager;
@@ -50,6 +52,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
+import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -96,9 +99,10 @@ public class IcebergDeleteExecutorTest {
         IcebergDeleteSink sink = new IcebergDeleteSink(table, new org.apache.doris.nereids.trees.plans.commands.delete.DeleteCommandContext());
 
         executor.finalizeSinkForDelete(null, sink, null);
-        Assertions.assertEquals(1, sink.tDataSink.getIcebergDeleteSink().getRewritableDeleteFileSetsSize());
+        TDataSink tDataSink = getTDataSink(sink);
+        Assertions.assertEquals(1, tDataSink.getIcebergDeleteSink().getRewritableDeleteFileSetsSize());
         Assertions.assertEquals(referencedDataFile,
-                sink.tDataSink.getIcebergDeleteSink().getRewritableDeleteFileSets().get(0).getReferencedDataFilePath());
+                tDataSink.getIcebergDeleteSink().getRewritableDeleteFileSets().get(0).getReferencedDataFilePath());
 
         executor.txnId = 10L;
         executor.beforeExec();
@@ -159,5 +163,11 @@ public class IcebergDeleteExecutorTest {
         Mockito.when(table.getName()).thenReturn("tbl");
         Mockito.when(table.getIcebergTable()).thenReturn(icebergTable);
         return table;
+    }
+
+    private static TDataSink getTDataSink(BaseExternalTableDataSink sink) throws ReflectiveOperationException {
+        Field field = BaseExternalTableDataSink.class.getDeclaredField("tDataSink");
+        field.setAccessible(true);
+        return (TDataSink) field.get(sink);
     }
 }

@@ -23,8 +23,8 @@
 #include "core/column/column_const.h"
 #include "core/column/column_nullable.h"
 #include "core/column/column_vector.h"
-#include "core/data_type_serde/data_type_serde.h"
 #include "core/data_type/data_type_nullable.h"
+#include "core/data_type_serde/data_type_serde.h"
 #include "exec/sink/writer/iceberg/partition_transformers.h"
 #include "exec/sink/writer/iceberg/viceberg_partition_writer.h"
 #include "exec/sink/writer/iceberg/viceberg_sort_writer.h"
@@ -224,8 +224,8 @@ Status VIcebergTableWriter::_process_row_lineage_columns(Block& block) {
     if (_write_type != TIcebergWriteType::INSERT) {
         return Status::OK();
     }
-    if (_last_updated_seq_num_column_idx < 0
-            || _last_updated_seq_num_column_idx >= static_cast<int>(block.columns())) {
+    if (_last_updated_seq_num_column_idx < 0 ||
+        _last_updated_seq_num_column_idx >= static_cast<int>(block.columns())) {
         return Status::OK();
     }
 

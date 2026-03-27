@@ -26,11 +26,11 @@
 #include <vector>
 
 #include "common/status.h"
-#include "roaring/roaring64map.hh"
 #include "core/block/block.h"
 #include "exec/sink/writer/async_result_writer.h"
 #include "exec/sink/writer/iceberg/viceberg_delete_file_writer.h"
 #include "exprs/vexpr_fwd.h"
+#include "roaring/roaring64map.hh"
 #include "runtime/runtime_profile.h"
 
 namespace doris {
@@ -100,8 +100,7 @@ private:
     };
 
     Status _write_puffin_file(const std::string& puffin_path,
-                              std::vector<DeletionVectorBlob>* blobs,
-                              int64_t* out_file_size);
+                              std::vector<DeletionVectorBlob>* blobs, int64_t* out_file_size);
 
     std::string _build_puffin_footer_json(const std::vector<DeletionVectorBlob>& blobs);
 

@@ -206,8 +206,6 @@ public:
         _iceberg_rowid_params = params;
     }
 
-
-
     void set_row_lineage_columns(std::shared_ptr<RowLineageColumns> row_lineage_columns) {
         _row_lineage_columns = std::move(row_lineage_columns);
     }

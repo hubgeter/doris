@@ -170,10 +170,10 @@ Status VIcebergDeleteSink::init_properties(ObjectPool* pool) {
     // for merge old deletion vector and old position delete to a new deletion vector.
     if (_format_version >= 3 && delete_sink.__isset.rewritable_delete_file_sets) {
         for (const auto& delete_file_set : delete_sink.rewritable_delete_file_sets) {
-            if (!delete_file_set.__isset.referenced_data_file_path
-                    || !delete_file_set.__isset.delete_files
-                    || delete_file_set.referenced_data_file_path.empty()
-                    || delete_file_set.delete_files.empty()) {
+            if (!delete_file_set.__isset.referenced_data_file_path ||
+                !delete_file_set.__isset.delete_files ||
+                delete_file_set.referenced_data_file_path.empty() ||
+                delete_file_set.delete_files.empty()) {
                 continue;
             }
             _rewritable_delete_files.emplace(delete_file_set.referenced_data_file_path,
@@ -568,7 +568,6 @@ std::string VIcebergDeleteSink::_get_file_extension() const {
     return fmt::format("{}{}", compress_name, file_format_name);
 }
 
-
 Status VIcebergDeleteSink::_write_deletion_vector_files(
         const std::map<std::string, IcebergFileDeletion>& file_deletions) {
     std::vector<DeletionVectorBlob> blobs;
@@ -676,8 +675,8 @@ Status VIcebergDeleteSink::_write_puffin_file(const std::string& puffin_path,
             Slice(reinterpret_cast<const uint8_t*>(footer_size_buf), sizeof(footer_size_buf))));
 
     char flags[4] = {0, 0, 0, 0};
-    RETURN_IF_ERROR(file_writer->append(
-            Slice(reinterpret_cast<const uint8_t*>(flags), sizeof(flags))));
+    RETURN_IF_ERROR(
+            file_writer->append(Slice(reinterpret_cast<const uint8_t*>(flags), sizeof(flags))));
     RETURN_IF_ERROR(file_writer->append(Slice(reinterpret_cast<const uint8_t*>(PUFFIN_MAGIC), 4)));
     RETURN_IF_ERROR(file_writer->close());
 
