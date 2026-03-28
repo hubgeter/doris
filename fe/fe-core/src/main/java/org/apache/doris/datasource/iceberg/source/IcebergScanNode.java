@@ -291,6 +291,7 @@ public class IcebergScanNode extends FileQueryScanNode {
         if (formatVersion < MIN_DELETE_FILE_SUPPORT_VERSION) {
             fileDesc.setContent(FileContent.DATA.id());
         } else {
+            fileDesc.setDeleteFiles(new ArrayList<>());
             for (IcebergDeleteFileFilter filter : icebergSplit.getDeleteFileFilters()) {
                 TIcebergDeleteFileDesc deleteFileDesc = new TIcebergDeleteFileDesc();
                 String deleteFilePath = filter.getDeleteFilePath();
@@ -815,7 +816,8 @@ public class IcebergScanNode extends FileQueryScanNode {
             // _row_id and _last_updated_sequence_number column is NULL.
             split.setFirstRowId(dataFile.firstRowId() != null ? dataFile.firstRowId() : -1);
             split.setLastUpdatedSequenceNumber(
-                    dataFile.fileSequenceNumber() != null ? dataFile.fileSequenceNumber() : -1);
+                    dataFile.fileSequenceNumber() != null && dataFile.firstRowId() != null
+                            ? dataFile.fileSequenceNumber() : -1);
         }
         if (!fileScanTask.deletes().isEmpty()) {
             split.setDeleteFileFilters(fileScanTask.deletes(), getDeleteFileFilters(fileScanTask));

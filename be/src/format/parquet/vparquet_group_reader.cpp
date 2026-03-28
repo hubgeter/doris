@@ -1107,8 +1107,7 @@ Status RowGroupReader::_fill_row_id_columns(Block* block, size_t read_rows,
 
     if (_row_lineage_columns != nullptr &&
         _row_lineage_columns->has_last_updated_sequence_number_column() &&
-        _row_lineage_columns->last_updated_sequence_number >= 0 &&
-        _row_lineage_columns->first_row_id >= 0 && _row_lineage_columns->need_row_ids()) {
+        _row_lineage_columns->last_updated_sequence_number >= 0) {
         auto col = block->get_by_position(
                                 _row_lineage_columns->last_updated_sequence_number_column_idx)
                            .column->assume_mutable();

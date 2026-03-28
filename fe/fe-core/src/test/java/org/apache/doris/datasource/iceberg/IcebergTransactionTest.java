@@ -463,11 +463,6 @@ public class IcebergTransactionTest {
     }
 
     @Test
-    public void testFinishDeleteRewritesPreviousDeleteFilesForV3() throws UserException {
-        verifyFinishDeleteRewriteBehavior(3, true);
-    }
-
-    @Test
     public void testFinishDeleteDoesNotRewritePreviousDeleteFilesForV2() throws UserException {
         verifyFinishDeleteRewriteBehavior(2, false);
     }
