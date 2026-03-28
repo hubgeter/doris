@@ -412,6 +412,7 @@ struct TIcebergColumnStats {
 
 struct TIcebergCommitData {
     1: optional string file_path
+    // File-level record count used to construct Iceberg data/delete file metadata.
     2: optional i64 row_count
     3: optional i64 file_size
     4: optional TFileContent file_content
@@ -430,6 +431,8 @@ struct TIcebergCommitData {
     12: optional i64 content_offset
     // For deletion vector (V3): size of the DV blob in bytes
     13: optional i64 content_size_in_bytes
+    // Rows newly affected by the current statement for this commit item.
+    14: optional i64 affected_rows
 }
 
 struct TSortField {

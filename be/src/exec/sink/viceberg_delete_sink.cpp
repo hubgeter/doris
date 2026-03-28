@@ -620,7 +620,8 @@ Status VIcebergDeleteSink::_write_deletion_vector_files(
     for (const auto& blob : blobs) {
         TIcebergCommitData commit_data;
         commit_data.__set_file_path(puffin_path);
-        commit_data.__set_row_count(blob.delete_count);
+        commit_data.__set_row_count(blob.merged_count);
+        commit_data.__set_affected_rows(blob.delete_count);
         commit_data.__set_file_size(puffin_file_size);
         commit_data.__set_file_content(TFileContent::DELETION_VECTOR);
         commit_data.__set_content_offset(blob.content_offset);
@@ -718,6 +719,11 @@ std::string VIcebergDeleteSink::_build_puffin_footer_json(
         writer.EndObject();
     }
     writer.EndArray();
+    writer.Key("properties");
+    writer.StartObject();
+    writer.Key("created-by");
+    writer.String("doris-puffin-v1");
+    writer.EndObject();
     writer.EndObject();
     return {buffer.GetString(), buffer.GetSize()};
 }

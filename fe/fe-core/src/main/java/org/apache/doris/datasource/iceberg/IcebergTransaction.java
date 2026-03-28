@@ -563,12 +563,15 @@ public class IcebergTransaction implements Transaction {
         long dataRows = 0;
         long deleteRows = 0;
         for (TIcebergCommitData commitData : commitDataList) {
+            long affectedRows = commitData.isSetAffectedRows()
+                    ? commitData.getAffectedRows()
+                    : commitData.getRowCount();
             if (commitData.isSetFileContent()
                     && (commitData.getFileContent() == TFileContent.POSITION_DELETES
                     || commitData.getFileContent() == TFileContent.DELETION_VECTOR)) {
-                deleteRows += commitData.getRowCount();
+                deleteRows += affectedRows;
             } else {
-                dataRows += commitData.getRowCount();
+                dataRows += affectedRows;
             }
         }
         // For UPDATE/MERGE, dataRows includes both inserted and update-inserted rows,
