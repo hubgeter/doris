@@ -217,13 +217,19 @@ Status RowGroupReader::init(
         const std::vector<int>& predicate_col_slot_ids = _lazy_read_ctx.predicate_columns.second;
         for (size_t i = 0; i < predicate_col_names.size(); ++i) {
             const std::string& predicate_col_name = predicate_col_names[i];
+            int slot_id = predicate_col_slot_ids[i];
             if (predicate_col_name == IcebergTableReader::ROW_LINEAGE_ROW_ID ||
                 predicate_col_name == IcebergTableReader::ROW_LINEAGE_LAST_UPDATED_SEQ_NUMBER) {
                 // row lineage column can not dict filter.
+                if (_slot_id_to_filter_conjuncts->find(slot_id) !=
+                    _slot_id_to_filter_conjuncts->end()) {
+                    for (auto& ctx : _slot_id_to_filter_conjuncts->at(slot_id)) {
+                        _filter_conjuncts.push_back(ctx);
+                    }
+                }
                 continue;
             }
 
-            int slot_id = predicate_col_slot_ids[i];
             auto predicate_file_col_name =
                     _table_info_node_ptr->children_file_column_name(predicate_col_name);
             auto field = schema.get_column(predicate_file_col_name);
