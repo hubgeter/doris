@@ -244,8 +244,8 @@ Status read_iceberg_position_delete_file(const TIcebergDeleteFileDesc& delete_fi
     if (file_format == TFileFormatType::FORMAT_PARQUET) {
         ParquetReader reader(options.profile, *options.scan_params, delete_range,
                              options.batch_size,
-                             const_cast<cctz::time_zone*>(&_state->timezone_obj()), options.io_ctx,
-                             options.state, options.meta_cache);
+                             const_cast<cctz::time_zone*>(&options.state->timezone_obj()),
+                             options.io_ctx, options.state, options.meta_cache);
         bool dictionary_coded = false;
         RETURN_IF_ERROR(init_parquet_delete_reader(&reader, &dictionary_coded));
 

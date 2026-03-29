@@ -262,7 +262,7 @@ public class IcebergUtils {
                     Types.NestedField nestedField = getPushdownField(schema, colName);
                     if (nestedField == null) {
                         return null;
-                    }                    
+                    }
                     colName = nestedField.name();
                     Object value = extractDorisLiteral(nestedField.type(), literalExpr);
                     if (value == null) {
