@@ -2549,21 +2549,6 @@ Status OrcReader::_get_next_block_impl(Block* block, size_t* read_rows, bool* eo
         *read_rows = 0;
         return Status::OK();
     }
-    if (_push_down_agg_type == TPushAggOp::type::COUNT) {
-        auto rows = std::min(get_remaining_rows(), (int64_t)_batch_size);
-
-        set_remaining_rows(get_remaining_rows() - rows);
-        auto mutate_columns = block->mutate_columns();
-        for (auto& col : mutate_columns) {
-            col->resize(rows);
-        }
-        block->set_columns(std::move(mutate_columns));
-        *read_rows = rows;
-        if (get_remaining_rows() == 0) {
-            *eof = true;
-        }
-        return Status::OK();
-    }
 
     if (!_seek_to_read_one_line()) {
         *eof = true;
