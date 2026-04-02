@@ -199,6 +199,28 @@ public class JdbcResourceTest {
     }
 
     @Test
+    public void testHandleJdbcUrlForOceanBaseNewDriver() throws DdlException {
+        String inputUrl = "jdbc:oceanbase://127.0.0.1:2881/doris_test";
+        String driverUrl = "file:///tmp/oceanbase-client-2.4.17.jar";
+
+        String resultUrl = JdbcResource.handleJdbcUrl(inputUrl, driverUrl);
+
+        Assert.assertTrue(resultUrl.contains("useCursorFetch=true"));
+        Assert.assertTrue(resultUrl.contains("useLegacyDatetimeCode=false"));
+    }
+
+    @Test
+    public void testHandleJdbcUrlForOceanBaseLegacyDriver() throws DdlException {
+        String inputUrl = "jdbc:oceanbase://127.0.0.1:2881/doris_test";
+        String driverUrl = "file:///tmp/oceanbase-client-2.4.8.jar";
+
+        String resultUrl = JdbcResource.handleJdbcUrl(inputUrl, driverUrl);
+
+        Assert.assertTrue(resultUrl.contains("useCursorFetch=true"));
+        Assert.assertFalse(resultUrl.contains("useLegacyDatetimeCode=false"));
+    }
+
+    @Test
     public void testValidDriverUrls() {
         String fileUrl = "file://path/to/driver.jar";
         Assertions.assertDoesNotThrow(() -> {

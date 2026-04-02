@@ -159,7 +159,7 @@ public class JdbcExternalCatalog extends ExternalCatalog {
         }
         String jdbcUrl = properties.getOrDefault(JdbcResource.JDBC_URL, "");
         if (!Strings.isNullOrEmpty(jdbcUrl)) {
-            jdbcUrl = JdbcResource.handleJdbcUrl(jdbcUrl);
+            jdbcUrl = JdbcResource.handleJdbcUrl(jdbcUrl, properties.get(JdbcResource.DRIVER_URL));
             properties.put(JdbcResource.JDBC_URL, jdbcUrl);
         }
         return properties;

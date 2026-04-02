@@ -52,6 +52,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * External JDBC Catalog resource for external table query.
@@ -163,6 +165,8 @@ public class JdbcResource extends Resource {
 
     // timeout for both connection and read. 10 seconds is long enough.
     private static final int HTTP_TIMEOUT_MS = 10000;
+    private static final Pattern OCEANBASE_DRIVER_VERSION_PATTERN =
+            Pattern.compile("oceanbase-client-(\\d+(?:\\.\\d+){1,3})\\.jar", Pattern.CASE_INSENSITIVE);
     @SerializedName(value = "configs")
     private Map<String, String> configs;
 
@@ -185,7 +189,7 @@ public class JdbcResource extends Resource {
         for (String propertyKey : ALL_PROPERTIES) {
             replaceIfEffectiveValue(this.configs, propertyKey, properties.get(propertyKey));
         }
-        this.configs.put(JDBC_URL, handleJdbcUrl(getProperty(JDBC_URL)));
+        this.configs.put(JDBC_URL, handleJdbcUrl(getProperty(JDBC_URL), getProperty(DRIVER_URL)));
         super.modifyProperties(properties);
     }
 
@@ -216,7 +220,7 @@ public class JdbcResource extends Resource {
                 throw new DdlException("JdbcResource Missing " + property + " in properties");
             }
         }
-        this.configs.put(JDBC_URL, handleJdbcUrl(getProperty(JDBC_URL)));
+        this.configs.put(JDBC_URL, handleJdbcUrl(getProperty(JDBC_URL), getProperty(DRIVER_URL)));
         configs.put(CHECK_SUM, computeObjectChecksum(getProperty(DRIVER_URL)));
     }
 
@@ -396,6 +400,10 @@ public class JdbcResource extends Resource {
     }
 
     public static String handleJdbcUrl(String jdbcUrl) throws DdlException {
+        return handleJdbcUrl(jdbcUrl, null);
+    }
+
+    public static String handleJdbcUrl(String jdbcUrl, String driverUrl) throws DdlException {
         // delete all space in jdbcUrl
         String newJdbcUrl = jdbcUrl.replaceAll(" ", "");
         String dbType = parseDbType(newJdbcUrl);
@@ -415,6 +423,10 @@ public class JdbcResource extends Resource {
             if (dbType.equals(OCEANBASE)) {
                 // set useCursorFetch to true
                 newJdbcUrl = checkAndSetJdbcBoolParam(dbType, newJdbcUrl, "useCursorFetch", "false", "true");
+                if (shouldDisableOceanBaseLegacyDatetimeCode(driverUrl)) {
+                    newJdbcUrl = checkAndSetJdbcBoolParam(dbType, newJdbcUrl,
+                            "useLegacyDatetimeCode", "true", "false");
+                }
             }
         }
         if (dbType.equals(POSTGRESQL)) {
@@ -427,6 +439,31 @@ public class JdbcResource extends Resource {
             newJdbcUrl = checkAndSetJdbcBoolParam(dbType, newJdbcUrl, "useBulkCopyForBatchInsert", "false", "true");
         }
         return newJdbcUrl;
+    }
+
+    private static boolean shouldDisableOceanBaseLegacyDatetimeCode(String driverUrl) {
+        if (driverUrl == null || driverUrl.isEmpty()) {
+            return false;
+        }
+        Matcher matcher = OCEANBASE_DRIVER_VERSION_PATTERN.matcher(driverUrl);
+        if (!matcher.find()) {
+            return false;
+        }
+        return compareVersion(matcher.group(1), "2.4.15") >= 0;
+    }
+
+    private static int compareVersion(String leftVersion, String rightVersion) {
+        String[] left = leftVersion.split("\\.");
+        String[] right = rightVersion.split("\\.");
+        int maxLength = Math.max(left.length, right.length);
+        for (int i = 0; i < maxLength; i++) {
+            int leftPart = i < left.length ? Integer.parseInt(left[i]) : 0;
+            int rightPart = i < right.length ? Integer.parseInt(right[i]) : 0;
+            if (leftPart != rightPart) {
+                return Integer.compare(leftPart, rightPart);
+            }
+        }
+        return 0;
     }
 
     /**

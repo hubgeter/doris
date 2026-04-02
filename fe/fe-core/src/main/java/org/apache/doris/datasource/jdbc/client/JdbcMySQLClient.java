@@ -18,11 +18,13 @@
 package org.apache.doris.datasource.jdbc.client;
 
 import org.apache.doris.catalog.ArrayType;
+import org.apache.doris.catalog.JdbcResource;
 import org.apache.doris.catalog.ScalarType;
 import org.apache.doris.catalog.Type;
 import org.apache.doris.common.util.Util;
 import org.apache.doris.datasource.jdbc.util.JdbcFieldSchema;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
@@ -35,7 +37,9 @@ import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Types;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -168,12 +172,18 @@ public class JdbcMySQLClient extends JdbcClient {
             rs = getRemoteColumns(databaseMetaData, catalogName, remoteDbName, remoteTableName);
 
             Map<String, String> mapFieldtoType = Maps.newHashMap();
-            if (isDoris) {
+            if (requiresFullTypeDefinition()) {
                 mapFieldtoType = getColumnsDataTypeUseQuery(remoteDbName, remoteTableName);
             }
 
             while (rs.next()) {
-                JdbcFieldSchema field = new JdbcFieldSchema(rs, mapFieldtoType);
+                JdbcFieldSchema field = new JdbcFieldSchema(rs);
+                String fullTypeName = mapFieldtoType.get(field.getColumnName());
+                if (isDoris) {
+                    field.setDataTypeName(Optional.ofNullable(fullTypeName));
+                } else {
+                    field.setFullDataTypeName(Optional.ofNullable(fullTypeName));
+                }
                 tableSchema.add(field);
             }
         } catch (SQLException e) {
@@ -225,13 +235,16 @@ public class JdbcMySQLClient extends JdbcClient {
         if (isDoris) {
             return dorisTypeToDoris(fieldSchema);
         }
-        // For mysql type: "INT UNSIGNED":
-        // fieldSchema.getDataTypeName().orElse("unknown").split(" ")[0] == "INT"
-        // fieldSchema.getDataTypeName().orElse("unknown").split(" ")[1] == "UNSIGNED"
-        String[] typeFields = fieldSchema.getDataTypeName().orElse("unknown").split(" ");
-        String mysqlType = typeFields[0];
+        return mysqlTypeToDoris(fieldSchema, enableMappingVarbinary, enableMappingTimestampTz, convertDateToNull);
+    }
+
+    @VisibleForTesting
+    static Type mysqlTypeToDoris(JdbcFieldSchema fieldSchema, boolean enableMappingVarbinary,
+            boolean enableMappingTimestampTz, boolean convertDateToNull) {
+        MySqlTypeDescriptor typeDescriptor = MySqlTypeDescriptor.from(fieldSchema);
+        String mysqlType = typeDescriptor.baseType;
         // For unsigned int, should extend the type.
-        if (typeFields.length > 1 && "UNSIGNED".equals(typeFields[1])) {
+        if (typeDescriptor.unsigned) {
             switch (mysqlType) {
                 case "TINYINT":
                     return Type.SMALLINT;
@@ -239,13 +252,14 @@ public class JdbcMySQLClient extends JdbcClient {
                 case "MEDIUMINT":
                     return Type.INT;
                 case "INT":
+                case "INTEGER":
                     return Type.BIGINT;
                 case "BIGINT":
                     return Type.LARGEINT;
                 case "DECIMAL": {
-                    int precision = fieldSchema.requiredColumnSize() + 1;
-                    int scale = fieldSchema.requiredDecimalDigits();
-                    return createDecimalOrStringType(precision, scale);
+                    int precision = getColumnLength(fieldSchema, typeDescriptor) + 1;
+                    int scale = getDecimalScale(fieldSchema, typeDescriptor);
+                    return createMysqlDecimalOrStringType(precision, scale);
                 }
                 case "DOUBLE":
                     // As of MySQL 8.0.17, the UNSIGNED attribute is deprecated
@@ -260,15 +274,20 @@ public class JdbcMySQLClient extends JdbcClient {
             }
         }
         switch (mysqlType) {
+            case "BOOL":
             case "BOOLEAN":
                 return Type.BOOLEAN;
             case "TINYINT":
+                if (fieldSchema.getDataType() == Types.BIT && getOptionalColumnLength(fieldSchema, typeDescriptor) == 1) {
+                    return Type.BOOLEAN;
+                }
                 return Type.TINYINT;
             case "SMALLINT":
             case "YEAR":
                 return Type.SMALLINT;
             case "MEDIUMINT":
             case "INT":
+            case "INTEGER":
                 return Type.INT;
             case "BIGINT":
                 return Type.BIGINT;
@@ -278,11 +297,7 @@ public class JdbcMySQLClient extends JdbcClient {
                 }
                 return ScalarType.createDateV2Type();
             case "TIMESTAMP": {
-                int columnSize = fieldSchema.requiredColumnSize();
-                int scale = columnSize > 19 ? columnSize - 20 : 0;
-                if (scale > 6) {
-                    scale = 6;
-                }
+                int scale = getDateTimeScale(fieldSchema, typeDescriptor);
                 if (convertDateToNull) {
                     fieldSchema.setAllowNull(true);
                 }
@@ -291,12 +306,8 @@ public class JdbcMySQLClient extends JdbcClient {
             }
             case "DATETIME": {
                 // mysql can support microsecond
-                // use columnSize to calculate the precision of timestamp/datetime
-                int columnSize = fieldSchema.requiredColumnSize();
-                int scale = columnSize > 19 ? columnSize - 20 : 0;
-                if (scale > 6) {
-                    scale = 6;
-                }
+                // use type definition when available, otherwise fall back to column size metadata
+                int scale = getDateTimeScale(fieldSchema, typeDescriptor);
                 if (convertDateToNull) {
                     fieldSchema.setAllowNull(true);
                 }
@@ -307,24 +318,24 @@ public class JdbcMySQLClient extends JdbcClient {
             case "DOUBLE":
                 return Type.DOUBLE;
             case "DECIMAL": {
-                int precision = fieldSchema.requiredColumnSize();
-                int scale = fieldSchema.requiredDecimalDigits();
-                return createDecimalOrStringType(precision, scale);
+                int precision = getColumnLength(fieldSchema, typeDescriptor);
+                int scale = getDecimalScale(fieldSchema, typeDescriptor);
+                return createMysqlDecimalOrStringType(precision, scale);
             }
             case "CHAR":
-                return ScalarType.createCharType(fieldSchema.requiredColumnSize());
+                return ScalarType.createCharType(getColumnLength(fieldSchema, typeDescriptor));
             case "VARCHAR":
-                return ScalarType.createVarcharType(fieldSchema.requiredColumnSize());
+                return ScalarType.createVarcharType(getColumnLength(fieldSchema, typeDescriptor));
             case "TINYBLOB":
             case "BLOB":
             case "MEDIUMBLOB":
             case "LONGBLOB":
             case "BINARY":
             case "VARBINARY":
-                return enableMappingVarbinary ? ScalarType.createVarbinaryType(fieldSchema.requiredColumnSize())
+                return enableMappingVarbinary ? ScalarType.createVarbinaryType(getColumnLength(fieldSchema, typeDescriptor))
                         : ScalarType.createStringType();
             case "BIT":
-                if (fieldSchema.requiredColumnSize() == 1) {
+                if (getOptionalColumnLength(fieldSchema, typeDescriptor) == 1) {
                     return Type.BOOLEAN;
                 } else {
                     return ScalarType.createStringType();
@@ -342,6 +353,10 @@ public class JdbcMySQLClient extends JdbcClient {
             default:
                 return Type.UNSUPPORTED;
         }
+    }
+
+    private boolean requiresFullTypeDefinition() {
+        return isDoris || JdbcResource.OCEANBASE.equals(dbType);
     }
 
     private boolean isConvertDatetimeToNull(JdbcClientConfig jdbcClientConfig) {
@@ -460,6 +475,91 @@ public class JdbcMySQLClient extends JdbcClient {
                 return ScalarType.createVarbinaryType(fieldSchema.requiredColumnSize());
             default:
                 return Type.UNSUPPORTED;
+        }
+    }
+
+    private static int getColumnLength(JdbcFieldSchema fieldSchema, MySqlTypeDescriptor typeDescriptor) {
+        return typeDescriptor.length.orElseGet(fieldSchema::requiredColumnSize);
+    }
+
+    private static int getOptionalColumnLength(JdbcFieldSchema fieldSchema, MySqlTypeDescriptor typeDescriptor) {
+        return typeDescriptor.length.orElseGet(() -> fieldSchema.getColumnSize().orElse(0));
+    }
+
+    private static int getDecimalScale(JdbcFieldSchema fieldSchema, MySqlTypeDescriptor typeDescriptor) {
+        return typeDescriptor.scale.orElseGet(fieldSchema::requiredDecimalDigits);
+    }
+
+    private static int getDateTimeScale(JdbcFieldSchema fieldSchema, MySqlTypeDescriptor typeDescriptor) {
+        int scale = typeDescriptor.length.orElseGet(() -> {
+            int columnSize = fieldSchema.getColumnSize().orElse(0);
+            return columnSize > 19 ? columnSize - 20 : 0;
+        });
+        return Math.min(scale, 6);
+    }
+
+    private static Type createMysqlDecimalOrStringType(int precision, int scale) {
+        if (precision <= ScalarType.MAX_DECIMAL128_PRECISION && precision > 0) {
+            return ScalarType.createDecimalV3Type(precision, scale);
+        }
+        return ScalarType.createStringType();
+    }
+
+    private static class MySqlTypeDescriptor {
+        private final String baseType;
+        private final boolean unsigned;
+        private final Optional<Integer> length;
+        private final Optional<Integer> scale;
+
+        private MySqlTypeDescriptor(String baseType, boolean unsigned, Optional<Integer> length,
+                Optional<Integer> scale) {
+            this.baseType = baseType;
+            this.unsigned = unsigned;
+            this.length = length;
+            this.scale = scale;
+        }
+
+        private static MySqlTypeDescriptor from(JdbcFieldSchema fieldSchema) {
+            String typeName = fieldSchema.getFullDataTypeName()
+                    .orElse(fieldSchema.getDataTypeName().orElse("unknown"));
+            String normalized = typeName == null ? "" : typeName.trim().replaceAll("\\s+", " ");
+            if (normalized.isEmpty()) {
+                return new MySqlTypeDescriptor("UNKNOWN", false, Optional.empty(), Optional.empty());
+            }
+
+            String upperType = normalized.toUpperCase(Locale.ROOT);
+            boolean unsigned = upperType.contains(" UNSIGNED");
+            int openParen = upperType.indexOf('(');
+            int firstSpace = upperType.indexOf(' ');
+            int endIndex = upperType.length();
+            if (openParen >= 0) {
+                endIndex = openParen;
+            } else if (firstSpace >= 0) {
+                endIndex = firstSpace;
+            }
+            String baseType = upperType.substring(0, endIndex);
+
+            Optional<Integer> length = Optional.empty();
+            Optional<Integer> scale = Optional.empty();
+            if (openParen >= 0) {
+                int closeParen = upperType.indexOf(')', openParen + 1);
+                if (closeParen > openParen + 1) {
+                    String[] parameters = upperType.substring(openParen + 1, closeParen).split(",");
+                    length = parseTypeParameter(parameters[0]);
+                    if (parameters.length > 1) {
+                        scale = parseTypeParameter(parameters[1]);
+                    }
+                }
+            }
+            return new MySqlTypeDescriptor(baseType, unsigned, length, scale);
+        }
+
+        private static Optional<Integer> parseTypeParameter(String parameter) {
+            try {
+                return Optional.of(Integer.parseInt(parameter.trim()));
+            } catch (NumberFormatException e) {
+                return Optional.empty();
+            }
         }
     }
 }

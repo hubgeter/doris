@@ -23,7 +23,6 @@ import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
-import java.util.Map;
 import java.util.Optional;
 
 @Data
@@ -33,6 +32,8 @@ public class JdbcFieldSchema {
     protected int dataType;
     // The SQL type of the corresponding java.sql.types (Type Name)
     protected Optional<String> dataTypeName;
+    // The native type definition returned by SHOW FULL COLUMNS, such as "decimal(18,5) unsigned".
+    protected Optional<String> fullDataTypeName = Optional.empty();
     // For CHAR/DATA, columnSize means the maximum number of chars.
     // For NUMERIC/DECIMAL, columnSize means precision.
     protected Optional<Integer> columnSize;
@@ -52,6 +53,7 @@ public class JdbcFieldSchema {
         this.columnName = other.columnName;
         this.dataType = other.dataType;
         this.dataTypeName = other.dataTypeName;
+        this.fullDataTypeName = other.fullDataTypeName;
         this.columnSize = other.columnSize;
         this.decimalDigits = other.decimalDigits;
         this.arrayDimensions = other.arrayDimensions;
@@ -84,18 +86,6 @@ public class JdbcFieldSchema {
         this.remarks = rs.getString("REMARKS");
         this.charOctetLength = rs.getInt("CHAR_OCTET_LENGTH");
         this.arrayDimensions = Optional.of(arrayDimensions);
-    }
-
-    public JdbcFieldSchema(ResultSet rs, Map<String, String> dataTypeOverrides) throws SQLException {
-        this.columnName = rs.getString("COLUMN_NAME");
-        this.dataType = getInteger(rs, "DATA_TYPE").orElseThrow(() -> new IllegalStateException("DATA_TYPE is null"));
-        this.dataTypeName = Optional.ofNullable(dataTypeOverrides.getOrDefault(columnName, rs.getString("TYPE_NAME")));
-        this.columnSize = getInteger(rs, "COLUMN_SIZE");
-        this.decimalDigits = getInteger(rs, "DECIMAL_DIGITS");
-        this.numPrecRadix = rs.getInt("NUM_PREC_RADIX");
-        this.isAllowNull = rs.getInt("NULLABLE") != 0;
-        this.remarks = rs.getString("REMARKS");
-        this.charOctetLength = rs.getInt("CHAR_OCTET_LENGTH");
     }
 
     public JdbcFieldSchema(ResultSetMetaData metaData, int columnIndex) throws SQLException {
