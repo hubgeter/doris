@@ -27,6 +27,7 @@
 
 #include "common/status.h"
 #include "format/jni/jni_reader.h"
+#include "format/table/table_format_reader.h"
 #include "storage/olap_scan_common.h"
 
 namespace doris {
@@ -38,7 +39,7 @@ class Block;
 
 namespace doris {
 #include "common/compile_check_begin.h"
-class RemoteDorisReader : public GenericReader {
+class RemoteDorisReader : public TableFormatReader {
     ENABLE_FACTORY_CREATOR(RemoteDorisReader);
 
 public:
