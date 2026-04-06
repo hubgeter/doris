@@ -87,14 +87,16 @@ Status MergeSorterState::build_merge_tree(const SortDescription& sort_descriptio
     return Status::OK();
 }
 
-Status MergeSorterState::merge_sort_read(doris::Block* block, int batch_size, bool* eos) {
+Status MergeSorterState::merge_sort_read(doris::Block* block, int batch_size, bool* eos,
+                                         size_t block_max_bytes) {
     DCHECK(_sorted_blocks.empty());
     DCHECK(unsorted_block()->empty());
-    _merge_sort_read_impl(batch_size, block, eos);
+    _merge_sort_read_impl(batch_size, block, eos, block_max_bytes);
     return Status::OK();
 }
 
-void MergeSorterState::_merge_sort_read_impl(int batch_size, doris::Block* block, bool* eos) {
+void MergeSorterState::_merge_sort_read_impl(int batch_size, doris::Block* block, bool* eos,
+                                             size_t block_max_bytes) {
     size_t num_columns = unsorted_block()->columns();
 
     MutableBlock m_block = VectorizedUtils::build_mutable_mem_reuse_block(block, *unsorted_block());
@@ -123,6 +125,10 @@ void MergeSorterState::_merge_sort_read_impl(int batch_size, doris::Block* block
             _queue.next(current_rows + step);
         } else {
             _queue.remove_top();
+        }
+
+        if (block_max_bytes > 0 && merged_rows > 0 && m_block.bytes() >= block_max_bytes) {
+            break;
         }
     }
 
@@ -203,9 +209,9 @@ size_t FullSorter::get_reserve_mem_size(RuntimeState* state, bool eos) const {
         const auto bytes = _state->unsorted_block()->bytes();
         const auto allocated_bytes = _state->unsorted_block()->allocated_bytes();
         const auto bytes_per_row = bytes / rows;
-        const auto estimated_size_of_next_block = bytes_per_row * state->batch_size();
+        const auto estimated_size_of_next_block = bytes_per_row * state->block_max_rows();
         auto new_block_bytes = estimated_size_of_next_block + bytes;
-        auto new_rows = rows + state->batch_size();
+        auto new_rows = rows + state->block_max_rows();
         // If the new size is greater than 85% of allocalted bytes, it maybe need to realloc.
         if ((new_block_bytes * 100 / allocated_bytes) >= 85) {
             size_to_reserve += (size_t)(allocated_bytes * 1.15);
@@ -272,12 +278,12 @@ Status FullSorter::prepare_for_read(bool is_spill) {
 }
 
 Status FullSorter::get_next(RuntimeState* state, Block* block, bool* eos) {
-    return _state->merge_sort_read(block, state->batch_size(), eos);
+    return _state->merge_sort_read(block, state->block_max_rows(), eos, state->block_max_bytes());
 }
 
 Status FullSorter::merge_sort_read_for_spill(RuntimeState* state, doris::Block* block,
                                              int batch_size, bool* eos) {
-    return _state->merge_sort_read(block, batch_size, eos);
+    return _state->merge_sort_read(block, batch_size, eos, state->block_max_bytes());
 }
 
 Status FullSorter::do_sort() {

@@ -26,6 +26,7 @@
 #include <cstddef>
 #include <map>
 #include <memory>
+#include <numeric>
 #include <ostream>
 #include <regex>
 #include <utility>
@@ -308,6 +309,10 @@ Status CsvReader::init_reader(bool is_load) {
     return Status::OK();
 }
 
+void CsvReader::set_batch_size(size_t batch_size) {
+    _batch_size = batch_size;
+}
+
 // !FIXME: Here we should use MutableBlock
 Status CsvReader::get_next_block(Block* block, size_t* read_rows, bool* eof) {
     if (_line_reader_eof) {
@@ -315,19 +320,14 @@ Status CsvReader::get_next_block(Block* block, size_t* read_rows, bool* eof) {
         return Status::OK();
     }
 
-    const int batch_size = std::max(_state->batch_size(), (int)_MIN_BATCH_SIZE);
-    const int64_t max_block_bytes =
-            (_state->query_type() == TQueryType::LOAD && config::load_reader_max_block_bytes > 0)
-                    ? config::load_reader_max_block_bytes
-                    : 0;
+    const size_t batch_size = _state->block_max_rows();
+    const auto max_block_bytes = _state->block_max_bytes();
     size_t rows = 0;
-    size_t block_bytes = 0;
 
     bool success = false;
     bool is_remove_bom = false;
     if (_push_down_agg_type == TPushAggOp::type::COUNT) {
-        while (rows < batch_size && !_line_reader_eof &&
-               (max_block_bytes <= 0 || (int64_t)block_bytes < max_block_bytes)) {
+        while (rows < batch_size && !_line_reader_eof) {
             const uint8_t* ptr = nullptr;
             size_t size = 0;
             RETURN_IF_ERROR(_line_reader->read_line(&ptr, &size, &_line_reader_eof, _io_ctx));
@@ -355,7 +355,6 @@ Status CsvReader::get_next_block(Block* block, size_t* read_rows, bool* eof) {
 
             RETURN_IF_ERROR(_validate_line(Slice(ptr, size), &success));
             ++rows;
-            block_bytes += size;
         }
         auto mutate_columns = block->mutate_columns();
         for (auto& col : mutate_columns) {
@@ -364,8 +363,17 @@ Status CsvReader::get_next_block(Block* block, size_t* read_rows, bool* eof) {
         block->set_columns(std::move(mutate_columns));
     } else {
         auto columns = block->mutate_columns();
-        while (rows < batch_size && !_line_reader_eof &&
-               (max_block_bytes <= 0 || (int64_t)block_bytes < max_block_bytes)) {
+        size_t next_checking_rows = 1;
+        auto get_block_bytes = [&]() {
+            if (_is_load) {
+                return block->bytes();
+            } else {
+                return std::accumulate(
+                        columns.begin(), columns.end(), 0UL,
+                        [](size_t sum, const auto& column) { return sum + column->byte_size(); });
+            }
+        };
+        while (rows < batch_size && !_line_reader_eof) {
             const uint8_t* ptr = nullptr;
             size_t size = 0;
             RETURN_IF_ERROR(_line_reader->read_line(&ptr, &size, &_line_reader_eof, _io_ctx));
@@ -388,6 +396,7 @@ Status CsvReader::get_next_block(Block* block, size_t* read_rows, bool* eof) {
                     RETURN_IF_ERROR(_fill_empty_line(block, columns, &rows));
                 }
                 // Read empty line, continue
+                next_checking_rows++;
                 continue;
             }
 
@@ -396,7 +405,30 @@ Status CsvReader::get_next_block(Block* block, size_t* read_rows, bool* eof) {
                 continue;
             }
             RETURN_IF_ERROR(_fill_dest_columns(Slice(ptr, size), block, columns, &rows));
-            block_bytes += size;
+
+            // Adaptive block-size guard:
+            // Instead of checking bytes on every appended row, we probe at sampled row counts.
+            // Each probe estimates bytes-per-row and schedules the next probe closer to the
+            // expected byte limit, so we keep overhead low while still stopping near max size.
+            if (max_block_bytes > 0 && rows == next_checking_rows) {
+                // Check block size only at sampled row counts to avoid per-row byte accounting cost.
+                const auto bytes = get_block_bytes();
+                if (bytes == 0) {
+                    // Early rows may still report zero bytes (e.g. constant columns), so retry soon.
+                    next_checking_rows++;
+                    continue;
+                } else if (bytes >= max_block_bytes) {
+                    // Stop filling this block once the configured byte limit is reached.
+                    break;
+                }
+
+                // Predict how many more rows can be appended before hitting max_block_bytes.
+                const auto remaining_bytes = max_block_bytes - bytes;
+                const auto bytes_per_row = bytes / rows;
+                const auto remaining_rows = remaining_bytes / bytes_per_row;
+                // Move halfway toward the estimated limit for a stable/progressive recheck cadence.
+                next_checking_rows += std::max(1UL, remaining_rows / 2);
+            }
         }
         block->set_columns(std::move(columns));
     }

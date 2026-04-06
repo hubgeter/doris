@@ -289,7 +289,10 @@ Status Channel::close(RuntimeState* state) {
 }
 
 BlockSerializer::BlockSerializer(ExchangeSinkLocalState* parent, bool is_local)
-        : _parent(parent), _is_local(is_local), _batch_size(parent->state()->batch_size()) {}
+        : _parent(parent),
+          _is_local(is_local),
+          _batch_size(parent->state()->block_max_rows()),
+          _block_max_bytes(parent->state()->block_max_bytes()) {}
 
 Status BlockSerializer::next_serialized_block(Block* block, PBlock* dest, size_t num_receivers,
                                               bool* serialized, bool eos, const uint32_t* data,
@@ -311,7 +314,8 @@ Status BlockSerializer::next_serialized_block(Block* block, PBlock* dest, size_t
     }
 
     if (_mutable_block->rows() >= _batch_size || eos ||
-        (_mutable_block->rows() > 0 && _mutable_block->allocated_bytes() > _buffer_mem_limit)) {
+        (_mutable_block->rows() > 0 && _mutable_block->allocated_bytes() > _buffer_mem_limit) ||
+        (_block_max_bytes > 0 && _mutable_block->bytes() >= _block_max_bytes)) {
         if (!_is_local) {
             RETURN_IF_ERROR(_serialize_block(dest, num_receivers));
         }

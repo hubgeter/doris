@@ -66,9 +66,9 @@ Status LocalMergeSortLocalState::build_merger(RuntimeState* state) {
         RETURN_IF_ERROR(
                 p._vsort_exec_exprs.ordering_expr_ctxs()[i]->clone(state, ordering_expr_ctxs[i]));
     }
-    _merger = std::make_unique<VSortedRunMerger>(ordering_expr_ctxs, p._is_asc_order,
-                                                 p._nulls_first, state->batch_size(), p._limit,
-                                                 p._offset, custom_profile());
+    _merger = std::make_unique<VSortedRunMerger>(
+            ordering_expr_ctxs, p._is_asc_order, p._nulls_first, state->block_max_rows(), p._limit,
+            p._offset, custom_profile(), state->block_max_bytes());
     std::vector<BlockSupplier> child_block_suppliers;
     for (auto sorter : p._sorters) {
         BlockSupplier block_supplier = [sorter, state](Block* block, bool* eos) {

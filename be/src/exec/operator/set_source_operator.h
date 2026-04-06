@@ -52,6 +52,7 @@ private:
     RuntimeProfile::Counter* _get_data_from_hashtable_rows = nullptr;
     IColumn::Selector _result_indexs;
     bool _null_key_output = false;
+    size_t _estimated_row_bytes = 0;
 };
 
 template <bool is_intersect>

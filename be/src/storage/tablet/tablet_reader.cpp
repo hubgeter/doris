@@ -201,6 +201,11 @@ Status TabletReader::_capture_rs_readers(const ReaderParams& read_params) {
 
     // Propagate general read limit for DUP_KEYS and UNIQUE_KEYS with MOW
     _reader_context.general_read_limit = read_params.general_read_limit;
+
+    // Adaptive batch size: propagate origin_return_columns (the true output column list before
+    // non-direct-mode expansion) so AdaptiveBlockSizePredictor can sample the right columns.
+    _reader_context.origin_return_columns = read_params.origin_return_columns;
+
     return Status::OK();
 }
 

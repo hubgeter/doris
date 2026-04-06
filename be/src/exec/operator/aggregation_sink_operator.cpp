@@ -814,7 +814,7 @@ size_t AggSinkLocalState::get_reserve_mem_size(RuntimeState* state, bool eos) co
                 if constexpr (std::is_same_v<HashTableCtxType, std::monostate>) {
                     return 0;
                 } else {
-                    return arg.hash_table->estimate_memory(state->batch_size());
+                    return arg.hash_table->estimate_memory(state->block_max_rows());
                 }
             },
             _agg_data->method_variant);

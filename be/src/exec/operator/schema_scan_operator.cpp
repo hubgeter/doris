@@ -243,7 +243,9 @@ Status SchemaScanOperatorX::get_block(RuntimeState* state, Block* block, bool* e
                 break;
             }
 
-            if (src_block.rows() >= state->batch_size()) {
+            const auto block_max_bytes = state->block_max_bytes();
+            if (src_block.rows() >= state->block_max_rows() ||
+                (block_max_bytes > 0 && src_block.bytes() >= block_max_bytes)) {
                 break;
             }
         }

@@ -473,6 +473,18 @@ struct TQueryOptions {
 
   210: optional double max_scan_mem_ratio = 0.3;
   211: optional bool enable_adaptive_scan = false;
+
+  // Adaptive batch size: target output block size in bytes. 0 means disabled (fixed row count only).
+  // Default 8MB. Sent by FE session variable preferred_block_size_bytes.
+  212: optional i64 preferred_block_size_bytes = 8388608
+
+  // Per-column byte limit for adaptive batch size. 0 means no per-column limit. Default 1MB.
+  213: optional i64 preferred_max_column_in_block_size_bytes = 1048576
+
+  // Adaptive batch size: target output block row count limit. Default 65535.
+  // Sent by FE session variable preferred_block_size_rows.
+  214: optional i64 preferred_block_size_rows = 65535
+
   // For cloud, to control if the content would be written into file cache
   // In write path, to control if the content would be written into file cache.
   // In read path, read from file cache or remote storage when execute query.

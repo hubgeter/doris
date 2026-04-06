@@ -76,6 +76,8 @@ struct UnionOperatorTest : public ::testing::Test {
 
 TEST_F(UnionOperatorTest, test_all_const_expr) {
     state->_batch_size = 2;
+    state->_query_options.__set_batch_size(2);
+    state->_query_options.__set_preferred_block_size_rows(2);
     source_op.reset(new MockUnionSourceOperator {
             0,
             {std::make_shared<DataTypeInt64>(), std::make_shared<DataTypeInt64>(),
@@ -255,6 +257,8 @@ TEST_F(UnionOperatorTest, test_sink_and_source) {
     {
         for (int i = 0; i < child_size; i++) {
             sink_state[i]->_batch_size = 2;
+            sink_state[i]->_query_options.__set_batch_size(2);
+            sink_state[i]->_query_options.__set_preferred_block_size_rows(2);
             Block block = ColumnHelper::create_block<DataTypeInt64>({1, 2}, {3, 4});
             EXPECT_TRUE(sink_ops[i]->sink(sink_state[i].get(), &block, false));
         }

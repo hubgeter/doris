@@ -81,6 +81,14 @@ Status SetSourceOperatorX<is_intersect>::get_block(RuntimeState* state, Block* b
     SCOPED_TIMER(local_state.exec_time_counter());
     SCOPED_PEAK_MEM(&local_state._estimate_memory_usage);
 
+    // Compute effective batch size based on estimated bytes per row.
+    size_t effective_batch_size = state->block_max_rows();
+    const size_t block_max_bytes = state->block_max_bytes();
+    if (block_max_bytes > 0 && local_state._estimated_row_bytes > 0) {
+        size_t bytes_limit = block_max_bytes / local_state._estimated_row_bytes;
+        effective_batch_size = std::max(size_t(1), std::min(effective_batch_size, bytes_limit));
+    }
+
     _create_mutable_cols(local_state, block);
     {
         SCOPED_TIMER(local_state._get_data_timer);
@@ -88,8 +96,9 @@ Status SetSourceOperatorX<is_intersect>::get_block(RuntimeState* state, Block* b
                 [&](auto&& arg) -> Status {
                     using HashTableCtxType = std::decay_t<decltype(arg)>;
                     if constexpr (!std::is_same_v<HashTableCtxType, std::monostate>) {
-                        return _get_data_in_hashtable<HashTableCtxType>(local_state, arg, block,
-                                                                        state->batch_size(), eos);
+                        return _get_data_in_hashtable<HashTableCtxType>(
+                                local_state, arg, block, static_cast<int>(effective_batch_size),
+                                eos);
                     } else {
                         LOG(FATAL) << "FATAL: uninited hash table";
                         __builtin_unreachable();
@@ -101,6 +110,9 @@ Status SetSourceOperatorX<is_intersect>::get_block(RuntimeState* state, Block* b
         SCOPED_TIMER(local_state._filter_timer);
         RETURN_IF_ERROR(
                 VExprContext::filter_block(local_state._conjuncts, block, block->columns()));
+    }
+    if (block->rows() > 0) {
+        local_state._estimated_row_bytes = block->bytes() / block->rows();
     }
     local_state.reached_limit(block, eos);
     return Status::OK();

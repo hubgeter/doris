@@ -140,6 +140,8 @@ public:
 
     Status get_next_block(Block* block, size_t* read_rows, bool* eof) override;
 
+    void set_batch_size(size_t batch_size) override;
+
     Status close() override;
 
     // set the delete rows in current parquet file

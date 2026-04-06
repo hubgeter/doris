@@ -73,7 +73,7 @@ class BlockSerializer {
 public:
     BlockSerializer(ExchangeSinkLocalState* parent, bool is_local = true);
 #ifdef BE_TEST
-    BlockSerializer() : _batch_size(0) {};
+    BlockSerializer() : _batch_size(0), _block_max_bytes(0) {};
 #endif
     Status next_serialized_block(Block* src, PBlock* dest, size_t num_receivers, bool* serialized,
                                  bool eos, const uint32_t* data = nullptr,
@@ -99,6 +99,7 @@ private:
 
     bool _is_local;
     const int _batch_size;
+    const size_t _block_max_bytes = 0;
     std::atomic<size_t> _buffer_mem_limit = UINT64_MAX;
 };
 

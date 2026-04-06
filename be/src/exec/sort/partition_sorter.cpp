@@ -95,13 +95,14 @@ void PartitionSorter::reset_sorter_state(RuntimeState* runtime_state) {
 
 Status PartitionSorter::get_next(RuntimeState* state, Block* block, bool* eos) {
     if (_top_n_algorithm == TopNAlgorithm::ROW_NUMBER) {
-        return _read_row_num(block, eos, state->batch_size());
+        return _read_row_num(block, eos, state->block_max_rows(), state->block_max_bytes());
     } else {
-        return _read_row_rank(block, eos, state->batch_size());
+        return _read_row_rank(block, eos, state->block_max_rows(), state->block_max_bytes());
     }
 }
 
-Status PartitionSorter::_read_row_num(Block* output_block, bool* eos, int batch_size) {
+Status PartitionSorter::_read_row_num(Block* output_block, bool* eos, int batch_size,
+                                      size_t block_max_bytes) {
     auto& queue = _state->get_queue();
     size_t num_columns = _state->unsorted_block()->columns();
 
@@ -150,12 +151,17 @@ Status PartitionSorter::_read_row_num(Block* output_block, bool* eos, int batch_
         } else {
             queue.remove_top();
         }
+
+        if (block_max_bytes > 0 && merged_rows > 0 && m_block.bytes() >= block_max_bytes) {
+            break;
+        }
     }
 
     return Status::OK();
 }
 
-Status PartitionSorter::_read_row_rank(Block* output_block, bool* eos, int batch_size) {
+Status PartitionSorter::_read_row_rank(Block* output_block, bool* eos, int batch_size,
+                                       size_t block_max_bytes) {
     auto& queue = _state->get_queue();
     size_t num_columns = _state->unsorted_block()->columns();
 
@@ -197,6 +203,11 @@ Status PartitionSorter::_read_row_rank(Block* output_block, bool* eos, int batch
                 queue.next(1);
             } else {
                 queue.remove_top();
+            }
+
+            if (block_max_bytes > 0 && (merged_rows & 255) == 0 &&
+                m_block.bytes() >= block_max_bytes) {
+                return Status::OK();
             }
         }
     }

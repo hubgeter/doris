@@ -46,10 +46,10 @@ public:
     // batch being returned.
     VSortedRunMerger(const VExprContextSPtrs& ordering_expr, const std::vector<bool>& _is_asc_order,
                      const std::vector<bool>& _nulls_first, const size_t batch_size, int64_t limit,
-                     size_t offset, RuntimeProfile* profile);
+                     size_t offset, RuntimeProfile* profile, size_t block_max_bytes = 0);
 
     VSortedRunMerger(const SortDescription& desc, const size_t batch_size, int64_t limit,
-                     size_t offset, RuntimeProfile* profile);
+                     size_t offset, RuntimeProfile* profile, size_t block_max_bytes = 0);
 
     virtual ~VSortedRunMerger() = default;
 
@@ -67,6 +67,7 @@ protected:
     const std::vector<bool> _is_asc_order;
     const std::vector<bool> _nulls_first;
     const size_t _batch_size;
+    const size_t _block_max_bytes;
 
     bool _use_sort_desc = false;
     size_t _num_rows_returned = 0;

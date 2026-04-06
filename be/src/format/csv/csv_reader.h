@@ -178,6 +178,7 @@ public:
 
     Status init_reader(bool is_load);
     Status get_next_block(Block* block, size_t* read_rows, bool* eof) override;
+    void set_batch_size(size_t batch_size) override;
     Status get_columns(std::unordered_map<std::string, DataTypePtr>* name_to_type,
                        std::unordered_set<std::string>* missing_cols) override;
 
@@ -279,6 +280,8 @@ private:
 
     io::IOContext* _io_ctx = nullptr;
     std::shared_ptr<io::IOContext> _io_ctx_holder;
+    // Adaptive batch size set by FileScanner. 0 means not set (use _state->batch_size()).
+    size_t _batch_size = 0;
     // Stored to adjust column_sep_positions when BOM is removed in enclose mode
     std::shared_ptr<EncloseCsvLineReaderCtx> _enclose_reader_ctx;
     // save source text which have been splitted.

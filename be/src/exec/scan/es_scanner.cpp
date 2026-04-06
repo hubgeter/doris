@@ -118,7 +118,8 @@ Status EsScanner::_get_block_impl(RuntimeState* state, Block* block, bool* eof) 
     std::vector<MutableColumnPtr> columns(column_size);
 
     bool mem_reuse = block->mem_reuse();
-    const int batch_size = state->batch_size();
+    const int block_max_rows = state->block_max_rows();
+    const size_t block_max_bytes = state->block_max_bytes();
     // only empty block should be here
     DCHECK(block->rows() == 0);
 
@@ -132,10 +133,19 @@ Status EsScanner::_get_block_impl(RuntimeState* state, Block* block, bool* eof) 
             }
         }
 
-        while (columns[0]->size() < batch_size && !_es_eof) {
+        while (columns[0]->size() < block_max_rows && !_es_eof) {
             RETURN_IF_CANCELLED(state);
             // Get from scanner
             RETURN_IF_ERROR(_get_next(columns));
+            if (block_max_bytes > 0 && (columns[0]->size() & 255) == 0) {
+                size_t bytes = 0;
+                for (const auto& col : columns) {
+                    bytes += col->byte_size();
+                }
+                if (bytes >= block_max_bytes) {
+                    break;
+                }
+            }
         }
 
         if (_es_eof == true) {

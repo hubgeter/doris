@@ -260,14 +260,14 @@ size_t SetSinkOperatorX<is_intersect>::get_reserve_mem_size(RuntimeState* state,
                 if constexpr (std::is_same_v<HashTableCtxType, std::monostate>) {
                     return 0;
                 } else {
-                    return arg.hash_table->estimate_memory(state->batch_size());
+                    return arg.hash_table->estimate_memory(state->block_max_rows());
                 }
             },
             local_state._shared_state->hash_table_variants->method_variant);
 
     size_to_reserve += local_state._mutable_block.allocated_bytes();
     for (auto& _child_expr : _child_exprs) {
-        size_to_reserve += _child_expr->root()->estimate_memory(state->batch_size());
+        size_to_reserve += _child_expr->root()->estimate_memory(state->block_max_rows());
     }
     return size_to_reserve;
 }

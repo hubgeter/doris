@@ -55,6 +55,10 @@ public:
         _push_down_agg_type = push_down_agg_type;
     }
 
+    // Override this in readers that can adjust batch size between consecutive reads.
+    virtual void set_batch_size(size_t batch_size) {}
+    virtual size_t get_batch_size() const { return 0; }
+
     virtual Status get_next_block(Block* block, size_t* read_rows, bool* eof) = 0;
 
     // Type is always nullable to process illegal values.

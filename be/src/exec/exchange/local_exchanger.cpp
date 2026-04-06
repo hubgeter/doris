@@ -18,6 +18,7 @@
 #include "exec/exchange/local_exchanger.h"
 
 #include "common/cast_set.h"
+#include "common/config.h"
 #include "common/status.h"
 #include "exec/exchange/local_exchange_sink_operator.h"
 #include "exec/exchange/local_exchange_source_operator.h"
@@ -149,6 +150,9 @@ Status ShuffleExchanger::get_block(RuntimeState* state, Block* block, bool* eos,
     PartitionedBlock partitioned_block;
     MutableBlock mutable_block;
 
+    const auto max_batch_size = state->block_max_rows();
+    const auto max_block_bytes = state->block_max_bytes();
+
     auto get_data = [&]() -> Status {
         do {
             const auto* offset_start = partitioned_block.second.row_idxs->data() +
@@ -156,7 +160,10 @@ Status ShuffleExchanger::get_block(RuntimeState* state, Block* block, bool* eos,
             auto block_wrapper = partitioned_block.first;
             RETURN_IF_ERROR(mutable_block.add_rows(&block_wrapper->_data_block, offset_start,
                                                    offset_start + partitioned_block.second.length));
-        } while (mutable_block.rows() < state->batch_size() && !*eos &&
+            if (max_block_bytes > 0 && mutable_block.bytes() >= max_block_bytes) {
+                break;
+            }
+        } while (mutable_block.rows() < max_batch_size && !*eos &&
                  _dequeue_data(source_info.local_state, partitioned_block, eos, block,
                                source_info.channel_id));
         return Status::OK();

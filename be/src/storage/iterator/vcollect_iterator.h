@@ -47,6 +47,12 @@ namespace doris {
 class TabletSchema;
 class RuntimeProfile;
 
+// Pure-computation helper: estimate whether collected data meets the byte budget
+// after flushing rows_to_merge additional rows.  Extracted from Level1Iterator so
+// it can be unit-tested independently.
+bool estimate_collected_enough(size_t present_bytes, size_t present_rows, int rows_to_merge,
+                               size_t preferred_block_size_bytes);
+
 class VCollectIterator {
 public:
     // Hold reader point to get reader params
@@ -302,6 +308,8 @@ private:
         }
 
         void init_level0_iterators_for_union();
+
+        bool collected_enough_rows(const MutableColumns& columns, int rows_to_merge) const;
 
     private:
         Status _merge_next(IteratorRowRef* ref);

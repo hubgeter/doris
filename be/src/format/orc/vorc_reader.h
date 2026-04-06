@@ -179,6 +179,8 @@ public:
                     partition_columns,
             const std::unordered_map<std::string, VExprContextSPtr>& missing_columns) override;
 
+    void set_batch_size(size_t batch_size) override;
+
     Status get_next_block(Block* block, size_t* read_rows, bool* eof) override;
 
     int64_t size() const;

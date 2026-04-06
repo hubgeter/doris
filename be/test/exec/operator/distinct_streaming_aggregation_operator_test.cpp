@@ -35,6 +35,8 @@ struct DistinctStreamingAggOperatorTest : public ::testing::Test {
         mock_op = std::make_shared<MockOperatorX>();
         state = std::make_shared<MockRuntimeState>();
         state->_batch_size = 10;
+        state->_query_options.__set_batch_size(10);
+        state->_query_options.__set_preferred_block_size_rows(10);
         op->_child = mock_op;
     }
 

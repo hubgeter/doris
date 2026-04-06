@@ -35,20 +35,24 @@ namespace doris {
 VSortedRunMerger::VSortedRunMerger(const VExprContextSPtrs& ordering_expr,
                                    const std::vector<bool>& is_asc_order,
                                    const std::vector<bool>& nulls_first, const size_t batch_size,
-                                   int64_t limit, size_t offset, RuntimeProfile* profile)
+                                   int64_t limit, size_t offset, RuntimeProfile* profile,
+                                   size_t block_max_bytes)
         : _ordering_expr(ordering_expr),
           _is_asc_order(is_asc_order),
           _nulls_first(nulls_first),
           _batch_size(batch_size),
+          _block_max_bytes(block_max_bytes),
           _limit(limit),
           _offset(offset) {
     init_timers(profile);
 }
 
 VSortedRunMerger::VSortedRunMerger(const SortDescription& desc, const size_t batch_size,
-                                   int64_t limit, size_t offset, RuntimeProfile* profile)
+                                   int64_t limit, size_t offset, RuntimeProfile* profile,
+                                   size_t block_max_bytes)
         : _desc(desc),
           _batch_size(batch_size),
+          _block_max_bytes(block_max_bytes),
           _use_sort_desc(true),
           _limit(limit),
           _offset(offset),
@@ -196,6 +200,14 @@ Status VSortedRunMerger::get_next(Block* output_block, bool* eos) {
             if (_need_more_data(current)) {
                 do_insert();
                 return Status::OK();
+            }
+
+            if (_block_max_bytes > 0 && merged_rows > 0 && (merged_rows & 255) == 0 &&
+                !_indexs.empty()) {
+                do_insert();
+                if (m_block.bytes() >= _block_max_bytes) {
+                    break;
+                }
             }
         }
         do_insert();

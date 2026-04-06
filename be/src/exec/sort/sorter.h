@@ -66,7 +66,8 @@ public:
 
     Status build_merge_tree(const SortDescription& sort_description);
 
-    Status merge_sort_read(doris::Block* block, int batch_size, bool* eos);
+    Status merge_sort_read(doris::Block* block, int batch_size, bool* eos,
+                           size_t block_max_bytes = 0);
 
     size_t data_size() const {
         size_t size = _unsorted_block->bytes();
@@ -86,7 +87,8 @@ public:
     void ignore_offset() { _offset = 0; }
 
 private:
-    void _merge_sort_read_impl(int batch_size, doris::Block* block, bool* eos);
+    void _merge_sort_read_impl(int batch_size, doris::Block* block, bool* eos,
+                               size_t block_max_bytes = 0);
 
     std::unique_ptr<Block> _unsorted_block;
     MergeSorterQueue _queue;

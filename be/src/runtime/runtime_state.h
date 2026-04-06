@@ -138,7 +138,40 @@ public:
 
     const DescriptorTbl& desc_tbl() const { return *_desc_tbl; }
     void set_desc_tbl(const DescriptorTbl* desc_tbl) { _desc_tbl = desc_tbl; }
+
+    MOCK_FUNCTION int block_max_rows() const {
+        return config::enable_adaptive_batch_size
+                       ? std::max(_query_options.batch_size, int(preferred_block_size_rows()))
+                       : _query_options.batch_size;
+    }
+
+    MOCK_FUNCTION size_t block_max_bytes() const {
+        return config::enable_adaptive_batch_size ? preferred_block_size_bytes() : 0;
+    }
+
     MOCK_FUNCTION int batch_size() const { return _query_options.batch_size; }
+    MOCK_FUNCTION size_t preferred_block_size_bytes() const {
+        if (_query_options.__isset.preferred_block_size_bytes) {
+            auto v = _query_options.preferred_block_size_bytes;
+            return v > 0 ? static_cast<size_t>(v) : 0;
+        }
+        return 0;
+    }
+
+    MOCK_FUNCTION size_t preferred_max_column_in_block_size_bytes() const {
+        if (_query_options.__isset.preferred_max_column_in_block_size_bytes) {
+            auto v = _query_options.preferred_max_column_in_block_size_bytes;
+            return v > 0 ? static_cast<size_t>(v) : 0;
+        }
+        return 1048576UL; // 1MB default
+    }
+    MOCK_FUNCTION size_t preferred_block_size_rows() const {
+        if (_query_options.__isset.preferred_block_size_rows) {
+            auto v = _query_options.preferred_block_size_rows;
+            return v > 0 ? static_cast<size_t>(v) : 65535;
+        }
+        return 65535;
+    }
     int query_parallel_instance_num() const { return _query_options.parallel_instance; }
     int max_errors() const { return _query_options.max_errors; }
     int execution_timeout() const {

@@ -81,6 +81,8 @@ public:
             const std::unordered_map<std::string, VExprContextSPtr>& col_default_value_ctx,
             bool is_load);
     Status get_next_block(Block* block, size_t* read_rows, bool* eof) override;
+    void set_batch_size(size_t batch_size) override;
+    size_t get_batch_size() const override { return _batch_size; }
     Status get_columns(std::unordered_map<std::string, DataTypePtr>* name_to_type,
                        std::unordered_set<std::string>* missing_cols) override;
     Status init_schema_reader() override;
@@ -296,6 +298,8 @@ private:
 
     DataTypeSerDeSPtrs _serdes;
     DataTypeSerDe::FormatOptions _serde_options;
+    // Adaptive batch size set by FileScanner. 0 means not set (use _state->batch_size()).
+    size_t _batch_size = 0;
 };
 
 #include "common/compile_check_end.h"

@@ -59,7 +59,7 @@ Status TopNSorter::prepare_for_read(bool is_spill) {
 }
 
 Status TopNSorter::get_next(RuntimeState* state, Block* block, bool* eos) {
-    return _state->merge_sort_read(block, state->batch_size(), eos);
+    return _state->merge_sort_read(block, state->block_max_rows(), eos, state->block_max_bytes());
 }
 
 Status TopNSorter::_do_sort(Block* block) {

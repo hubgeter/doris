@@ -197,20 +197,21 @@ Status NewJsonReader::init_reader(
     return Status::OK();
 }
 
+void NewJsonReader::set_batch_size(size_t batch_size) {
+    _batch_size = batch_size;
+}
+
 Status NewJsonReader::get_next_block(Block* block, size_t* read_rows, bool* eof) {
     if (_reader_eof) {
         *eof = true;
         return Status::OK();
     }
 
-    const int batch_size = std::max(_state->batch_size(), (int)_MIN_BATCH_SIZE);
-    const int64_t max_block_bytes =
-            (_state->query_type() == TQueryType::LOAD && config::load_reader_max_block_bytes > 0)
-                    ? config::load_reader_max_block_bytes
-                    : 0;
+    const auto batch_size = _state->block_max_rows();
+    const auto max_block_bytes = _state->block_max_bytes();
 
-    while (block->rows() < batch_size && !_reader_eof &&
-           (max_block_bytes <= 0 || (int64_t)block->bytes() < max_block_bytes)) {
+    size_t next_checking_rows = *read_rows + 1;
+    while (block->rows() < batch_size && !_reader_eof) {
         if (UNLIKELY(_read_json_by_line && _skip_first_line)) {
             size_t size = 0;
             const uint8_t* line_ptr = nullptr;
@@ -228,6 +229,27 @@ Status NewJsonReader::get_next_block(Block* block, size_t* read_rows, bool* eof)
             continue;
         }
         ++(*read_rows);
+
+        // Adaptive block-size guard:
+        // Instead of checking bytes on every appended row, we probe at sampled row counts.
+        // Each probe estimates bytes-per-row and schedules the next probe closer to the
+        // expected byte limit, so we keep overhead low while still stopping near max size.
+        if (block->rows() > 0 && max_block_bytes > 0 && *read_rows == next_checking_rows) {
+            const auto bytes = block->bytes();
+
+            if (bytes == 0) {
+                next_checking_rows++;
+                continue;
+            }
+            if (bytes >= max_block_bytes) {
+                break;
+            }
+
+            const auto remaining_bytes = max_block_bytes - bytes;
+            const auto bytes_per_row = bytes / block->rows();
+            const auto remaining_rows = remaining_bytes / bytes_per_row;
+            next_checking_rows += std::max(1UL, remaining_rows / 2);
+        }
     }
 
     return Status::OK();

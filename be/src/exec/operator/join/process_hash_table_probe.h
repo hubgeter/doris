@@ -40,7 +40,8 @@ using ConstNullMapPtr = const NullMap*;
 
 template <int JoinOpType>
 struct ProcessHashTableProbe {
-    ProcessHashTableProbe(HashJoinProbeLocalState* parent, int batch_size);
+    ProcessHashTableProbe(HashJoinProbeLocalState* parent, int batch_size,
+                          size_t block_max_bytes = 0);
     ~ProcessHashTableProbe() = default;
 
     // output build side result column
@@ -94,7 +95,9 @@ struct ProcessHashTableProbe {
     HashJoinProbeLocalState* _parent = nullptr;
     HashJoinProbeOperatorX* _parent_operator = nullptr;
 
-    const int _batch_size;
+    int _batch_size;
+    const int _initial_batch_size;
+    const size_t _block_max_bytes;
     const std::shared_ptr<Block>& _build_block;
     std::unique_ptr<Arena> _arena;
 

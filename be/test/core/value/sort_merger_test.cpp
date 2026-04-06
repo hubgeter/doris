@@ -478,4 +478,193 @@ TEST(SortMergerTest, TEST_SINGLE_STREAM) {
     }
 }
 
+TEST(SortMergerTest, BLOCK_MAX_BYTES_LIMITS_OUTPUT) {
+    /**
+     * Test that block_max_bytes causes the merger to produce smaller blocks.
+     * Setup: 3 children, each providing 256 sorted Int64 rows. Total = 768 rows.
+     * batch_size=4096, block_max_bytes=512.
+     * Each nullable Int64 row ≈ 9 bytes.
+     * The periodic check at 256 rows finds 256*9=2304 > 512, so it breaks.
+     * Each output block should have at most 256 rows.
+     */
+    const int num_children = 3;
+    const int batch_size = 4096;
+    const size_t block_max_bytes = 512;
+    std::vector<int> round;
+    round.resize(num_children, 0);
+    const int num_round = 1;
+
+    std::unique_ptr<VSortedRunMerger> merger;
+    auto profile = std::make_shared<RuntimeProfile>("");
+    auto ordering_expr = MockSlotRef::create_mock_contexts(
+            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()));
+    {
+        std::vector<bool> is_asc_order = {true};
+        std::vector<bool> nulls_first = {true};
+        merger.reset(new VSortedRunMerger(ordering_expr, is_asc_order, nulls_first, batch_size, -1,
+                                          0, profile.get(), block_max_bytes));
+    }
+    {
+        std::vector<BlockSupplier> child_block_suppliers;
+        for (int child_idx = 0; child_idx < num_children; child_idx++) {
+            BlockSupplier block_supplier = [&, round_vec = &round, num_round = num_round,
+                                            id = child_idx](Block* block, bool* eos) {
+                std::vector<Int64> values;
+                std::vector<UInt8> null_map;
+                const int rows_per_block = 256;
+                for (int i = 0; i < rows_per_block; i++) {
+                    values.push_back(id * rows_per_block + i);
+                    null_map.push_back(0);
+                }
+                *block = ColumnHelper::create_nullable_block<DataTypeInt64>(values, null_map);
+                *eos = ++((*round_vec)[id]) == num_round;
+                return Status::OK();
+            };
+            child_block_suppliers.push_back(block_supplier);
+        }
+        EXPECT_TRUE(merger->prepare(child_block_suppliers).ok());
+    }
+    {
+        size_t total_rows = 0;
+        int num_blocks = 0;
+        bool eos = false;
+        while (!eos) {
+            Block block;
+            EXPECT_TRUE(merger->get_next(&block, &eos).ok());
+            if (block.rows() > 0) {
+                EXPECT_LE(block.rows(), 256)
+                        << "block_max_bytes should limit output block size, got " << block.rows()
+                        << " rows with " << block.bytes() << " bytes";
+                total_rows += block.rows();
+                num_blocks++;
+            }
+        }
+        EXPECT_EQ(total_rows, 768);
+        EXPECT_GT(num_blocks, 1);
+    }
+}
+
+TEST(SortMergerTest, BLOCK_MAX_BYTES_ZERO_DISABLES_CHECK) {
+    /**
+     * When block_max_bytes=0, blocks are limited only by batch_size.
+     */
+    const int num_children = 2;
+    const int batch_size = 10;
+    std::vector<int> round;
+    round.resize(num_children, 0);
+    const int num_round = 1;
+
+    std::unique_ptr<VSortedRunMerger> merger;
+    auto profile = std::make_shared<RuntimeProfile>("");
+    auto ordering_expr = MockSlotRef::create_mock_contexts(
+            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()));
+    {
+        std::vector<bool> is_asc_order = {true};
+        std::vector<bool> nulls_first = {true};
+        merger.reset(new VSortedRunMerger(ordering_expr, is_asc_order, nulls_first, batch_size, -1,
+                                          0, profile.get(), /*block_max_bytes=*/0));
+    }
+    {
+        std::vector<BlockSupplier> child_block_suppliers;
+        for (int child_idx = 0; child_idx < num_children; child_idx++) {
+            BlockSupplier block_supplier = [&, round_vec = &round, num_round = num_round,
+                                            id = child_idx](Block* block, bool* eos) {
+                std::vector<Int64> values;
+                std::vector<UInt8> null_map;
+                for (int i = 0; i < 10; i++) {
+                    values.push_back(id * 10 + i);
+                    null_map.push_back(0);
+                }
+                *block = ColumnHelper::create_nullable_block<DataTypeInt64>(values, null_map);
+                *eos = ++((*round_vec)[id]) == num_round;
+                return Status::OK();
+            };
+            child_block_suppliers.push_back(block_supplier);
+        }
+        EXPECT_TRUE(merger->prepare(child_block_suppliers).ok());
+    }
+    {
+        size_t total_rows = 0;
+        bool eos = false;
+        while (!eos) {
+            Block block;
+            EXPECT_TRUE(merger->get_next(&block, &eos).ok());
+            if (block.rows() > 0) {
+                // With block_max_bytes=0, rows per block should be exactly batch_size
+                // (except possibly the last block).
+                EXPECT_LE(block.rows(), batch_size);
+                total_rows += block.rows();
+            }
+        }
+        // 2 children * 10 rows each = 20 total
+        EXPECT_EQ(total_rows, 20);
+    }
+}
+
+TEST(SortMergerTest, BLOCK_MAX_BYTES_WITH_MANY_ROWS) {
+    /**
+     * Test block_max_bytes with 5 children each producing 1024 rows.
+     * Total = 5120 rows. batch_size=8192. block_max_bytes=2048.
+     * Verifies all rows are output and no block exceeds batch_size.
+     */
+    const int num_children = 5;
+    const int batch_size = 8192;
+    const size_t block_max_bytes = 2048;
+    const int rows_per_child = 1024;
+    std::vector<int> supply_idx;
+    supply_idx.resize(num_children, 0);
+
+    std::unique_ptr<VSortedRunMerger> merger;
+    auto profile = std::make_shared<RuntimeProfile>("");
+    auto ordering_expr = MockSlotRef::create_mock_contexts(
+            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()));
+    {
+        std::vector<bool> is_asc_order = {true};
+        std::vector<bool> nulls_first = {false};
+        merger.reset(new VSortedRunMerger(ordering_expr, is_asc_order, nulls_first, batch_size, -1,
+                                          0, profile.get(), block_max_bytes));
+    }
+    {
+        std::vector<BlockSupplier> child_block_suppliers;
+        for (int child_idx = 0; child_idx < num_children; child_idx++) {
+            BlockSupplier block_supplier = [&, idx_ptr = &supply_idx, id = child_idx,
+                                            rows_per_child = rows_per_child](Block* block,
+                                                                             bool* eos) {
+                const int block_rows = 256;
+                int& idx = (*idx_ptr)[id];
+                if (idx >= rows_per_child) {
+                    *eos = true;
+                    return Status::OK();
+                }
+                int remaining = std::min(block_rows, rows_per_child - idx);
+                std::vector<Int64> values;
+                std::vector<UInt8> null_map;
+                for (int i = 0; i < remaining; i++) {
+                    values.push_back(idx + i);
+                    null_map.push_back(0);
+                }
+                *block = ColumnHelper::create_nullable_block<DataTypeInt64>(values, null_map);
+                idx += remaining;
+                *eos = (idx >= rows_per_child);
+                return Status::OK();
+            };
+            child_block_suppliers.push_back(block_supplier);
+        }
+        EXPECT_TRUE(merger->prepare(child_block_suppliers).ok());
+    }
+    {
+        size_t total_rows = 0;
+        bool eos = false;
+        while (!eos) {
+            Block block;
+            EXPECT_TRUE(merger->get_next(&block, &eos).ok());
+            if (block.rows() > 0) {
+                EXPECT_LE(block.rows(), static_cast<size_t>(batch_size));
+                total_rows += block.rows();
+            }
+        }
+        EXPECT_EQ(total_rows, num_children * rows_per_child);
+    }
+}
+
 } // namespace doris

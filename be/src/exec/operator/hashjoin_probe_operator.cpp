@@ -98,7 +98,7 @@ Status HashJoinProbeLocalState::open(RuntimeState* state) {
                 } else {
                     _process_hashtable_ctx_variants
                             ->emplace<ProcessHashTableProbe<JoinOpType::value>>(
-                                    this, state->batch_size());
+                                    this, state->block_max_rows(), state->block_max_bytes());
                 }
             },
             _shared_state->join_op_variants, make_bool_variant(p._have_other_join_conjunct));
@@ -390,7 +390,7 @@ Status HashJoinProbeLocalState::filter_data_and_build_output(RuntimeState* state
                                                              bool check_rows_count) {
     auto output_rows = temp_block->rows();
     if (check_rows_count) {
-        DCHECK(output_rows <= state->batch_size());
+        DCHECK(output_rows <= state->block_max_rows());
     }
     {
         SCOPED_TIMER(_join_filter_timer);

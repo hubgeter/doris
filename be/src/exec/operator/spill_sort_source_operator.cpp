@@ -155,8 +155,9 @@ Status SpillSortLocalState::_create_intermediate_merger(RuntimeState* state, int
         offset = Base::_shared_state->offset;
     }
 
-    _merger = std::make_unique<VSortedRunMerger>(sort_description, state->batch_size(), limit,
-                                                 offset, custom_profile());
+    _merger =
+            std::make_unique<VSortedRunMerger>(sort_description, state->block_max_rows(), limit,
+                                               offset, custom_profile(), state->block_max_bytes());
 
     _current_merging_files.clear();
     _current_merging_readers.clear();

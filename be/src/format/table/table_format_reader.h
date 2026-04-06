@@ -79,6 +79,10 @@ public:
         return get_next_block_inner(block, read_rows, eof);
     }
 
+    void set_batch_size(size_t batch_size) override {
+        _file_format_reader->set_batch_size(batch_size);
+    }
+
     virtual Status get_next_block_inner(Block* block, size_t* read_rows, bool* eof) = 0;
 
     Status get_columns(std::unordered_map<std::string, DataTypePtr>* name_to_type,

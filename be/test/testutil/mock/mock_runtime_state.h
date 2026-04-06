@@ -56,6 +56,7 @@ public:
             : RuntimeState(query_id, fragment_id, query_options, query_globals, exec_env, ctx) {}
 
     int batch_size() const override { return _batch_size; }
+    int block_max_rows() const override { return _batch_size; }
 
     bool enable_shared_exchange_sink_buffer() const override {
         return _enable_shared_exchange_sink_buffer;
