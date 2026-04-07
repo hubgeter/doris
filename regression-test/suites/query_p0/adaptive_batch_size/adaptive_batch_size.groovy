@@ -85,8 +85,6 @@ suite("adaptive_batch_size") {
         assertEquals(res_enabled[i].toString(), res_disabled[i].toString())
     }
 
-    // sql "drop table abs_wide_table"
-
 
     // ── Test 2: narrow table (INT columns) ───────────────────────────────────
     // Rows are ~12 bytes each; with adaptive=on the predictor should converge
@@ -206,7 +204,9 @@ suite("adaptive_batch_size") {
 
     assertEquals(flag_off.toString(), flag_on.toString())
 
-    // Reset session variables to defaults.
+    // Reset all modified session variables to defaults.
     sql "set preferred_block_size_bytes = 8388608"
+    sql "set preferred_block_size_rows = 65535"
     sql "set preferred_max_column_in_block_size_bytes = 1048576"
+    sql "set batch_size = 4096"
 }

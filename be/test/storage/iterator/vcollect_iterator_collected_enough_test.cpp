@@ -370,10 +370,9 @@ TEST_F(BlockReaderByteBudgetTest, DefaultIsZero) {
     EXPECT_EQ(reader.preferred_block_size_bytes(), 0);
 }
 
-// Base TabletReader always returns 0 (feature unsupported at base level).
-TEST_F(BlockReaderByteBudgetTest, BaseTabletReaderReturnsZero) {
+// Virtual dispatch: BlockReader override is reachable through a TabletReader pointer.
+TEST_F(BlockReaderByteBudgetTest, VirtualDispatchThroughTabletReaderPtr) {
     config::enable_adaptive_batch_size = true;
-    // TabletReader is abstract; use BlockReader as base pointer to test virtual dispatch.
     BlockReader concrete;
     concrete._reader_context.preferred_block_size_bytes = 99999;
     TabletReader* base = &concrete;
