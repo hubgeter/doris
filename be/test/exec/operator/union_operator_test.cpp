@@ -295,4 +295,56 @@ TEST_F(UnionOperatorTest, test_sink_and_source) {
                 block, ColumnHelper::create_block<DataTypeInt64>({1, 2}, {3, 4})));
     }
 }
+
+// Verify union source const-expr path respects byte budget via within_budget.
+// With a tiny byte budget, each get_block should output fewer const rows.
+TEST_F(UnionOperatorTest, ByteBudgetLimitsConstExprOutput) {
+    auto saved = config::enable_adaptive_batch_size;
+    config::enable_adaptive_batch_size = true;
+    state->_batch_size = 2;
+    state->_query_options.__set_batch_size(2);
+    state->_query_options.__set_preferred_block_size_bytes(1);
+    state->_query_options.__set_preferred_block_size_rows(2);
+
+    source_op.reset(new MockUnionSourceOperator {
+            0, // child_size=0 means const-only
+            {std::make_shared<DataTypeInt64>(), std::make_shared<DataTypeInt64>()},
+            &pool});
+    EXPECT_TRUE(source_op->prepare(state.get()));
+    source_op->_const_expr_lists.push_back(MockLiteral::create<DataTypeInt64>({1, 10}));
+    source_op->_const_expr_lists.push_back(MockLiteral::create<DataTypeInt64>({2, 20}));
+    source_op->_const_expr_lists.push_back(MockLiteral::create<DataTypeInt64>({3, 30}));
+
+    auto shared_state_sptr = std::make_shared<UnionSharedState>(0);
+    {
+        auto source_local_state_uptr =
+                std::make_unique<UnionSourceLocalState>(state.get(), source_op.get());
+        source_local_state = source_local_state_uptr.get();
+        LocalStateInfo info {.parent_profile = &profile,
+                             .scan_ranges = {},
+                             .shared_state = shared_state_sptr.get(),
+                             .shared_state_map = {},
+                             .task_idx = 0};
+        EXPECT_TRUE(source_local_state->init(state.get(), info));
+        state->resize_op_id_to_local_state(-100);
+        state->emplace_local_state(source_op->operator_id(), std::move(source_local_state_uptr));
+        EXPECT_TRUE(source_local_state->open(state.get()));
+    }
+
+    // Pull all const expr output. With tiny byte budget and preferred_block_size_rows=2,
+    // each get_block returns at most 2 const rows, and once bytes exceed 1, it stops.
+    size_t total_rows = 0;
+    int calls = 0;
+    bool eos = false;
+    while (!eos && calls < 100) {
+        Block block;
+        EXPECT_TRUE(source_op->get_block(state.get(), &block, &eos).ok());
+        total_rows += block.rows();
+        calls++;
+    }
+    EXPECT_EQ(total_rows, 3);
+    EXPECT_TRUE(eos);
+
+    config::enable_adaptive_batch_size = saved;
+}
 } // namespace doris

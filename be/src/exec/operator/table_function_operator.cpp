@@ -650,9 +650,9 @@ Status TableFunctionLocalState::_get_expanded_block_for_outer_conjuncts(RuntimeS
 
             // It may take multiple iterations of this while loop to process a child row if
             // the table function produces a large number of rows.
-            auto repeat_times = _fns[0]->get_value(
-                    columns[child_slot_count],
-                    static_cast<int>(budget.max_rows - output_row_count));
+            auto repeat_times =
+                    _fns[0]->get_value(columns[child_slot_count],
+                                       static_cast<int>(budget.max_rows - output_row_count));
             _current_row_insert_times += repeat_times;
             output_row_count = columns[child_slot_count]->size();
         }
