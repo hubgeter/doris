@@ -97,7 +97,15 @@ Status BetaRowsetReader::get_segment_iterators(RowsetReaderContext* read_context
     RETURN_IF_ERROR(_rowset->load());
 
     // convert RowsetReaderContext to StorageReadOptions
-    _read_options.block_row_max = read_context->batch_size;
+    // When adaptive batch size is enabled and the byte budget is active, use the larger
+    // preferred_block_size_rows so the predictor can grow beyond the legacy batch_size.
+    if (config::enable_adaptive_batch_size && read_context->preferred_block_size_bytes > 0 &&
+        read_context->preferred_block_size_rows > 0) {
+        _read_options.block_row_max =
+                cast_set<uint32_t>(read_context->preferred_block_size_rows);
+    } else {
+        _read_options.block_row_max = read_context->batch_size;
+    }
     _read_options.preferred_block_size_bytes = read_context->preferred_block_size_bytes;
     _read_options.preferred_block_size_rows = read_context->preferred_block_size_rows;
     _read_options.preferred_max_col_bytes = read_context->preferred_max_col_bytes;

@@ -118,7 +118,10 @@ Status VSortedRunMerger::get_next(Block* output_block, bool* eos) {
     if (_priority_queue.empty()) {
         *eos = true;
         return Status::OK();
-    } else if (_priority_queue.size() == 1) {
+    } else if (_priority_queue.size() == 1 && _block_max_bytes == 0) {
+        // Single-run fast path: swap the entire remaining supplier block into output.
+        // When byte budget is active, fall through to the general merge path which
+        // already respects _block_max_bytes.
         auto current = _priority_queue.top();
         DCHECK(!current->eof());
         DCHECK(current->block_ptr() != nullptr);

@@ -140,9 +140,11 @@ public:
     void set_desc_tbl(const DescriptorTbl* desc_tbl) { _desc_tbl = desc_tbl; }
 
     MOCK_FUNCTION int block_max_rows() const {
-        return config::enable_adaptive_batch_size
-                       ? std::max(_query_options.batch_size, int(preferred_block_size_rows()))
-                       : _query_options.batch_size;
+        if (config::enable_adaptive_batch_size && preferred_block_size_bytes() > 0) {
+            auto rows = preferred_block_size_rows();
+            return static_cast<int>(std::min(rows, static_cast<size_t>(INT32_MAX)));
+        }
+        return _query_options.batch_size;
     }
 
     MOCK_FUNCTION size_t block_max_bytes() const {

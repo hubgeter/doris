@@ -73,7 +73,7 @@ suite("adaptive_batch_size") {
     set_adaptive(true)
     def res_enabled = sql "select id, length(c1) as l1, length(c2) as l2, length(c3) as l3 from abs_wide_table order by 1, 2, 3, 4"
 
-    qt_wide "select id, length(c1) as l1, length(c2) as l2, length(c3) as l3 from abs_wide_table order by 1, 2, 3, 4 limit 50"
+    order_qt_wide "select id, length(c1) as l1, length(c2) as l2, length(c3) as l3 from abs_wide_table order by 1, 2, 3, 4 limit 50"
 
     // Run query with adaptive disabled and collect result.
     set_adaptive(false)
@@ -111,14 +111,12 @@ suite("adaptive_batch_size") {
     set_adaptive(true)
     def narrow_on  = sql "select sum(c1), sum(c2), sum(c3) from abs_narrow_table"
 
-    qt_narrow "select sum(c1), sum(c2), sum(c3) from abs_narrow_table"
+    order_qt_narrow "select sum(c1), sum(c2), sum(c3) from abs_narrow_table"
 
     set_adaptive(false)
     def narrow_off = sql "select sum(c1), sum(c2), sum(c3) from abs_narrow_table"
 
     assertEquals(narrow_on.toString(), narrow_off.toString())
-
-    sql "drop table abs_narrow_table"
 
 
     // ── Test 3: AGG_KEYS table ────────────────────────────────────────────────
@@ -149,14 +147,12 @@ suite("adaptive_batch_size") {
     set_adaptive(true)
     def agg_on = sql "select id, val from abs_agg_table order by 1, 2 limit 10"
 
-    qt_agg "select id, val from abs_agg_table order by 1, 2 limit 10"
+    order_qt_agg "select id, val from abs_agg_table order by 1, 2 limit 10"
 
     set_adaptive(false)
     def agg_off = sql "select id, val from abs_agg_table order by 1, 2 limit 10"
 
     assertEquals(agg_on.toString(), agg_off.toString())
-
-    sql "drop table abs_agg_table"
 
 
     // ── Test 4: UNIQUE_KEYS table ─────────────────────────────────────────────
@@ -180,14 +176,12 @@ suite("adaptive_batch_size") {
     set_adaptive(true)
     def uniq_on = sql "select count(*), sum(id) from abs_unique_table"
 
-    qt_unique "select count(*), sum(id) from abs_unique_table"
+    order_qt_unique "select count(*), sum(id) from abs_unique_table"
 
     set_adaptive(false)
     def uniq_off = sql "select count(*), sum(id) from abs_unique_table"
 
     assertEquals(uniq_on.toString(), uniq_off.toString())
-
-    sql "drop table abs_unique_table"
 
 
     // ── Test 5: verify setting preferred_block_size_bytes = 0 disables feature ─
@@ -205,14 +199,12 @@ suite("adaptive_batch_size") {
     sql "set preferred_block_size_bytes = 0"
     def flag_off = sql "select sum(v) from abs_flag_table"
 
-    qt_flag "select sum(v) from abs_flag_table"
+    order_qt_flag "select sum(v) from abs_flag_table"
 
     sql "set preferred_block_size_bytes = 8388608"
     def flag_on  = sql "select sum(v) from abs_flag_table"
 
     assertEquals(flag_off.toString(), flag_on.toString())
-
-    sql "drop table abs_flag_table"
 
     // Reset session variables to defaults.
     sql "set preferred_block_size_bytes = 8388608"

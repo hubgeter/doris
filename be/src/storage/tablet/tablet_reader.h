@@ -253,10 +253,11 @@ public:
     int batch_size() const { return _reader_context.batch_size; }
 
     // Return the effective maximum row count for output blocks.
-    // When adaptive batch sizing is enabled, prefer preferred_block_size_rows;
-    // otherwise fall back to the traditional batch_size.
+    // When adaptive batch sizing is enabled and the byte budget is active,
+    // prefer preferred_block_size_rows; otherwise fall back to the traditional batch_size.
     size_t batch_max_rows() const {
-        if (config::enable_adaptive_batch_size && _reader_context.preferred_block_size_rows > 0) {
+        if (config::enable_adaptive_batch_size && _reader_context.preferred_block_size_bytes > 0 &&
+            _reader_context.preferred_block_size_rows > 0) {
             return _reader_context.preferred_block_size_rows;
         }
         return _reader_context.batch_size;

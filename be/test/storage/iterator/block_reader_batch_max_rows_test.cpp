@@ -61,6 +61,7 @@ TEST_F(BlockReaderBatchMaxRowsTest, UsePreferredRowsWhenAdaptiveEnabled) {
     BlockReader reader;
     reader._reader_context.batch_size = 4096;
     reader._reader_context.preferred_block_size_rows = 8192;
+    reader._reader_context.preferred_block_size_bytes = 8388608; // byte budget must be active
 
     EXPECT_EQ(reader.batch_max_rows(), 8192);
 }
@@ -71,7 +72,21 @@ TEST_F(BlockReaderBatchMaxRowsTest, FallbackWhenPreferredRowsIsZero) {
     BlockReader reader;
     reader._reader_context.batch_size = 4096;
     reader._reader_context.preferred_block_size_rows = 0;
+    reader._reader_context.preferred_block_size_bytes = 8388608;
 
+    EXPECT_EQ(reader.batch_max_rows(), 4096);
+}
+
+TEST_F(BlockReaderBatchMaxRowsTest, FallbackWhenByteBudgetIsZero) {
+    config::enable_adaptive_batch_size = true;
+
+    BlockReader reader;
+    reader._reader_context.batch_size = 4096;
+    reader._reader_context.preferred_block_size_rows = 65535;
+    reader._reader_context.preferred_block_size_bytes = 0;
+
+    // When byte budget is zero, batch_max_rows falls back to batch_size
+    // regardless of preferred_block_size_rows.
     EXPECT_EQ(reader.batch_max_rows(), 4096);
 }
 
@@ -80,6 +95,7 @@ TEST_F(BlockReaderBatchMaxRowsTest, DefaultPreferredRows) {
 
     BlockReader reader;
     reader._reader_context.batch_size = 4096;
+    reader._reader_context.preferred_block_size_bytes = 8388608; // byte budget must be active
     // default preferred_block_size_rows is 65535
 
     EXPECT_EQ(reader.batch_max_rows(), 65535);
