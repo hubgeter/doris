@@ -94,6 +94,8 @@ public:
 private:
     // next for topn query
     Status _topn_next(Block* block);
+    // Return next chunk from precomputed topN result.
+    Status _topn_next_chunk(Block* block);
 
     class BlockRowPosComparator {
     public:
@@ -356,6 +358,9 @@ private:
     // for topn next
     size_t _topn_limit = 0;
     bool _topn_eof = false;
+    // For chunked topN output when result exceeds byte budget.
+    Block _topn_result_block;
+    size_t _topn_result_offset = 0;
     std::vector<RowSetSplits> _rs_splits;
 
     // General limit pushdown for DUP_KEYS and UNIQUE_KEYS with MOW (non-merge path).

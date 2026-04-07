@@ -38,6 +38,7 @@ DistinctStreamingAggLocalState::DistinctStreamingAggLocalState(RuntimeState* sta
                                                                OperatorXBase* parent)
         : PipelineXLocalState<FakeSharedState>(state, parent),
           batch_size(state->block_max_rows()),
+          block_max_bytes(state->block_max_bytes()),
           _agg_data(std::make_unique<DistinctDataVariants>()),
           _child_block(Block::create_unique()),
           _aggregated_block(Block::create_unique()),
@@ -207,16 +208,31 @@ Status DistinctStreamingAggLocalState::_distinct_pre_agg_with_serialized_key(
             }
         } else {
             DCHECK_EQ(_cache_block.rows(), 0);
-            // is output row > batch_size, split some to cache_block
-            if (out_block->rows() + _distinct_row.size() > batch_size) {
-                size_t split_size = batch_size - out_block->rows();
+            // Compute maximum additional rows for out_block respecting both
+            // row limit (batch_size) and byte budget (block_max_bytes).
+            size_t max_rows_to_add = (out_block->rows() < (size_t)batch_size)
+                                             ? ((size_t)batch_size - out_block->rows())
+                                             : 0;
+            if (block_max_bytes > 0 && out_block->rows() > 0) {
+                size_t current_bytes = out_block->bytes();
+                if (current_bytes >= block_max_bytes) {
+                    max_rows_to_add = 0;
+                } else {
+                    size_t avg_row_bytes = current_bytes / out_block->rows();
+                    if (avg_row_bytes > 0) {
+                        size_t rows_for_budget = (block_max_bytes - current_bytes) / avg_row_bytes;
+                        max_rows_to_add = std::min(max_rows_to_add, rows_for_budget);
+                    }
+                }
+            }
+            if (_distinct_row.size() > max_rows_to_add) {
                 for (int i = 0; i < key_size; ++i) {
                     auto output_dst = out_block->get_by_position(i).column->assume_mutable();
                     key_columns[i]->append_data_by_selector(output_dst, _distinct_row, 0,
-                                                            split_size);
+                                                            max_rows_to_add);
                     auto cache_dst = _cache_block.get_by_position(i).column->assume_mutable();
-                    key_columns[i]->append_data_by_selector(cache_dst, _distinct_row, split_size,
-                                                            _distinct_row.size());
+                    key_columns[i]->append_data_by_selector(cache_dst, _distinct_row,
+                                                            max_rows_to_add, _distinct_row.size());
                 }
             } else {
                 for (int i = 0; i < key_size; ++i) {
