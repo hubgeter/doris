@@ -22,6 +22,7 @@
 #include <memory>
 #include <utility>
 
+#include "common/block_budget.h"
 #include "common/cast_set.h"
 #include "common/compiler_util.h" // IWYU pragma: keep
 #include "core/column/column_fixed_length_object.h"
@@ -470,12 +471,8 @@ Status StreamingAggLocalState::_get_results_with_serialized_key(RuntimeState* st
     }
 
     // Compute effective max rows based on estimated bytes per row from previous calls.
-    size_t effective_max_rows = state->block_max_rows();
-    const size_t block_max_bytes = state->block_max_bytes();
-    if (block_max_bytes > 0 && _estimated_row_bytes > 0) {
-        size_t bytes_limit = block_max_bytes / _estimated_row_bytes;
-        effective_max_rows = std::max(size_t(1), std::min(effective_max_rows, bytes_limit));
-    }
+    const BlockBudget budget(state->block_max_rows(), state->block_max_bytes());
+    const size_t effective_max_rows = budget.effective_max_rows(_estimated_row_bytes);
 
     std::visit(
             Overload {

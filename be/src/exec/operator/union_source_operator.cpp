@@ -20,6 +20,7 @@
 #include <functional>
 #include <utility>
 
+#include "common/block_budget.h"
 #include "common/status.h"
 #include "core/block/block.h"
 #include "core/block/columns_with_type_and_name.h"
@@ -153,10 +154,9 @@ Status UnionSourceOperatorX::get_next_const(RuntimeState* state, Block* block) {
     MutableBlock mblock = VectorizedUtils::build_mutable_mem_reuse_block(block, row_descriptor());
 
     ColumnsWithTypeAndName tmp_block_columns;
-    const auto block_max_bytes = state->block_max_bytes();
+    const BlockBudget budget(state->block_max_rows(), state->block_max_bytes());
     for (; _const_expr_list_idx < _const_expr_lists.size() &&
-           mblock.rows() < state->block_max_rows() &&
-           (block_max_bytes == 0 || mblock.bytes() < block_max_bytes);
+           budget.within_budget(mblock.rows(), mblock.bytes());
          ++_const_expr_list_idx) {
         int const_expr_lists_size = cast_set<int>(_const_expr_lists[_const_expr_list_idx].size());
         if (_const_expr_list_idx && const_expr_lists_size != _const_expr_lists[0].size()) {

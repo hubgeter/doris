@@ -19,6 +19,7 @@
 
 #include <memory>
 
+#include "common/block_budget.h"
 #include "common/cast_set.h"
 #include "common/exception.h"
 #include "core/block/block.h"
@@ -195,7 +196,8 @@ void NestedLoopJoinProbeLocalState::_generate_block_base_probe(RuntimeState* sta
     };
 
     const auto block_max_bytes = state->block_max_bytes();
-    size_t effective_max_rows = state->block_max_rows();
+    const BlockBudget budget(state->block_max_rows(), block_max_bytes);
+    size_t effective_max_rows = budget.max_rows;
     bool bytes_estimated = false;
     while (_join_block.rows() + add_rows() <= effective_max_rows) {
         while (_current_build_pos == _shared_state->build_blocks.size() ||
@@ -245,9 +247,8 @@ void NestedLoopJoinProbeLocalState::_generate_block_base_probe(RuntimeState* sta
         }
     }
 
-    DCHECK_LE(_join_block.rows(), state->block_max_rows())
-            << "join block rows:" << _join_block.rows()
-            << ", state batch size:" << state->block_max_rows()
+    DCHECK_LE(_join_block.rows(), budget.max_rows)
+            << "join block rows:" << _join_block.rows() << ", state batch size:" << budget.max_rows
             << "probe_block rows:" << probe_block->rows()
             << " build blocks size:" << _shared_state->build_blocks.size();
 }
@@ -283,7 +284,8 @@ void NestedLoopJoinProbeLocalState::_generate_block_base_build(RuntimeState* sta
     }
 
     const auto block_max_bytes = state->block_max_bytes();
-    size_t effective_max_rows = state->block_max_rows();
+    const BlockBudget budget(state->block_max_rows(), block_max_bytes);
+    size_t effective_max_rows = budget.max_rows;
     bool bytes_estimated = false;
     while (_join_block.rows() + probe_rows <= effective_max_rows) {
         // The current build row has processed the entire probe block; move to the next build row
@@ -321,17 +323,13 @@ void NestedLoopJoinProbeLocalState::_generate_block_base_build(RuntimeState* sta
         // Refine row limit based on actual bytes per row after first data-producing iteration
         if (!bytes_estimated && block_max_bytes > 0 && _join_block.rows() > 0) {
             bytes_estimated = true;
-            size_t bytes_per_row = _join_block.bytes() / _join_block.rows();
-            if (bytes_per_row > 0) {
-                effective_max_rows = std::min(effective_max_rows,
-                                              std::max(size_t(1), block_max_bytes / bytes_per_row));
-            }
+            effective_max_rows =
+                    budget.effective_max_rows(_join_block.bytes() / _join_block.rows());
         }
     }
 
-    DCHECK_LE(_join_block.rows(), state->block_max_rows())
-            << "join block rows:" << _join_block.rows()
-            << ", state batch size:" << state->block_max_rows()
+    DCHECK_LE(_join_block.rows(), budget.max_rows)
+            << "join block rows:" << _join_block.rows() << ", state batch size:" << budget.max_rows
             << "probe_block rows:" << probe_block->rows()
             << "build block rows:" << build_block.rows();
 }
@@ -437,11 +435,8 @@ void NestedLoopJoinProbeLocalState::_finalize_current_phase(Block& block, size_t
         for (const auto& col : dst_columns) {
             current_bytes += col->byte_size();
         }
-        size_t bytes_per_row = current_bytes / column_size;
-        if (bytes_per_row > 0) {
-            effective_batch_size =
-                    std::min(batch_size, std::max(size_t(1), block_max_bytes / bytes_per_row));
-        }
+        const BlockBudget budget(batch_size, block_max_bytes);
+        effective_batch_size = budget.effective_max_rows(current_bytes / column_size);
     }
     if constexpr (BuildSide) {
         DCHECK(!p._is_mark_join);

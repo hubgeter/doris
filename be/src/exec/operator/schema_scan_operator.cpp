@@ -21,6 +21,7 @@
 
 #include <memory>
 
+#include "common/block_budget.h"
 #include "core/data_type/data_type_factory.hpp"
 #include "exec/operator/operator.h"
 #include "runtime/runtime_profile.h"
@@ -243,9 +244,8 @@ Status SchemaScanOperatorX::get_block(RuntimeState* state, Block* block, bool* e
                 break;
             }
 
-            const auto block_max_bytes = state->block_max_bytes();
-            if (src_block.rows() >= state->block_max_rows() ||
-                (block_max_bytes > 0 && src_block.bytes() >= block_max_bytes)) {
+            const BlockBudget budget(state->block_max_rows(), state->block_max_bytes());
+            if (budget.exceeded(src_block.rows(), src_block.bytes())) {
                 break;
             }
         }

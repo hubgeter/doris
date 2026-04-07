@@ -22,6 +22,7 @@
 #include <memory>
 #include <utility>
 
+#include "common/block_budget.h"
 #include "common/compiler_util.h" // IWYU pragma: keep
 #include "exec/operator/streaming_agg_min_reduction.h"
 #include "exprs/vectorized_agg_fn.h"
@@ -210,21 +211,9 @@ Status DistinctStreamingAggLocalState::_distinct_pre_agg_with_serialized_key(
             DCHECK_EQ(_cache_block.rows(), 0);
             // Compute maximum additional rows for out_block respecting both
             // row limit (batch_size) and byte budget (block_max_bytes).
-            size_t max_rows_to_add = (out_block->rows() < (size_t)batch_size)
-                                             ? ((size_t)batch_size - out_block->rows())
-                                             : 0;
-            if (block_max_bytes > 0 && out_block->rows() > 0) {
-                size_t current_bytes = out_block->bytes();
-                if (current_bytes >= block_max_bytes) {
-                    max_rows_to_add = 0;
-                } else {
-                    size_t avg_row_bytes = current_bytes / out_block->rows();
-                    if (avg_row_bytes > 0) {
-                        size_t rows_for_budget = (block_max_bytes - current_bytes) / avg_row_bytes;
-                        max_rows_to_add = std::min(max_rows_to_add, rows_for_budget);
-                    }
-                }
-            }
+            const BlockBudget budget(batch_size, block_max_bytes);
+            const size_t max_rows_to_add =
+                    budget.remaining_rows(out_block->rows(), out_block->bytes());
             if (_distinct_row.size() > max_rows_to_add) {
                 for (int i = 0; i < key_size; ++i) {
                     auto output_dst = out_block->get_by_position(i).column->assume_mutable();
@@ -408,13 +397,11 @@ Status DistinctStreamingAggOperatorX::pull(RuntimeState* state, Block* block, bo
 
 bool DistinctStreamingAggOperatorX::need_more_input_data(RuntimeState* state) const {
     auto& local_state = get_local_state(state);
-    const auto block_max_bytes = state->block_max_bytes();
-    const bool need_batch =
-            local_state._stop_emplace_flag
-                    ? local_state._aggregated_block->empty()
-                    : (local_state._aggregated_block->rows() < state->block_max_rows() &&
-                       (block_max_bytes == 0 ||
-                        local_state._aggregated_block->bytes() < block_max_bytes));
+    const BlockBudget budget(state->block_max_rows(), state->block_max_bytes());
+    const bool need_batch = local_state._stop_emplace_flag
+                                    ? local_state._aggregated_block->empty()
+                                    : budget.within_budget(local_state._aggregated_block->rows(),
+                                                           local_state._aggregated_block->bytes());
     return need_batch && !(local_state._child_eos || local_state._reach_limit);
 }
 

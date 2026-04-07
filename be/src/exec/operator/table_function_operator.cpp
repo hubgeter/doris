@@ -23,6 +23,7 @@
 #include <memory>
 #include <numeric>
 
+#include "common/block_budget.h"
 #include "common/cast_set.h"
 #include "core/assert_cast.h"
 #include "core/block/block.h"
@@ -530,10 +531,9 @@ Status TableFunctionLocalState::get_expanded_block(RuntimeState* state, Block* o
     }
 
     if (use_slow_path) {
-        const auto block_max_bytes_slow = state->block_max_bytes();
+        const BlockBudget budget_slow(state->block_max_rows(), state->block_max_bytes());
         bool skip_child_row = false;
-        while (columns[p._child_slots.size()]->size() < state->block_max_rows() &&
-               (block_max_bytes_slow == 0 || m_block.bytes() < block_max_bytes_slow)) {
+        while (budget_slow.within_budget(columns[p._child_slots.size()]->size(), m_block.bytes())) {
             RETURN_IF_CANCELLED(state);
 
             if (_child_block->rows() == 0) {
@@ -616,12 +616,10 @@ Status TableFunctionLocalState::_get_expanded_block_for_outer_conjuncts(RuntimeS
         child_row_to_output_rows_indices.push_back(0);
     }
 
-    const auto block_max_rows = state->block_max_rows();
-    const auto block_max_bytes = state->block_max_bytes();
+    const BlockBudget budget(state->block_max_rows(), state->block_max_bytes());
     auto output_row_count = columns[child_slot_count]->size();
     auto within_block_limit = [&]() -> bool {
-        return output_row_count < block_max_rows &&
-               (block_max_bytes == 0 || m_block.bytes() < block_max_bytes);
+        return budget.within_budget(output_row_count, m_block.bytes());
     };
     while (within_block_limit()) {
         RETURN_IF_CANCELLED(state);
@@ -652,8 +650,9 @@ Status TableFunctionLocalState::_get_expanded_block_for_outer_conjuncts(RuntimeS
 
             // It may take multiple iterations of this while loop to process a child row if
             // the table function produces a large number of rows.
-            auto repeat_times = _fns[0]->get_value(columns[child_slot_count],
-                                                   block_max_rows - (int)output_row_count);
+            auto repeat_times = _fns[0]->get_value(
+                    columns[child_slot_count],
+                    static_cast<int>(budget.max_rows - output_row_count));
             _current_row_insert_times += repeat_times;
             output_row_count = columns[child_slot_count]->size();
         }
@@ -663,8 +662,7 @@ Status TableFunctionLocalState::_get_expanded_block_for_outer_conjuncts(RuntimeS
     //    _cur_child_offset == -1
     // 2. output_block reaches batch size
     //    fn maybe or maybe not eos
-    if (output_row_count >= block_max_rows ||
-        (block_max_bytes > 0 && m_block.bytes() >= block_max_bytes)) {
+    if (budget.exceeded(output_row_count, m_block.bytes())) {
         _copy_output_slots(columns, p);
         handled_row_indices.push_back(_cur_child_offset);
         child_row_to_output_rows_indices.push_back(output_row_count);

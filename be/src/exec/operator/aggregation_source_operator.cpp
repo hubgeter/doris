@@ -20,6 +20,7 @@
 #include <memory>
 #include <string>
 
+#include "common/block_budget.h"
 #include "common/exception.h"
 #include "core/column/column_fixed_length_object.h"
 #include "exec/operator/operator.h"
@@ -122,12 +123,8 @@ Status AggLocalState::_get_results_with_serialized_key(RuntimeState* state, Bloc
     }
 
     // Compute effective max rows based on estimated bytes per row.
-    size_t effective_max_rows = state->block_max_rows();
-    const size_t block_max_bytes = state->block_max_bytes();
-    if (block_max_bytes > 0 && _estimated_row_bytes > 0) {
-        size_t bytes_limit = block_max_bytes / _estimated_row_bytes;
-        effective_max_rows = std::max(size_t(1), std::min(effective_max_rows, bytes_limit));
-    }
+    const BlockBudget budget(state->block_max_rows(), state->block_max_bytes());
+    const size_t effective_max_rows = budget.effective_max_rows(_estimated_row_bytes);
 
     std::visit(
             Overload {
@@ -322,12 +319,8 @@ Status AggLocalState::_get_with_serialized_key_result(RuntimeState* state, Block
     SCOPED_TIMER(_get_results_timer);
 
     // Compute effective max rows based on estimated bytes per row.
-    size_t effective_max_rows = state->block_max_rows();
-    const size_t block_max_bytes = state->block_max_bytes();
-    if (block_max_bytes > 0 && _estimated_row_bytes > 0) {
-        size_t bytes_limit = block_max_bytes / _estimated_row_bytes;
-        effective_max_rows = std::max(size_t(1), std::min(effective_max_rows, bytes_limit));
-    }
+    const BlockBudget budget(state->block_max_rows(), state->block_max_bytes());
+    const size_t effective_max_rows = budget.effective_max_rows(_estimated_row_bytes);
 
     std::visit(
             Overload {

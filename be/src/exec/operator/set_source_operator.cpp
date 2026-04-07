@@ -20,6 +20,7 @@
 #include <memory>
 #include <type_traits>
 
+#include "common/block_budget.h"
 #include "common/status.h"
 #include "exec/operator/operator.h"
 #include "runtime/runtime_profile.h"
@@ -82,12 +83,8 @@ Status SetSourceOperatorX<is_intersect>::get_block(RuntimeState* state, Block* b
     SCOPED_PEAK_MEM(&local_state._estimate_memory_usage);
 
     // Compute effective batch size based on estimated bytes per row.
-    size_t effective_batch_size = state->block_max_rows();
-    const size_t block_max_bytes = state->block_max_bytes();
-    if (block_max_bytes > 0 && local_state._estimated_row_bytes > 0) {
-        size_t bytes_limit = block_max_bytes / local_state._estimated_row_bytes;
-        effective_batch_size = std::max(size_t(1), std::min(effective_batch_size, bytes_limit));
-    }
+    const BlockBudget budget(state->block_max_rows(), state->block_max_bytes());
+    const size_t effective_batch_size = budget.effective_max_rows(local_state._estimated_row_bytes);
 
     _create_mutable_cols(local_state, block);
     {
