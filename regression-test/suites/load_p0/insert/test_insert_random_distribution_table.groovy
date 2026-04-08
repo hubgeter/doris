@@ -42,6 +42,7 @@ suite("test_insert_random_distribution_table", "p0") {
         return
     }
 
+    sql "set preferred_block_size_bytes = 0"
     sql "set batch_size=2"
     // insert first time
     sql "insert into ${tableName} values('2021-11-14', '2', '3', '4', 55), ('2022-12-13', '3', '31', '4', 55), ('2023-10-14', '23', '45', '66', 88), ('2023-10-16', '2', '3', '4', 55)"
