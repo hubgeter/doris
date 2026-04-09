@@ -157,8 +157,8 @@ Status RowGroupReader::init(
         for (size_t i = 0; i < predicate_col_names.size(); ++i) {
             const std::string& predicate_col_name = predicate_col_names[i];
             int slot_id = predicate_col_slot_ids[i];
-            if (predicate_col_name == IcebergTableReader::ROW_LINEAGE_ROW_ID ||
-                predicate_col_name == IcebergTableReader::ROW_LINEAGE_LAST_UPDATED_SEQ_NUMBER) {
+
+            if (_table_format_reader->disable_column_opt(predicate_col_name)) {
                 // row lineage column can not dict filter.
                 if (_slot_id_to_filter_conjuncts->find(slot_id) !=
                     _slot_id_to_filter_conjuncts->end()) {
@@ -334,7 +334,7 @@ Status RowGroupReader::next_batch(Block* block, size_t batch_size, size_t* read_
             RETURN_IF_ERROR(_get_current_batch_row_id(*read_rows));
         }
         RETURN_IF_ERROR(_table_format_reader->fill_synthesized_columns(block, *read_rows));
-
+        RETURN_IF_ERROR(_table_format_reader->fill_generated_columns(block, *read_rows));
         Status st = VExprContext::filter_block(_lazy_read_ctx.conjuncts, block, block->columns());
         *read_rows = block->rows();
         return st;
@@ -353,31 +353,33 @@ Status RowGroupReader::next_batch(Block* block, size_t batch_size, size_t* read_
         RETURN_IF_ERROR(_table_format_reader->on_fill_missing_columns(
                 block, *read_rows, _lazy_read_ctx.missing_col_names));
 
-        if (_table_format_reader->has_synthesized_column_handlers()) {
+        if (_table_format_reader->has_synthesized_column_handlers() ||
+            _table_format_reader->has_generated_column_handlers()) {
             RETURN_IF_ERROR(_get_current_batch_row_id(*read_rows));
         }
         RETURN_IF_ERROR(_table_format_reader->fill_synthesized_columns(block, *read_rows));
+        RETURN_IF_ERROR(_table_format_reader->fill_generated_columns(block, *read_rows));
 
-#ifndef NDEBUG
+        // #ifndef NDEBUG
         for (auto col : *block) {
             col.column->sanity_check();
             DCHECK(block->rows() == col.column->size())
                     << absl::Substitute("block rows = $0 , column rows = $1, col name = $2",
                                         block->rows(), col.column->size(), col.name);
         }
-#endif
+        // #endif
 
         if (block->rows() == 0) {
             RETURN_IF_ERROR(_convert_dict_cols_to_string_cols(block));
             *read_rows = block->rows();
-#ifndef NDEBUG
+            // #ifndef NDEBUG
             for (auto col : *block) {
                 col.column->sanity_check();
                 DCHECK(block->rows() == col.column->size())
                         << absl::Substitute("block rows = $0 , column rows = $1, col name = $2",
                                             block->rows(), col.column->size(), col.name);
             }
-#endif
+            // #endif
             return Status::OK();
         }
         {
@@ -427,14 +429,14 @@ Status RowGroupReader::next_batch(Block* block, size_t batch_size, size_t* read_
             }
             RETURN_IF_ERROR(_convert_dict_cols_to_string_cols(block));
         }
-#ifndef NDEBUG
+        // #ifndef NDEBUG
         for (auto col : *block) {
             col.column->sanity_check();
             DCHECK(block->rows() == col.column->size())
                     << absl::Substitute("block rows = $0 , column rows = $1, col name = $2",
                                         block->rows(), col.column->size(), col.name);
         }
-#endif
+        // #endif
         *read_rows = block->rows();
         return Status::OK();
     }
@@ -589,9 +591,9 @@ Status RowGroupReader::_read_column_data(Block* block,
         }
         batch_read_rows = col_read_rows;
 
-#ifndef NDEBUG
+        // #ifndef NDEBUG
         column_ptr->sanity_check();
-#endif
+        // #endif
         if (col_eof) {
             has_eof = true;
         }
@@ -635,14 +637,15 @@ Status RowGroupReader::_do_lazy_read(Block* block, size_t batch_size, size_t* re
                 block, pre_read_rows, _lazy_read_ctx.predicate_partition_col_names));
         RETURN_IF_ERROR(_table_format_reader->on_fill_missing_columns(
                 block, pre_read_rows, _lazy_read_ctx.predicate_missing_col_names));
-        if (_table_format_reader->has_synthesized_column_handlers()) {
+        if (_table_format_reader->has_synthesized_column_handlers() ||
+            _table_format_reader->has_generated_column_handlers()) {
             RETURN_IF_ERROR(_get_current_batch_row_id(pre_read_rows));
         }
         RETURN_IF_ERROR(_table_format_reader->fill_synthesized_columns(block, pre_read_rows));
-
+        RETURN_IF_ERROR(_table_format_reader->fill_generated_columns(block, pre_read_rows));
         RETURN_IF_ERROR(_build_pos_delete_filter(pre_read_rows));
 
-#ifndef NDEBUG
+        // #ifndef NDEBUG
         for (auto col : *block) {
             if (col.column->size() == 0) { // lazy read column.
                 continue;
@@ -652,16 +655,16 @@ Status RowGroupReader::_do_lazy_read(Block* block, size_t batch_size, size_t* re
                     << absl::Substitute("pre_read_rows = $0 , column rows = $1, col name = $2",
                                         pre_read_rows, col.column->size(), col.name);
         }
-#endif
+        // #endif
 
         bool can_filter_all = false;
-        bool resize_first_column = _lazy_read_ctx.resize_first_column;
-        if (resize_first_column && _table_format_reader->has_synthesized_column_handlers()) {
-            int row_id_idx = block->get_position_by_name(doris::BeConsts::ICEBERG_ROWID_COL);
-            if (row_id_idx == 0) {
-                resize_first_column = false;
-            }
-        }
+        //        bool resize_first_column = _lazy_read_ctx.resize_first_column;
+        // if (resize_first_column && _table_format_reader->has_synthesized_column_handlers()) {
+        //     int row_id_idx = block->get_position_by_name(doris::BeConsts::ICEBERG_ROWID_COL);
+        //     if (row_id_idx == 0) {
+        //         resize_first_column = false;
+        //     }
+        // }
         {
             SCOPED_RAW_TIMER(&_predicate_filter_time);
 
@@ -720,20 +723,8 @@ Status RowGroupReader::_do_lazy_read(Block* block, size_t batch_size, size_t* re
                             .column->assume_mutable()
                             ->clear();
                 }
-                if (_row_id_column_iterator_pair.first != nullptr) {
-                    block->get_by_position(_row_id_column_iterator_pair.second)
-                            .column->assume_mutable()
-                            ->clear();
-                }
-                if (_table_format_reader->has_synthesized_column_handlers()) {
-                    int row_id_idx =
-                            block->get_position_by_name(doris::BeConsts::ICEBERG_ROWID_COL);
-                    if (row_id_idx >= 0) {
-                        block->get_by_position(static_cast<size_t>(row_id_idx))
-                                .column->assume_mutable()
-                                ->clear();
-                    }
-                }
+                RETURN_IF_ERROR(_table_format_reader->clear_synthesized_columns(block));
+                RETURN_IF_ERROR(_table_format_reader->clear_generated_columns(block));
                 Block::erase_useless_column(block, origin_column_num);
             }
 
@@ -793,14 +784,14 @@ Status RowGroupReader::_do_lazy_read(Block* block, size_t batch_size, size_t* re
         SCOPED_RAW_TIMER(&_predicate_filter_time);
         if (filter_map.has_filter()) {
             std::vector<uint32_t> predicate_columns = _lazy_read_ctx.all_predicate_col_ids;
-            if (_table_format_reader->has_synthesized_column_handlers()) {
-                int row_id_idx = block->get_position_by_name(doris::BeConsts::ICEBERG_ROWID_COL);
-                if (row_id_idx >= 0 &&
-                    std::find(predicate_columns.begin(), predicate_columns.end(),
-                              static_cast<uint32_t>(row_id_idx)) == predicate_columns.end()) {
-                    predicate_columns.push_back(static_cast<uint32_t>(row_id_idx));
-                }
-            }
+            // if (_table_format_reader->has_synthesized_column_handlers()) {
+            //     int row_id_idx = block->get_position_by_name(doris::BeConsts::ICEBERG_ROWID_COL);
+            //     if (row_id_idx >= 0 &&
+            //         std::find(predicate_columns.begin(), predicate_columns.end(),
+            //                   static_cast<uint32_t>(row_id_idx)) == predicate_columns.end()) {
+            //         predicate_columns.push_back(static_cast<uint32_t>(row_id_idx));
+            //     }
+            // }
             RETURN_IF_CATCH_EXCEPTION(
                     Block::filter_block_internal(block, predicate_columns, result_filter));
             Block::erase_useless_column(block, origin_column_num);
@@ -815,6 +806,7 @@ Status RowGroupReader::_do_lazy_read(Block* block, size_t batch_size, size_t* re
     size_t column_num = block->columns();
     size_t column_size = 0;
     for (int i = 0; i < column_num; ++i) {
+        // std::cout << block->get_by_position(i).name << ":" << block->get_by_position(i).column->size() << " ";
         size_t cz = block->get_by_position(i).column->size();
         if (column_size != 0 && cz != 0) {
             DCHECK_EQ(column_size, cz);
@@ -832,14 +824,14 @@ Status RowGroupReader::_do_lazy_read(Block* block, size_t batch_size, size_t* re
             block, column_size, _lazy_read_ctx.partition_col_names));
     RETURN_IF_ERROR(_table_format_reader->on_fill_missing_columns(
             block, column_size, _lazy_read_ctx.missing_col_names));
-#ifndef NDEBUG
+    // #ifndef NDEBUG
     for (auto col : *block) {
         col.column->sanity_check();
         DCHECK(block->rows() == col.column->size())
                 << absl::Substitute("block rows = $0 , column rows = $1, col name = $2",
                                     block->rows(), col.column->size(), col.name);
     }
-#endif
+    // #endif
     return Status::OK();
 }
 
@@ -899,8 +891,8 @@ Status RowGroupReader::_read_empty_batch(size_t batch_size, size_t* read_rows, b
         _position_delete_ctx.current_row_id = end_row_id;
         *batch_eof = _position_delete_ctx.current_row_id == _position_delete_ctx.last_row_id;
 
-        if (_row_id_column_iterator_pair.first != nullptr ||
-            _table_format_reader->has_synthesized_column_handlers()) {
+        if (_table_format_reader->has_synthesized_column_handlers() ||
+            _table_format_reader->has_generated_column_handlers()) {
             *modify_row_ids = true;
             _current_batch_row_ids.clear();
             _current_batch_row_ids.resize(*read_rows);
@@ -925,6 +917,11 @@ Status RowGroupReader::_read_empty_batch(size_t batch_size, size_t* read_rows, b
             *batch_eof = true;
         }
         if (_table_format_reader->has_synthesized_column_handlers()) {
+            *modify_row_ids = true;
+            RETURN_IF_ERROR(_get_current_batch_row_id(*read_rows));
+        }
+
+        if (_table_format_reader->has_generated_column_handlers()) {
             *modify_row_ids = true;
             RETURN_IF_ERROR(_get_current_batch_row_id(*read_rows));
         }
@@ -958,53 +955,6 @@ Status RowGroupReader::_get_current_batch_row_id(size_t read_rows) {
         }
         read_range_rows += range.to() - range.from();
     }
-    return Status::OK();
-}
-
-Status RowGroupReader::fill_topn_row_id(Block* block, size_t read_rows) {
-    if (_row_id_column_iterator_pair.first != nullptr) {
-        // _get_current_batch_row_id must be called before fill_synthesized_columns
-        auto col = block->get_by_position(_row_id_column_iterator_pair.second)
-                           .column->assume_mutable();
-        RETURN_IF_ERROR(_row_id_column_iterator_pair.first->read_by_rowids(
-                _current_batch_row_ids.data(), _current_batch_row_ids.size(), col));
-    }
-
-    if (_row_lineage_columns != nullptr && _row_lineage_columns->need_row_ids() &&
-        _row_lineage_columns->first_row_id >= 0) {
-        auto col = block->get_by_position(_row_lineage_columns->row_id_column_idx)
-                           .column->assume_mutable();
-        auto* nullable_column = assert_cast<ColumnNullable*>(col.get());
-        auto& null_map = nullable_column->get_null_map_data();
-        auto& data =
-                assert_cast<ColumnInt64&>(*nullable_column->get_nested_column_ptr()).get_data();
-        for (size_t i = 0; i < read_rows; ++i) {
-            if (null_map[i] != 0) {
-                null_map[i] = 0;
-                data[i] = _row_lineage_columns->first_row_id +
-                          static_cast<int64_t>(_current_batch_row_ids[i]);
-            }
-        }
-    }
-
-    if (_row_lineage_columns != nullptr &&
-        _row_lineage_columns->has_last_updated_sequence_number_column() &&
-        _row_lineage_columns->last_updated_sequence_number >= 0) {
-        auto col = block->get_by_position(
-                                _row_lineage_columns->last_updated_sequence_number_column_idx)
-                           .column->assume_mutable();
-        auto* nullable_column = assert_cast<ColumnNullable*>(col.get());
-        auto& null_map = nullable_column->get_null_map_data();
-        auto& data =
-                assert_cast<ColumnInt64&>(*nullable_column->get_nested_column_ptr()).get_data();
-        for (size_t i = 0; i < read_rows; ++i) {
-            if (null_map[i] != 0) {
-                null_map[i] = 0;
-                data[i] = _row_lineage_columns->last_updated_sequence_number;
-            }
-        }
-    }
-
     return Status::OK();
 }
 
@@ -1077,9 +1027,9 @@ Status RowGroupReader::_rewrite_dict_predicates() {
         bool has_dict = false;
         RETURN_IF_ERROR(_column_readers[dict_filter_col_name]->read_dict_values_to_column(
                 dict_value_column, &has_dict));
-#ifndef NDEBUG
+        // #ifndef NDEBUG
         dict_value_column->sanity_check();
-#endif
+        // #endif
         size_t dict_value_column_size = dict_value_column->size();
         DCHECK(has_dict);
         // 2. Build a temp block from the dict string column, then execute conjuncts and filter block.
