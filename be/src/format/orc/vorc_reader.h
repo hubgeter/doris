@@ -212,17 +212,6 @@ public:
 
     static std::string get_field_name_lower_case(const orc::Type* orc_type, int pos);
 
-<<<<<<< HEAD
-    void set_row_id_column_iterator(
-            const std::pair<std::shared_ptr<segment_v2::RowIdColumnIteratorV2>, int>&
-                    iterator_pair) {
-        _row_id_column_iterator_pair = iterator_pair;
-    }
-    void set_row_lineage_columns(std::shared_ptr<RowLineageColumns> row_lineage_columns) {
-        _row_lineage_columns = std::move(row_lineage_columns);
-=======
-    void set_iceberg_rowid_params(const std::string& file_path, int32_t partition_spec_id,
-                                  const std::string& partition_data_json, int row_id_column_pos);
     void set_create_row_id_column_iterator_func(
             std::function<std::shared_ptr<segment_v2::RowIdColumnIteratorV2>()> create_func) {
         _create_topn_row_id_column_iterator = create_func;
@@ -242,7 +231,6 @@ public:
                 _row_id_column_iterator->read_by_rowids(row_ids.data(), row_ids.size(), col));
 
         return Status::OK();
->>>>>>> 9a64c843e3a (fix v3)
     }
 
     static bool inline is_hive1_col_name(const orc::Type* orc_type_ptr) {
