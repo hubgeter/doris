@@ -53,6 +53,7 @@ import org.apache.doris.thrift.TTableFormatFileDesc;
 
 import com.aliyun.odps.OdpsType;
 import com.aliyun.odps.PartitionSpec;
+import com.aliyun.odps.table.TableIdentifier;
 import com.aliyun.odps.table.configuration.ArrowOptions;
 import com.aliyun.odps.table.configuration.ArrowOptions.TimestampUnit;
 import com.aliyun.odps.table.configuration.SplitOptions;
@@ -61,6 +62,7 @@ import com.aliyun.odps.table.read.TableBatchReadSession;
 import com.aliyun.odps.table.read.TableReadSessionBuilder;
 import com.aliyun.odps.table.read.split.InputSplitAssigner;
 import com.aliyun.odps.table.read.split.impl.IndexedInputSplit;
+import com.aliyun.odps.utils.CommonUtils;
 import jline.internal.Log;
 import lombok.Setter;
 import org.apache.logging.log4j.LogManager;
@@ -70,6 +72,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -92,6 +95,8 @@ public class MaxComputeScanNode extends FileQueryScanNode {
     static final DateTimeFormatter dateTime6Formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS");
 
     private static final Logger LOG = LogManager.getLogger(MaxComputeScanNode.class);
+    private static final String MCQA_PAYLOAD_PREFIX = "mcqa:v1:";
+    private static final String QUERY_PAYLOAD_SEPARATOR = ":";
 
     private final MaxComputeExternalTable table;
     private Predicate filterPredicate;
@@ -109,6 +114,7 @@ public class MaxComputeScanNode extends FileQueryScanNode {
 
     private static final LocationPath ROW_OFFSET_PATH = LocationPath.of("/row_offset");
     private static final LocationPath BYTE_SIZE_PATH = LocationPath.of("/byte_size");
+    private static final LocationPath MCQA_PATH = LocationPath.of("/mcqa");
 
 
     // For new planner
@@ -185,13 +191,17 @@ public class MaxComputeScanNode extends FileQueryScanNode {
         return createTableBatchReadSession(requiredPartitionSpecs, mcCatalog.getSplitOption());
     }
 
+    private void initCatalogReadOptions(MaxComputeExternalCatalog mcCatalog) {
+        readTimeout = mcCatalog.getReadTimeout();
+        connectTimeout = mcCatalog.getConnectTimeout();
+        retryTimes = mcCatalog.getRetryTimes();
+    }
+
     TableBatchReadSession createTableBatchReadSession(
             List<PartitionSpec> requiredPartitionSpecs, SplitOptions splitOptions) throws IOException {
         MaxComputeExternalCatalog mcCatalog = (MaxComputeExternalCatalog) table.getCatalog();
 
-        readTimeout = mcCatalog.getReadTimeout();
-        connectTimeout = mcCatalog.getConnectTimeout();
-        retryTimes = mcCatalog.getRetryTimes();
+        initCatalogReadOptions(mcCatalog);
 
         TableReadSessionBuilder scanBuilder = new TableReadSessionBuilder();
 
@@ -212,6 +222,9 @@ public class MaxComputeScanNode extends FileQueryScanNode {
 
     @Override
     public boolean isBatchMode() {
+        if (shouldUseMcqaQueryMode()) {
+            return false;
+        }
         if (table.getPartitionColumns().isEmpty()) {
             return false;
         }
@@ -229,6 +242,9 @@ public class MaxComputeScanNode extends FileQueryScanNode {
 
     @Override
     public int numApproximateSplits() {
+        if (shouldUseMcqaQueryMode()) {
+            return 1;
+        }
         return selectedPartitions.selectedPartitions.size();
     }
 
@@ -700,6 +716,8 @@ public class MaxComputeScanNode extends FileQueryScanNode {
         long startTime = System.currentTimeMillis();
         List<Split> result = new ArrayList<>();
         com.aliyun.odps.Table odpsTable = table.getOdpsTable();
+        MaxComputeExternalCatalog mcCatalog = (MaxComputeExternalCatalog) table.getCatalog();
+        initCatalogReadOptions(mcCatalog);
         long getOdpsTableTime = System.currentTimeMillis();
         LOG.info("MaxComputeScanNode getSplits: getOdpsTable cost {} ms", getOdpsTableTime - startTime);
 
@@ -728,7 +746,9 @@ public class MaxComputeScanNode extends FileQueryScanNode {
 
         try {
             long beforeSession = System.currentTimeMillis();
-            if (sessionVariable.enableMcLimitSplitOptimization
+            if (shouldUseMcqaQueryMode()) {
+                result = Collections.singletonList(createMcqaSplit());
+            } else if (sessionVariable.enableMcLimitSplitOptimization
                     && onlyPartitionEqualityPredicate && hasLimit()) {
                 result = getSplitsWithLimitOptimization(requiredPartitionSpecs);
             } else {
@@ -747,6 +767,193 @@ public class MaxComputeScanNode extends FileQueryScanNode {
         }
         LOG.info("MaxComputeScanNode getSplits: total cost {} ms", System.currentTimeMillis() - startTime);
         return result;
+    }
+
+    private boolean shouldUseMcqaQueryMode() {
+        if (!isMcqaQueryEnabled() || !hasLimit() || !isLimitWithinMcqaThreshold()) {
+            return false;
+        }
+        if (!hasSelectStarEquivalentProjection()) {
+            return false;
+        }
+        if (table.getPartitionColumns().isEmpty()) {
+            return conjuncts.isEmpty();
+        }
+        if (conjuncts.isEmpty() || !onlyPartitionEqualityPredicate) {
+            return false;
+        }
+        try {
+            buildMcqaWhereClause();
+            return true;
+        } catch (AnalysisException e) {
+            LOG.info("Skip MaxCompute MCQA routing for table {} because predicates cannot be rendered: {}",
+                    table.getName(), e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean isMcqaQueryEnabled() {
+        MaxComputeExternalCatalog mcCatalog = (MaxComputeExternalCatalog) table.getCatalog();
+        return Boolean.parseBoolean(mcCatalog.getProperties().getOrDefault(
+                MCProperties.ENABLE_MCQA_QUERY, MCProperties.DEFAULT_ENABLE_MCQA_QUERY));
+    }
+
+    private boolean isLimitWithinMcqaThreshold() {
+        MaxComputeExternalCatalog mcCatalog = (MaxComputeExternalCatalog) table.getCatalog();
+        return getLimit() < mcCatalog.getMcqaQueryLimitThreshold();
+    }
+
+    private boolean hasSelectStarEquivalentProjection() {
+        List<Column> allColumns = table.getColumns();
+        List<String> slotNames = desc.getSlots().stream()
+                .map(slot -> slot.getColumn().getName())
+                .collect(Collectors.toList());
+        if (slotNames.size() != allColumns.size()) {
+            return false;
+        }
+        for (int i = 0; i < allColumns.size(); i++) {
+            if (!allColumns.get(i).getName().equals(slotNames.get(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private MaxComputeSplit createMcqaSplit() throws AnalysisException {
+        String querySql = buildMcqaQuery();
+        TableIdentifier tableIdentifier = table.getTableIdentifier();
+        long modificationTime = table.getOdpsTable().getLastDataModifiedTime().getTime();
+        MaxComputeSplit split = new MaxComputeSplit(MCQA_PATH, 0, Math.max(1L, getLimit()),
+                Math.max(1L, getLimit()), modificationTime, null, Collections.emptyList());
+        split.scanSerialize = encodeQueryPayload(MCQA_PAYLOAD_PREFIX, tableIdentifier.getProject(), querySql);
+        split.sessionId = "mcqa";
+        split.splitType = SplitType.ROW_OFFSET;
+        return split;
+    }
+
+    private String buildMcqaQuery() throws AnalysisException {
+        String selectColumns = table.getColumns().stream()
+                .map(column -> CommonUtils.quoteRef(column.getName()))
+                .collect(Collectors.joining(", "));
+        String whereClause = buildMcqaWhereClause();
+        StringBuilder sql = new StringBuilder("SELECT ")
+                .append(selectColumns)
+                .append(" FROM ")
+                .append(buildMcqaTableName());
+        if (!whereClause.isEmpty()) {
+            sql.append(" WHERE (").append(whereClause).append(")");
+        }
+        sql.append(" LIMIT ").append(getLimit()).append(";");
+        return sql.toString();
+    }
+
+    private String buildMcqaTableName() {
+        TableIdentifier tableIdentifier = table.getTableIdentifier();
+        MaxComputeExternalCatalog mcCatalog = (MaxComputeExternalCatalog) table.getCatalog();
+        boolean enableNamespaceSchema = Boolean.parseBoolean(mcCatalog.getProperties().getOrDefault(
+                MCProperties.ENABLE_NAMESPACE_SCHEMA, MCProperties.DEFAULT_ENABLE_NAMESPACE_SCHEMA));
+        if (enableNamespaceSchema) {
+            return CommonUtils.quoteRef(tableIdentifier.getProject()) + "."
+                    + CommonUtils.quoteRef(tableIdentifier.getSchema()) + "."
+                    + CommonUtils.quoteRef(tableIdentifier.getTable());
+        }
+        return CommonUtils.quoteRef(tableIdentifier.getProject()) + "."
+                + CommonUtils.quoteRef(tableIdentifier.getTable());
+    }
+
+    private String buildMcqaWhereClause() throws AnalysisException {
+        if (conjuncts.isEmpty()) {
+            return "";
+        }
+        List<String> sqlFilters = new ArrayList<>(conjuncts.size());
+        for (Expr conjunct : conjuncts) {
+            sqlFilters.add(convertExprToMcqaFilter(conjunct));
+        }
+        return String.join(") AND (", sqlFilters);
+    }
+
+    private String convertExprToMcqaFilter(Expr expr) throws AnalysisException {
+        if (expr instanceof BinaryPredicate) {
+            BinaryPredicate binaryPredicate = (BinaryPredicate) expr;
+            if (binaryPredicate.getOp() != BinaryPredicate.Operator.EQ) {
+                throw new AnalysisException("Only EQ partition predicates can be routed to MCQA");
+            }
+            String columnName = convertSlotRefToColumnName(expr.getChild(0));
+            OdpsType odpsType = getColumnOdpsType(columnName);
+            return CommonUtils.quoteRef(columnName) + " = "
+                    + convertLiteralToMcqaValue(odpsType, expr.getChild(1));
+        }
+        if (expr instanceof InPredicate) {
+            InPredicate inPredicate = (InPredicate) expr;
+            if (inPredicate.isNotIn()) {
+                throw new AnalysisException("NOT IN partition predicates are not supported for MCQA routing");
+            }
+            String columnName = convertSlotRefToColumnName(expr.getChild(0));
+            OdpsType odpsType = getColumnOdpsType(columnName);
+            List<String> values = new ArrayList<>(inPredicate.getChildren().size() - 1);
+            for (int i = 1; i < inPredicate.getChildren().size(); i++) {
+                values.add(convertLiteralToMcqaValue(odpsType, inPredicate.getChild(i)));
+            }
+            return CommonUtils.quoteRef(columnName) + " IN (" + String.join(", ", values) + ")";
+        }
+        throw new AnalysisException("Unsupported predicate " + expr + " for MCQA routing");
+    }
+
+    private OdpsType getColumnOdpsType(String columnName) throws AnalysisException {
+        if (!table.getColumnNameToOdpsColumn().containsKey(columnName)) {
+            throw new AnalysisException("Column " + columnName + " not found in table " + table.getName());
+        }
+        return table.getColumnNameToOdpsColumn().get(columnName).getType();
+    }
+
+    private String convertLiteralToMcqaValue(OdpsType odpsType, Expr expr) throws AnalysisException {
+        if (!(expr instanceof LiteralExpr)) {
+            throw new AnalysisException("Unsupported non-literal expression " + expr + " in MCQA filter");
+        }
+        LiteralExpr literalExpr = (LiteralExpr) expr;
+        switch (odpsType) {
+            case BOOLEAN:
+            case TINYINT:
+            case SMALLINT:
+            case INT:
+            case BIGINT:
+            case DECIMAL:
+            case FLOAT:
+            case DOUBLE:
+                return literalExpr.toString();
+            case STRING:
+            case CHAR:
+            case VARCHAR:
+                return CommonUtils.quoteStr(literalExpr.toString());
+            case DATE: {
+                DateLiteral dateLiteral = (DateLiteral) literalExpr;
+                return CommonUtils.quoteStr(dateLiteral.getStringValue(ScalarType.createDateV2Type()));
+            }
+            case DATETIME: {
+                DateLiteral dateLiteral = (DateLiteral) literalExpr;
+                return CommonUtils.quoteStr(convertDateTimezone(
+                        dateLiteral.getStringValue(ScalarType.createDatetimeV2Type(3)),
+                        dateTime3Formatter, ZoneId.of("UTC")));
+            }
+            case TIMESTAMP: {
+                DateLiteral dateLiteral = (DateLiteral) literalExpr;
+                return CommonUtils.quoteStr(convertDateTimezone(
+                        dateLiteral.getStringValue(ScalarType.createDatetimeV2Type(6)),
+                        dateTime6Formatter, ZoneId.of("UTC")));
+            }
+            case TIMESTAMP_NTZ: {
+                DateLiteral dateLiteral = (DateLiteral) literalExpr;
+                return CommonUtils.quoteStr(dateLiteral.getStringValue(ScalarType.createDatetimeV2Type(6)));
+            }
+            default:
+                throw new AnalysisException("Unsupported MaxCompute literal type " + odpsType + " in MCQA filter");
+        }
+    }
+
+    private String encodeQueryPayload(String prefix, String project, String querySql) {
+        String encodedProject = Base64.getEncoder().encodeToString(project.getBytes(StandardCharsets.UTF_8));
+        String encodedSql = Base64.getEncoder().encodeToString(querySql.getBytes(StandardCharsets.UTF_8));
+        return prefix + encodedProject + QUERY_PAYLOAD_SEPARATOR + encodedSql;
     }
 
     private List<Split> getSplitsWithLimitOptimization(

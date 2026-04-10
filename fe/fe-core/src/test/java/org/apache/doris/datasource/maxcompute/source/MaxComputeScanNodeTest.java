@@ -27,6 +27,7 @@ import org.apache.doris.analysis.TupleDescriptor;
 import org.apache.doris.analysis.TupleId;
 import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.PrimitiveType;
+import org.apache.doris.common.maxcompute.MCProperties;
 import org.apache.doris.datasource.maxcompute.MaxComputeExternalCatalog;
 import org.apache.doris.datasource.maxcompute.MaxComputeExternalTable;
 import org.apache.doris.datasource.maxcompute.source.MaxComputeSplit.SplitType;
@@ -43,6 +44,7 @@ import com.aliyun.odps.table.SessionStatus;
 import com.aliyun.odps.table.TableIdentifier;
 import com.aliyun.odps.table.read.TableBatchReadSession;
 import com.aliyun.odps.table.read.split.InputSplitAssigner;
+import com.aliyun.odps.type.TypeInfoFactory;
 import com.google.common.collect.Lists;
 import org.junit.Assert;
 import org.junit.Before;
@@ -59,7 +61,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RunWith(MockitoJUnitRunner.class)
 public class MaxComputeScanNodeTest {
@@ -78,6 +82,7 @@ public class MaxComputeScanNodeTest {
     private MaxComputeScanNode node;
 
     private List<Column> partitionColumns;
+    private List<Column> fullSchemaColumns;
 
     @Before
     public void setUp() {
@@ -85,9 +90,23 @@ public class MaxComputeScanNodeTest {
                 new Column("dt", PrimitiveType.VARCHAR),
                 new Column("hr", PrimitiveType.VARCHAR)
         );
+        fullSchemaColumns = Arrays.asList(
+                new Column("value", PrimitiveType.VARCHAR),
+                new Column("dt", PrimitiveType.VARCHAR),
+                new Column("hr", PrimitiveType.VARCHAR)
+        );
         Mockito.when(table.getPartitionColumns()).thenReturn(partitionColumns);
+        Mockito.when(table.getColumns()).thenReturn(fullSchemaColumns);
         Mockito.when(table.getCatalog()).thenReturn(catalog);
+        Mockito.when(catalog.getProperties()).thenReturn(Collections.emptyMap());
+        Mockito.when(catalog.getMcqaQueryLimitThreshold()).thenReturn(4096L);
         Mockito.when(table.getOdpsTable()).thenReturn(odpsTable);
+        Mockito.when(table.getTableIdentifier()).thenReturn(TableIdentifier.of("mc_project", "mc_table"));
+        Map<String, com.aliyun.odps.Column> odpsColumns = new HashMap<>();
+        odpsColumns.put("value", new com.aliyun.odps.Column("value", TypeInfoFactory.STRING));
+        odpsColumns.put("dt", new com.aliyun.odps.Column("dt", TypeInfoFactory.STRING));
+        odpsColumns.put("hr", new com.aliyun.odps.Column("hr", TypeInfoFactory.STRING));
+        Mockito.when(table.getColumnNameToOdpsColumn()).thenReturn(odpsColumns);
 
         desc = Mockito.mock(TupleDescriptor.class);
         Mockito.when(desc.getTable()).thenReturn(table);
@@ -123,6 +142,28 @@ public class MaxComputeScanNodeTest {
         Method m = MaxComputeScanNode.class.getDeclaredMethod("checkOnlyPartitionEqualityPredicate");
         m.setAccessible(true);
         return (boolean) m.invoke(target);
+    }
+
+    private boolean invokeShouldUseMcqaQueryMode(MaxComputeScanNode target) throws Exception {
+        Method m = MaxComputeScanNode.class.getDeclaredMethod("shouldUseMcqaQueryMode");
+        m.setAccessible(true);
+        return (boolean) m.invoke(target);
+    }
+
+    private String invokeBuildMcqaQuery(MaxComputeScanNode target) throws Exception {
+        Method m = MaxComputeScanNode.class.getDeclaredMethod("buildMcqaQuery");
+        m.setAccessible(true);
+        return (String) m.invoke(target);
+    }
+
+    private void setDescSlots(List<Column> columns) {
+        ArrayList<SlotDescriptor> slotDescriptors = new ArrayList<>();
+        for (Column column : columns) {
+            SlotDescriptor slotDescriptor = Mockito.mock(SlotDescriptor.class);
+            Mockito.when(slotDescriptor.getColumn()).thenReturn(column);
+            slotDescriptors.add(slotDescriptor);
+        }
+        Mockito.when(desc.getSlots()).thenReturn(slotDescriptors);
     }
 
     // ==================== Group 1: checkOnlyPartitionEqualityPredicate ====================
@@ -234,6 +275,107 @@ public class MaxComputeScanNodeTest {
         BinaryPredicate eq = new BinaryPredicate(BinaryPredicate.Operator.EQ, dtSlot, hrSlot);
         setConjuncts(node, Lists.newArrayList(eq));
         Assert.assertFalse(invokeCheckOnlyPartitionEqualityPredicate(node));
+    }
+
+    @Test
+    public void testShouldUseMcqaQueryMode_trueForSelectStarPartitionLimit() throws Exception {
+        Mockito.when(catalog.getProperties()).thenReturn(
+                Collections.singletonMap(MCProperties.ENABLE_MCQA_QUERY, "true"));
+        setDescSlots(fullSchemaColumns);
+        setLimit(node, 100L);
+        setConjuncts(node, Lists.newArrayList(
+                new BinaryPredicate(BinaryPredicate.Operator.EQ,
+                        new SlotRef(null, "dt"), new StringLiteral("2026-02-26"))));
+        setOnlyPartitionEqualityPredicate(node, true);
+
+        Assert.assertTrue(invokeShouldUseMcqaQueryMode(node));
+        Assert.assertEquals("SELECT `value`, `dt`, `hr` FROM `mc_project`.`mc_table` "
+                        + "WHERE (`dt` = '2026-02-26') LIMIT 100;",
+                invokeBuildMcqaQuery(node));
+    }
+
+    @Test
+    public void testShouldUseMcqaQueryMode_falseForNonSelectStarProjection() throws Exception {
+        Mockito.when(catalog.getProperties()).thenReturn(
+                Collections.singletonMap(MCProperties.ENABLE_MCQA_QUERY, "true"));
+        setDescSlots(Arrays.asList(fullSchemaColumns.get(1), fullSchemaColumns.get(2)));
+        setLimit(node, 100L);
+        setConjuncts(node, Lists.newArrayList(
+                new BinaryPredicate(BinaryPredicate.Operator.EQ,
+                        new SlotRef(null, "dt"), new StringLiteral("2026-02-26"))));
+        setOnlyPartitionEqualityPredicate(node, true);
+
+        Assert.assertFalse(invokeShouldUseMcqaQueryMode(node));
+    }
+
+    @Test
+    public void testShouldUseMcqaQueryMode_falseForNonPartitionPredicate() throws Exception {
+        Mockito.when(catalog.getProperties()).thenReturn(
+                Collections.singletonMap(MCProperties.ENABLE_MCQA_QUERY, "true"));
+        setDescSlots(fullSchemaColumns);
+        setLimit(node, 100L);
+        setConjuncts(node, Lists.newArrayList(
+                new BinaryPredicate(BinaryPredicate.Operator.EQ,
+                        new SlotRef(null, "value"), new StringLiteral("x"))));
+        setOnlyPartitionEqualityPredicate(node, false);
+
+        Assert.assertFalse(invokeShouldUseMcqaQueryMode(node));
+    }
+
+    @Test
+    public void testShouldUseMcqaQueryMode_falseForPartitionedTableWithoutPredicate() throws Exception {
+        Mockito.when(catalog.getProperties()).thenReturn(
+                Collections.singletonMap(MCProperties.ENABLE_MCQA_QUERY, "true"));
+        setDescSlots(fullSchemaColumns);
+        setLimit(node, 100L);
+        setConjuncts(node, Collections.emptyList());
+        setOnlyPartitionEqualityPredicate(node, true);
+
+        Assert.assertFalse(invokeShouldUseMcqaQueryMode(node));
+    }
+
+    @Test
+    public void testShouldUseMcqaQueryMode_trueForNonPartitionTableLimitWithoutPredicate() throws Exception {
+        Mockito.when(catalog.getProperties()).thenReturn(
+                Collections.singletonMap(MCProperties.ENABLE_MCQA_QUERY, "true"));
+        Mockito.when(table.getPartitionColumns()).thenReturn(Collections.emptyList());
+        setDescSlots(fullSchemaColumns);
+        setLimit(node, 100L);
+        setConjuncts(node, Collections.emptyList());
+        setOnlyPartitionEqualityPredicate(node, true);
+
+        Assert.assertTrue(invokeShouldUseMcqaQueryMode(node));
+        Assert.assertEquals("SELECT `value`, `dt`, `hr` FROM `mc_project`.`mc_table` LIMIT 100;",
+                invokeBuildMcqaQuery(node));
+    }
+
+    @Test
+    public void testShouldUseMcqaQueryMode_falseForLimitAtDefaultThreshold() throws Exception {
+        Mockito.when(catalog.getProperties()).thenReturn(
+                Collections.singletonMap(MCProperties.ENABLE_MCQA_QUERY, "true"));
+        setDescSlots(fullSchemaColumns);
+        setLimit(node, 4096L);
+        setConjuncts(node, Lists.newArrayList(
+                new BinaryPredicate(BinaryPredicate.Operator.EQ,
+                        new SlotRef(null, "dt"), new StringLiteral("2026-02-26"))));
+        setOnlyPartitionEqualityPredicate(node, true);
+
+        Assert.assertFalse(invokeShouldUseMcqaQueryMode(node));
+    }
+
+    @Test
+    public void testShouldUseMcqaQueryMode_trueForCustomThreshold() throws Exception {
+        Mockito.when(catalog.getProperties()).thenReturn(
+                Collections.singletonMap(MCProperties.ENABLE_MCQA_QUERY, "true"));
+        Mockito.when(catalog.getMcqaQueryLimitThreshold()).thenReturn(8192L);
+        setDescSlots(fullSchemaColumns);
+        setLimit(node, 5000L);
+        setConjuncts(node, Lists.newArrayList(
+                new BinaryPredicate(BinaryPredicate.Operator.EQ,
+                        new SlotRef(null, "dt"), new StringLiteral("2026-02-26"))));
+        setOnlyPartitionEqualityPredicate(node, true);
+
+        Assert.assertTrue(invokeShouldUseMcqaQueryMode(node));
     }
 
     // ==================== Serializable Stub for TableBatchReadSession ====================
@@ -436,4 +578,5 @@ public class MaxComputeScanNodeTest {
 
         Assert.assertFalse(result.isEmpty());
     }
+
 }

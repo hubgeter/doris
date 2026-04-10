@@ -68,6 +68,12 @@ public class MCProperties {
             "mc.datetime_predicate_push_down";
     public static final String DEFAULT_DATETIME_PREDICATE_PUSH_DOWN = "true";
 
+    public static final String ENABLE_MCQA_QUERY = "mc.enable_mcqa_query";
+    public static final String DEFAULT_ENABLE_MCQA_QUERY = "false";
+    public static final String MCQA_QUOTA = "mc.mcqa_quota";
+    public static final String MCQA_QUERY_LIMIT_THRESHOLD = "mc.mcqa_query_limit_threshold";
+    public static final String DEFAULT_MCQA_QUERY_LIMIT_THRESHOLD = "4096";
+
     // The account systems for Alibaba Cloud China and International are different. If the primary account is an
     // International user, specify ACCOUNT_FORMAT as ACCOUNT_FORMAT_ID. Otherwise, specify ACCOUNT_FORMAT_NAME.
     public static final String ACCOUNT_FORMAT = "mc.account_format";
