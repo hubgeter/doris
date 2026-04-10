@@ -19,9 +19,18 @@ package org.apache.doris.maxcompute;
 
 import org.apache.doris.common.jni.JniScanner;
 import org.apache.doris.common.jni.vec.ColumnType;
+import org.apache.doris.common.jni.vec.ColumnValue;
+import org.apache.doris.common.maxcompute.MCProperties;
 import org.apache.doris.common.maxcompute.MCUtils;
 
 import com.aliyun.odps.Odps;
+import com.aliyun.odps.data.Record;
+import com.aliyun.odps.data.ResultSet;
+import com.aliyun.odps.data.Struct;
+import com.aliyun.odps.sqa.ExecuteMode;
+import com.aliyun.odps.sqa.FallbackPolicy;
+import com.aliyun.odps.sqa.SQLExecutor;
+import com.aliyun.odps.sqa.SQLExecutorBuilder;
 import com.aliyun.odps.table.configuration.CompressionCodec;
 import com.aliyun.odps.table.configuration.ReaderOptions;
 import com.aliyun.odps.table.configuration.RestOptions;
@@ -40,9 +49,21 @@ import org.apache.log4j.Logger;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -76,6 +97,8 @@ public class MaxComputeJniScanner extends JniScanner {
     private static final String CONNECT_TIMEOUT = "connect_timeout";
     private static final String READ_TIMEOUT = "read_timeout";
     private static final String RETRY_COUNT  = "retry_count";
+    private static final String MCQA_PAYLOAD_PREFIX = "mcqa:v1:";
+    private static final int LOGVIEW_V2 = 2;
 
     private enum SplitType {
         BYTE_SIZE,
@@ -91,6 +114,19 @@ public class MaxComputeJniScanner extends JniScanner {
 
     private SplitReader<VectorSchemaRoot> currentSplitReader;
     private MaxComputeColumnValue columnValue;
+    private Odps odps;
+    private SQLExecutor mcqaExecutor;
+    private boolean mcqaMode;
+    private String remoteQueryProject;
+    private String remoteQuerySql;
+    private String mcqaQuota;
+    private boolean namespaceSchemaEnabled;
+    private ResultSet remoteResultSet;
+    private long remoteRowsRead;
+    private long remoteSubmitTime;
+    private long remoteResultSetInitTime;
+    private long remoteFirstBatchTime;
+    private boolean remoteFirstBatchLogged;
 
     private Map<String, Integer> readColumnsToId;
 
@@ -126,6 +162,9 @@ public class MaxComputeJniScanner extends JniScanner {
         project = Objects.requireNonNull(params.get(PROJECT), "required property '" + PROJECT + "'.");
         table = Objects.requireNonNull(params.get(TABLE), "required property '" + TABLE + "'.");
         sessionId = Objects.requireNonNull(params.get(SESSION_ID), "required property '" + SESSION_ID + "'.");
+        mcqaQuota = params.get(MCProperties.MCQA_QUOTA);
+        namespaceSchemaEnabled = Boolean.parseBoolean(params.getOrDefault(
+                MCProperties.ENABLE_NAMESPACE_SCHEMA, MCProperties.DEFAULT_ENABLE_NAMESPACE_SCHEMA));
         String timeZoneName = Objects.requireNonNull(params.get(TIME_ZONE), "required property '" + TIME_ZONE + "'.");
         try {
             timeZone = ZoneId.of(timeZoneName);
@@ -134,7 +173,7 @@ public class MaxComputeJniScanner extends JniScanner {
             timeZone = ZoneId.systemDefault();
         }
 
-        Odps odps = MCUtils.createMcClient(params);
+        odps = MCUtils.createMcClient(params);
         odps.setDefaultProject(project);
         odps.setEndpoint(endpoint);
 
@@ -169,12 +208,20 @@ public class MaxComputeJniScanner extends JniScanner {
                 .withRestOptions(restOptions)
                 .build();
 
-        try {
-            scan = (TableBatchReadSession) deserialize(scanSerializer);
-        } catch (Exception e) {
-            String errorMsg = "Failed to deserialize table batch read session.";
-            LOG.warn(errorMsg, e);
-            throw new IllegalArgumentException(errorMsg, e);
+        if (isMcqaPayload(scanSerializer)) {
+            QueryPayload payload = decodeQueryPayload(scanSerializer, MCQA_PAYLOAD_PREFIX);
+            mcqaMode = true;
+            remoteQueryProject = Strings.isNullOrEmpty(payload.project) ? project : payload.project;
+            remoteQuerySql = payload.query;
+            odps.setDefaultProject(remoteQueryProject);
+        } else {
+            try {
+                scan = (TableBatchReadSession) deserialize(scanSerializer);
+            } catch (Exception e) {
+                String errorMsg = "Failed to deserialize table batch read session.";
+                LOG.warn(errorMsg, e);
+                throw new IllegalArgumentException(errorMsg, e);
+            }
         }
     }
 
@@ -192,6 +239,10 @@ public class MaxComputeJniScanner extends JniScanner {
 
     @Override
     public void open() throws IOException {
+        if (mcqaMode) {
+            openMcqaScanner();
+            return;
+        }
         try {
             InputSplit split;
             if (splitType == SplitType.BYTE_SIZE) {
@@ -220,11 +271,26 @@ public class MaxComputeJniScanner extends JniScanner {
         currentSplitReader = null;
         settings = null;
         scan = null;
+        remoteResultSet = null;
+        if (mcqaExecutor != null) {
+            mcqaExecutor.close();
+            mcqaExecutor = null;
+        }
+        remoteQuerySql = null;
+        remoteQueryProject = null;
+        remoteRowsRead = 0;
+        remoteSubmitTime = 0;
+        remoteResultSetInitTime = 0;
+        remoteFirstBatchTime = 0;
+        remoteFirstBatchLogged = false;
         readColumnsToId.clear();
     }
 
     @Override
     protected int getNext() throws IOException {
+        if (mcqaMode) {
+            return readMcqaRecords(batchSize);
+        }
         if (currentSplitReader == null) {
             return 0;
         }
@@ -283,10 +349,575 @@ public class MaxComputeJniScanner extends JniScanner {
         return curReadRows;
     }
 
+    @Override
+    public Map<String, String> getStatistics() {
+        Map<String, String> stats = new HashMap<>();
+        if (mcqaMode) {
+            stats.put("counter:McqaRowsRead", String.valueOf(remoteRowsRead));
+            stats.put("timer:McqaRunTime", String.valueOf(remoteSubmitTime));
+            stats.put("timer:McqaResultSetInitTime", String.valueOf(remoteResultSetInitTime));
+        }
+        return stats;
+    }
+
+    private void openMcqaScanner() throws IOException {
+        try {
+            SQLExecutorBuilder builder = SQLExecutorBuilder.builder()
+                    .odps(odps)
+                    .executeMode(ExecuteMode.INTERACTIVE)
+                    .fallbackPolicy(FallbackPolicy.alwaysFallbackPolicy())
+                    .useInstanceTunnel(false)
+                    .enableOdpsNamespaceSchema(namespaceSchemaEnabled)
+                    .logviewVersion(LOGVIEW_V2);
+            if (!Strings.isNullOrEmpty(mcqaQuota)) {
+                builder.quotaName(mcqaQuota);
+            }
+            mcqaExecutor = builder.build();
+
+            Map<String, String> hints = new HashMap<>();
+            if (namespaceSchemaEnabled) {
+                hints.put("odps.namespace.schema", "true");
+                hints.put("odps.sql.allow.namespace.schema", "true");
+            }
+
+            long runStart = System.nanoTime();
+            mcqaExecutor.run(remoteQuerySql, hints);
+            remoteSubmitTime += System.nanoTime() - runStart;
+            long submitMs = nanosToMillis(remoteSubmitTime);
+            LOG.info("MaxComputeJniScanner MCQA submitted: project=" + remoteQueryProject
+                    + ", table=" + table + ", quota=" + mcqaQuota
+                    + ", submitMs=" + submitMs + ", sql=" + remoteQuerySql
+                    + ", queryId=" + mcqaExecutor.getQueryId());
+
+            long resultSetInitStart = System.nanoTime();
+            remoteResultSet = mcqaExecutor.getResultSet();
+            remoteResultSetInitTime += System.nanoTime() - resultSetInitStart;
+            long resultSetInitMs = nanosToMillis(remoteResultSetInitTime);
+
+            LOG.info("MaxComputeJniScanner opened MCQA mode: project=" + remoteQueryProject
+                    + ", table=" + table + ", quota=" + mcqaQuota
+                    + ", queryId=" + mcqaExecutor.getQueryId()
+                    + ", submitMs=" + submitMs
+                    + ", resultSetInitMs=" + resultSetInitMs
+                    + ", logview=" + safeGenerateMcqaLogView()
+                    + ", executionLog=" + mcqaExecutor.getExecutionLog()
+                    + ", sql=" + remoteQuerySql);
+        } catch (Exception e) {
+            String errorMsg = "MaxComputeJniScanner failed to open MCQA mode.";
+            LOG.warn(errorMsg, e);
+            close();
+            throw new IOException(errorMsg, e);
+        }
+    }
+
+    private int readMcqaRecords(int expectedRows) {
+        if (remoteResultSet == null) {
+            return 0;
+        }
+        int curReadRows = 0;
+        long startTime = System.nanoTime();
+        while (curReadRows < expectedRows && remoteResultSet.hasNext()) {
+            Record record = remoteResultSet.next();
+            for (int i = 0; i < fields.length; i++) {
+                appendData(i, new ResultSetColumnValue(record.get(i), types[i], timeZone));
+            }
+            curReadRows++;
+        }
+        long batchNanos = System.nanoTime() - startTime;
+        appendDataTime += batchNanos;
+        remoteRowsRead += curReadRows;
+        if (!remoteFirstBatchLogged && curReadRows > 0) {
+            remoteFirstBatchTime = batchNanos;
+            remoteFirstBatchLogged = true;
+            LOG.info("MaxComputeJniScanner MCQA first batch: project=" + remoteQueryProject
+                    + ", table=" + table + ", rows=" + curReadRows
+                    + ", batchMs=" + nanosToMillis(batchNanos));
+        }
+        if (curReadRows == 0) {
+            LOG.info("MaxComputeJniScanner MCQA finished: project=" + remoteQueryProject
+                    + ", table=" + table + ", totalRows=" + remoteRowsRead
+                    + ", submitMs=" + nanosToMillis(remoteSubmitTime)
+                    + ", resultSetInitMs=" + nanosToMillis(remoteResultSetInitTime)
+                    + ", firstBatchMs=" + nanosToMillis(remoteFirstBatchTime));
+        }
+        return curReadRows;
+    }
+
+    private String safeGenerateMcqaLogView() {
+        try {
+            return mcqaExecutor != null ? mcqaExecutor.getLogView() : "";
+        } catch (Exception e) {
+            LOG.warn("Failed to generate MaxCompute MCQA LogView", e);
+            return "";
+        }
+    }
+
+    private static boolean isMcqaPayload(String scanSerializer) {
+        return !Strings.isNullOrEmpty(scanSerializer) && scanSerializer.startsWith(MCQA_PAYLOAD_PREFIX);
+    }
+
+    private static QueryPayload decodeQueryPayload(String scanSerializer, String payloadPrefix) {
+        String encodedPayload = scanSerializer.substring(payloadPrefix.length());
+        int separatorIndex = encodedPayload.indexOf(':');
+        if (separatorIndex <= 0 || separatorIndex >= encodedPayload.length() - 1) {
+            throw new IllegalArgumentException("Invalid MaxCompute remote query payload");
+        }
+        String encodedProject = encodedPayload.substring(0, separatorIndex);
+        String encodedSql = encodedPayload.substring(separatorIndex + 1);
+        return new QueryPayload(
+                new String(Base64.getDecoder().decode(encodedProject), StandardCharsets.UTF_8),
+                new String(Base64.getDecoder().decode(encodedSql), StandardCharsets.UTF_8));
+    }
+
     private static Object deserialize(String serializedString) throws IOException, ClassNotFoundException {
         byte[] serializedBytes = Base64.getDecoder().decode(serializedString);
         ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(serializedBytes);
         ObjectInputStream objectInputStream = new ObjectInputStream(byteArrayInputStream);
         return objectInputStream.readObject();
+    }
+
+    private static long nanosToMillis(long nanos) {
+        return nanos / 1_000_000L;
+    }
+
+    private static final class QueryPayload {
+        private final String project;
+        private final String query;
+
+        private QueryPayload(String project, String query) {
+            this.project = project;
+            this.query = query;
+        }
+    }
+
+    private static final class ResultSetColumnValue implements ColumnValue {
+        private final Object value;
+        private final ColumnType columnType;
+        private final ZoneId timeZone;
+
+        private ResultSetColumnValue(Object value, ColumnType columnType, ZoneId timeZone) {
+            this.value = value;
+            this.columnType = columnType;
+            this.timeZone = timeZone;
+        }
+
+        @Override
+        public boolean canGetStringAsBytes() {
+            return value instanceof String || value instanceof byte[];
+        }
+
+        @Override
+        public boolean isNull() {
+            return value == null;
+        }
+
+        @Override
+        public boolean getBoolean() {
+            if (value instanceof String) {
+                return Boolean.parseBoolean((String) value);
+            }
+            return (Boolean) value;
+        }
+
+        @Override
+        public byte getByte() {
+            return asNumber().byteValue();
+        }
+
+        @Override
+        public short getShort() {
+            return asNumber().shortValue();
+        }
+
+        @Override
+        public int getInt() {
+            return asNumber().intValue();
+        }
+
+        @Override
+        public float getFloat() {
+            return asNumber().floatValue();
+        }
+
+        @Override
+        public long getLong() {
+            return asNumber().longValue();
+        }
+
+        @Override
+        public double getDouble() {
+            return asNumber().doubleValue();
+        }
+
+        @Override
+        public BigInteger getBigInteger() {
+            if (value instanceof BigInteger) {
+                return (BigInteger) value;
+            }
+            if (value instanceof BigDecimal) {
+                return ((BigDecimal) value).toBigInteger();
+            }
+            return BigInteger.valueOf(asNumber().longValue());
+        }
+
+        @Override
+        public BigDecimal getDecimal() {
+            if (value instanceof BigDecimal) {
+                return (BigDecimal) value;
+            }
+            if (value instanceof BigInteger) {
+                return new BigDecimal((BigInteger) value);
+            }
+            Number number = asNumber();
+            if (number instanceof Byte || number instanceof Short
+                    || number instanceof Integer || number instanceof Long) {
+                return BigDecimal.valueOf(number.longValue());
+            }
+            return BigDecimal.valueOf(number.doubleValue());
+        }
+
+        @Override
+        public String getString() {
+            if (value instanceof byte[]) {
+                return new String((byte[]) value, StandardCharsets.UTF_8);
+            }
+            return String.valueOf(value);
+        }
+
+        @Override
+        public byte[] getStringAsBytes() {
+            if (value instanceof byte[]) {
+                return (byte[]) value;
+            }
+            return getString().getBytes(StandardCharsets.UTF_8);
+        }
+
+        @Override
+        public LocalDate getDate() {
+            if (value instanceof LocalDate) {
+                return (LocalDate) value;
+            }
+            if (value instanceof java.sql.Date) {
+                return ((java.sql.Date) value).toLocalDate();
+            }
+            if (value instanceof ZonedDateTime) {
+                return ((ZonedDateTime) value).withZoneSameInstant(timeZone).toLocalDate();
+            }
+            if (value instanceof LocalDateTime) {
+                return ((LocalDateTime) value).toLocalDate();
+            }
+            return asInstant().atZone(timeZone).toLocalDate();
+        }
+
+        @Override
+        public LocalDateTime getDateTime() {
+            if (value instanceof LocalDateTime) {
+                return (LocalDateTime) value;
+            }
+            if (value instanceof ZonedDateTime) {
+                return ((ZonedDateTime) value).withZoneSameInstant(timeZone).toLocalDateTime();
+            }
+            if (value instanceof Timestamp) {
+                return ((Timestamp) value).toLocalDateTime();
+            }
+            return LocalDateTime.ofInstant(asInstant(), timeZone);
+        }
+
+        @Override
+        public LocalDateTime getTimeStampTz() {
+            return getDateTime();
+        }
+
+        @Override
+        public byte[] getBytes() {
+            return (byte[]) value;
+        }
+
+        @Override
+        public void unpackArray(List<ColumnValue> values) {
+            ColumnType childType = columnType.getChildTypes().get(0);
+            Object arrayObject = value;
+            try {
+                if (arrayObject instanceof String) {
+                    arrayObject = new ComplexValueParser((String) arrayObject).parseArray(childType);
+                }
+                if (arrayObject instanceof java.sql.Array) {
+                    arrayObject = ((java.sql.Array) arrayObject).getArray();
+                }
+                if (arrayObject instanceof List<?>) {
+                    for (Object element : (List<?>) arrayObject) {
+                        values.add(new ResultSetColumnValue(element, childType, timeZone));
+                    }
+                    return;
+                }
+                int length = java.lang.reflect.Array.getLength(arrayObject);
+                for (int i = 0; i < length; i++) {
+                    values.add(new ResultSetColumnValue(java.lang.reflect.Array.get(arrayObject, i),
+                            childType, timeZone));
+                }
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to unpack array value", e);
+            }
+        }
+
+        @Override
+        public void unpackMap(List<ColumnValue> keys, List<ColumnValue> values) {
+            Object mapObject = value;
+            if (mapObject instanceof String) {
+                mapObject = new ComplexValueParser((String) mapObject).parseMap(
+                        columnType.getChildTypes().get(0), columnType.getChildTypes().get(1));
+            }
+            Map<?, ?> map = (Map<?, ?>) mapObject;
+            ColumnType keyType = columnType.getChildTypes().get(0);
+            ColumnType valueType = columnType.getChildTypes().get(1);
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                keys.add(new ResultSetColumnValue(entry.getKey(), keyType, timeZone));
+                values.add(new ResultSetColumnValue(entry.getValue(), valueType, timeZone));
+            }
+        }
+
+        @Override
+        public void unpackStruct(List<Integer> structFieldIndex, List<ColumnValue> values) {
+            List<ColumnType> childTypes = columnType.getChildTypes();
+            try {
+                if (value instanceof String) {
+                    List<Object> fieldValues = new ComplexValueParser((String) value).parseStruct(columnType);
+                    for (Integer fieldIndex : structFieldIndex) {
+                        values.add(new ResultSetColumnValue(fieldValues.get(fieldIndex),
+                                childTypes.get(fieldIndex), timeZone));
+                    }
+                    return;
+                }
+                if (value instanceof List<?>) {
+                    List<?> fieldValues = (List<?>) value;
+                    for (Integer fieldIndex : structFieldIndex) {
+                        values.add(new ResultSetColumnValue(fieldValues.get(fieldIndex),
+                                childTypes.get(fieldIndex), timeZone));
+                    }
+                    return;
+                }
+                if (value instanceof Struct) {
+                    Struct struct = (Struct) value;
+                    for (Integer fieldIndex : structFieldIndex) {
+                        values.add(new ResultSetColumnValue(struct.getFieldValue(fieldIndex),
+                                childTypes.get(fieldIndex), timeZone));
+                    }
+                    return;
+                }
+                if (value instanceof java.sql.Struct) {
+                    Object[] attributes = ((java.sql.Struct) value).getAttributes();
+                    for (Integer fieldIndex : structFieldIndex) {
+                        values.add(new ResultSetColumnValue(attributes[fieldIndex],
+                                childTypes.get(fieldIndex), timeZone));
+                    }
+                    return;
+                }
+                throw new IllegalStateException("Unsupported struct value type: " + value.getClass().getName());
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to unpack struct value", e);
+            }
+        }
+
+        private Number asNumber() {
+            if (value instanceof String) {
+                return new BigDecimal((String) value);
+            }
+            return (Number) value;
+        }
+
+        private Instant asInstant() {
+            if (value instanceof Instant) {
+                return (Instant) value;
+            }
+            if (value instanceof java.util.Date) {
+                return ((java.util.Date) value).toInstant();
+            }
+            if (value instanceof CharSequence) {
+                String text = normalizeTemporalText(value.toString());
+                try {
+                    return OffsetDateTime.parse(text).toInstant();
+                } catch (DateTimeParseException e) {
+                    // fall through
+                }
+                try {
+                    return ZonedDateTime.parse(text).toInstant();
+                } catch (DateTimeParseException e) {
+                    // fall through
+                }
+                try {
+                    return Instant.parse(text);
+                } catch (DateTimeParseException e) {
+                    // fall through
+                }
+                try {
+                    return LocalDateTime.parse(text).atZone(timeZone).toInstant();
+                } catch (DateTimeParseException e) {
+                    // fall through
+                }
+                try {
+                    return LocalDate.parse(text).atStartOfDay(timeZone).toInstant();
+                } catch (DateTimeParseException e) {
+                    throw new IllegalStateException("Unsupported temporal string value: " + text, e);
+                }
+            }
+            throw new IllegalStateException("Unsupported temporal value type: " + value.getClass().getName());
+        }
+
+        private String normalizeTemporalText(String text) {
+            String normalized = text.trim();
+            if (normalized.length() > 10 && normalized.charAt(10) == ' ') {
+                return normalized.substring(0, 10) + "T" + normalized.substring(11);
+            }
+            return normalized;
+        }
+    }
+
+    private static final class ComplexValueParser {
+        private final String text;
+        private int position;
+
+        private ComplexValueParser(String text) {
+            this.text = text == null ? "" : text;
+        }
+
+        private List<Object> parseArray(ColumnType childType) {
+            skipLeadingSpaces();
+            expect('[');
+            List<Object> values = new ArrayList<>();
+            skipLeadingSpaces();
+            if (consumeIf(']')) {
+                return values;
+            }
+            while (true) {
+                values.add(parseValue(childType, ',', ']'));
+                skipLeadingSpaces();
+                if (consumeIf(',')) {
+                    skipLeadingSpaces();
+                    continue;
+                }
+                expect(']');
+                return values;
+            }
+        }
+
+        private Map<Object, Object> parseMap(ColumnType keyType, ColumnType valueType) {
+            skipLeadingSpaces();
+            expect('{');
+            Map<Object, Object> values = new LinkedHashMap<>();
+            skipLeadingSpaces();
+            if (consumeIf('}')) {
+                return values;
+            }
+            while (true) {
+                Object key = parseValue(keyType, ':');
+                expect(':');
+                Object value = parseValue(valueType, ',', '}');
+                values.put(key, value);
+                skipLeadingSpaces();
+                if (consumeIf(',')) {
+                    skipLeadingSpaces();
+                    continue;
+                }
+                expect('}');
+                return values;
+            }
+        }
+
+        private List<Object> parseStruct(ColumnType structType) {
+            skipLeadingSpaces();
+            expect('{');
+            List<Object> values = new ArrayList<>();
+            for (int i = 0; i < structType.getChildTypes().size(); i++) {
+                values.add(null);
+            }
+            skipLeadingSpaces();
+            if (consumeIf('}')) {
+                return values;
+            }
+            while (true) {
+                String fieldName = asString(parseScalar(':'));
+                int fieldIndex = structType.getChildNames().indexOf(fieldName);
+                if (fieldIndex < 0) {
+                    throw new IllegalStateException("Unknown struct field '" + fieldName + "' in value: " + text);
+                }
+                expect(':');
+                values.set(fieldIndex, parseValue(structType.getChildTypes().get(fieldIndex), ',', '}'));
+                skipLeadingSpaces();
+                if (consumeIf(',')) {
+                    skipLeadingSpaces();
+                    continue;
+                }
+                expect('}');
+                return values;
+            }
+        }
+
+        private Object parseValue(ColumnType type, char... terminators) {
+            skipLeadingSpaces();
+            if (isNullToken(terminators)) {
+                position += 4;
+                return null;
+            }
+            if (type.isArray()) {
+                return parseArray(type.getChildTypes().get(0));
+            }
+            if (type.isMap()) {
+                return parseMap(type.getChildTypes().get(0), type.getChildTypes().get(1));
+            }
+            if (type.isStruct()) {
+                return parseStruct(type);
+            }
+            return parseScalar(terminators);
+        }
+
+        private Object parseScalar(char... terminators) {
+            int start = position;
+            while (position < text.length() && !isTerminator(text.charAt(position), terminators)) {
+                position++;
+            }
+            return text.substring(start, position);
+        }
+
+        private boolean isNullToken(char... terminators) {
+            if (!text.regionMatches(true, position, "NULL", 0, 4)) {
+                return false;
+            }
+            int end = position + 4;
+            return end >= text.length() || isTerminator(text.charAt(end), terminators);
+        }
+
+        private boolean isTerminator(char current, char... terminators) {
+            for (char terminator : terminators) {
+                if (current == terminator) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private void skipLeadingSpaces() {
+            while (position < text.length() && text.charAt(position) == ' ') {
+                position++;
+            }
+        }
+
+        private boolean consumeIf(char expected) {
+            if (position < text.length() && text.charAt(position) == expected) {
+                position++;
+                return true;
+            }
+            return false;
+        }
+
+        private void expect(char expected) {
+            if (!consumeIf(expected)) {
+                throw new IllegalStateException("Expected '" + expected + "' at position "
+                        + position + " in value: " + text);
+            }
+        }
+
+        private String asString(Object value) {
+            return value == null ? null : String.valueOf(value);
+        }
     }
 }

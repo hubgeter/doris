@@ -69,6 +69,7 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
     private int connectTimeout;
     private int readTimeout;
     private int retryTimes;
+    private long mcqaQueryLimitThreshold;
 
     public boolean dateTimePredicatePushDown;
 
@@ -191,6 +192,8 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
                 props.getOrDefault(MCProperties.READ_TIMEOUT, MCProperties.DEFAULT_READ_TIMEOUT));
         retryTimes = Integer.parseInt(
                 props.getOrDefault(MCProperties.RETRY_COUNT, MCProperties.DEFAULT_RETRY_COUNT));
+        mcqaQueryLimitThreshold = Long.parseLong(props.getOrDefault(
+                MCProperties.MCQA_QUERY_LIMIT_THRESHOLD, MCProperties.DEFAULT_MCQA_QUERY_LIMIT_THRESHOLD));
 
         RestOptions restOptions = RestOptions.newBuilder()
                 .withConnectTimeout(connectTimeout)
@@ -324,6 +327,11 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
         return dateTimePredicatePushDown;
     }
 
+    public long getMcqaQueryLimitThreshold() {
+        makeSureInitialized();
+        return mcqaQueryLimitThreshold;
+    }
+
     public ZoneId getProjectDateTimeZone() {
         makeSureInitialized();
 
@@ -429,6 +437,8 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
                     props.getOrDefault(MCProperties.READ_TIMEOUT, MCProperties.DEFAULT_READ_TIMEOUT));
             retryTimes = Integer.parseInt(
                     props.getOrDefault(MCProperties.RETRY_COUNT, MCProperties.DEFAULT_RETRY_COUNT));
+            mcqaQueryLimitThreshold = Long.parseLong(props.getOrDefault(
+                    MCProperties.MCQA_QUERY_LIMIT_THRESHOLD, MCProperties.DEFAULT_MCQA_QUERY_LIMIT_THRESHOLD));
             if (connectTimeout <= 0) {
                 throw new DdlException(MCProperties.CONNECT_TIMEOUT + " must be greater than 0");
             }
@@ -441,9 +451,14 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
                 throw new DdlException(MCProperties.RETRY_COUNT + " must be greater than 0");
             }
 
+            if (mcqaQueryLimitThreshold <= 0) {
+                throw new DdlException(MCProperties.MCQA_QUERY_LIMIT_THRESHOLD + " must be greater than 0");
+            }
+
         } catch (NumberFormatException e) {
             throw new DdlException("property " + MCProperties.CONNECT_TIMEOUT + "/"
-                    + MCProperties.READ_TIMEOUT + "/" + MCProperties.RETRY_COUNT + "must be an integer");
+                    + MCProperties.READ_TIMEOUT + "/" + MCProperties.RETRY_COUNT + "/"
+                    + MCProperties.MCQA_QUERY_LIMIT_THRESHOLD + "must be an integer");
         }
 
         MCUtils.checkAuthProperties(props);
