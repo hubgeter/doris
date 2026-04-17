@@ -42,13 +42,11 @@ Status VMCTableWriter::init_properties(ObjectPool* pool) {
 
 Status VMCTableWriter::open(RuntimeState* state, RuntimeProfile* profile) {
     _state = state;
-    _next_block_id.store(state->per_fragment_instance_idx() * BLOCK_ID_STRIDE);
 
     LOG(INFO) << "VMCTableWriter::open"
               << ", fragment_instance_id=" << print_id(state->fragment_instance_id())
               << ", per_fragment_instance_idx=" << state->per_fragment_instance_idx()
-              << ", write_session_id=" << _mc_sink.write_session_id
-              << ", next_block_id_start=" << _next_block_id.load();
+              << ", write_session_id=" << _mc_sink.write_session_id;
 
     _written_rows_counter = ADD_COUNTER(_operator_profile, "WrittenRows", TUnit::UNIT);
     _send_data_timer = ADD_TIMER(_operator_profile, "SendDataTime");
@@ -105,6 +103,9 @@ std::map<std::string, std::string> VMCTableWriter::_build_base_writer_params() {
     if (_mc_sink.__isset.project) params["project"] = _mc_sink.project;
     if (_mc_sink.__isset.table_name) params["table"] = _mc_sink.table_name;
     if (_mc_sink.__isset.quota) params["quota"] = _mc_sink.quota;
+    if (_mc_sink.__isset.txn_id) {
+        params["txn_id"] = std::to_string(_mc_sink.txn_id);
+    }
     if (_mc_sink.__isset.write_session_id) {
         params["write_session_id"] = _mc_sink.write_session_id;
     }
@@ -124,11 +125,9 @@ std::shared_ptr<VMCPartitionWriter> VMCTableWriter::_create_partition_writer(
         const std::string& partition_spec) {
     auto params = _build_base_writer_params();
     params["partition_spec"] = partition_spec;
-    // Each partition writer gets a unique block_id from the atomic counter
-    params["block_id"] = std::to_string(_next_block_id.fetch_add(1));
     LOG(INFO) << "VMCTableWriter::_create_partition_writer"
               << ", fragment_instance_id=" << print_id(_state->fragment_instance_id())
-              << ", partition_spec=" << partition_spec << ", block_id=" << params["block_id"];
+              << ", partition_spec=" << partition_spec;
     return std::make_shared<VMCPartitionWriter>(_state, _write_output_vexpr_ctxs, partition_spec,
                                                 std::move(params));
 }
