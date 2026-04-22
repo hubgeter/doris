@@ -50,11 +50,44 @@ Status PaimonOrcReader::on_before_init_reader(ReaderInitContext* ctx) {
             get_tuple_descriptor(), orc_type_ptr));
     ctx->table_info_node = table_info_node_ptr;
 
-    for (const auto& desc : *ctx->column_descs) {
-        if (desc.category == ColumnCategory::REGULAR ||
-            desc.category == ColumnCategory::GENERATED) {
+    bool has_partition_from_path = false;
+    std::unordered_set<std::string> partition_col_names;
+    if (ctx->range->__isset.columns_from_path_keys) {
+        partition_col_names.insert(ctx->range->columns_from_path_keys.begin(),
+                                   ctx->range->columns_from_path_keys.end());
+    }
+    std::map<std::string, uint64_t> file_column_name_idx_map;
+    for (uint64_t idx = 0; idx < orc_type_ptr->getSubtypeCount(); idx++) {
+        file_column_name_idx_map.emplace(orc_type_ptr->getFieldName(idx), idx);
+    }
+
+    for (auto& desc : *ctx->column_descs) {
+        if (desc.category == ColumnCategory::REGULAR) {
+            // `table_info_node` is built from the table/history schema. For normal Paimon
+            // writes, partition columns are physically materialized in data files, so the
+            // schema usually matches the file layout and these columns can be read from the
+            // file as regular columns. For Hive-migrated Paimon tables, legacy files may not
+            // contain those partition columns even though they still exist in schema. When
+            // the mapped file column is absent, reclassify the column as PARTITION_KEY and
+            // fill it from `columns_from_path` instead of reading it from the file.
+            // This is similar to Iceberg partition fallback.
+            if (partition_col_names.contains(desc.name) &&
+                table_info_node_ptr->children_column_exists(desc.name)) {
+                if (!file_column_name_idx_map.contains(
+                            table_info_node_ptr->children_file_column_name(desc.name))) {
+                    desc.category = ColumnCategory::PARTITION_KEY;
+                    has_partition_from_path = true;
+                    continue;
+                }
+            }
+            ctx->column_names.push_back(desc.name);
+        } else if (desc.category == ColumnCategory::GENERATED) {
             ctx->column_names.push_back(desc.name);
         }
+    }
+    if (has_partition_from_path) {
+        RETURN_IF_ERROR(_extract_partition_values(*ctx->range, ctx->tuple_descriptor,
+                                                  _fill_partition_values));
     }
     return Status::OK();
 }
@@ -184,12 +217,48 @@ Status PaimonParquetReader::on_before_init_reader(ReaderInitContext* ctx) {
             get_tuple_descriptor(), *field_desc));
     ctx->table_info_node = table_info_node_ptr;
 
-    for (const auto& desc : *ctx->column_descs) {
-        if (desc.category == ColumnCategory::REGULAR ||
-            desc.category == ColumnCategory::GENERATED) {
+    bool has_partition_from_path = false;
+    std::unordered_set<std::string> partition_col_names;
+    if (ctx->range->__isset.columns_from_path_keys) {
+        partition_col_names.insert(ctx->range->columns_from_path_keys.begin(),
+                                   ctx->range->columns_from_path_keys.end());
+    }
+
+    auto parquet_fields_schema = field_desc->get_fields_schema();
+    std::map<std::string, size_t> file_column_name_idx_map;
+    for (size_t idx = 0; idx < parquet_fields_schema.size(); idx++) {
+        file_column_name_idx_map.emplace(parquet_fields_schema[idx].name, idx);
+    }
+
+    for (auto& desc : *ctx->column_descs) {
+        if (desc.category == ColumnCategory::REGULAR) {
+            // `table_info_node` is built from the table/history schema. For normal Paimon
+            // writes, partition columns are physically materialized in data files, so the
+            // schema usually matches the file layout and these columns can be read from the
+            // file as regular columns. For Hive-migrated Paimon tables, legacy files may not
+            // contain those partition columns even though they still exist in schema. When
+            // the mapped file column is absent, reclassify the column as PARTITION_KEY and
+            // fill it from `columns_from_path` instead of reading it from the file.
+            // This is similar to Iceberg partition fallback.
+            if (partition_col_names.contains(desc.name) &&
+                table_info_node_ptr->children_column_exists(desc.name)) {
+                if (!file_column_name_idx_map.contains(
+                            table_info_node_ptr->children_file_column_name(desc.name))) {
+                    desc.category = ColumnCategory::PARTITION_KEY;
+                    has_partition_from_path = true;
+                    continue;
+                }
+            }
+            ctx->column_names.push_back(desc.name);
+        } else if (desc.category == ColumnCategory::GENERATED) {
             ctx->column_names.push_back(desc.name);
         }
     }
+    if (has_partition_from_path) {
+        RETURN_IF_ERROR(_extract_partition_values(*ctx->range, ctx->tuple_descriptor,
+                                                  _fill_partition_values));
+    }
+
     return Status::OK();
 }
 
