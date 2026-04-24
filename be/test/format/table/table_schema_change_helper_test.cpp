@@ -355,6 +355,39 @@ TEST(MockTableSchemaChangeHelper, IcebergParquetSchemaChange) {
     );
 }
 
+TEST(MockTableSchemaChangeHelper, IcebergParquetNameMappingFallback) {
+    TColumnType int_type;
+    int_type.type = TPrimitiveType::INT;
+
+    schema::external::TStructField root_field;
+    auto renamed_field = std::make_shared<schema::external::TField>();
+    renamed_field->name = "col1_new";
+    renamed_field->id = 1;
+    renamed_field->type = int_type;
+    renamed_field->__set_name_mapping(std::vector<std::string> {"col1_old"});
+    schema::external::TFieldPtr renamed_ptr;
+    renamed_ptr.field_ptr = renamed_field;
+    root_field.fields.emplace_back(renamed_ptr);
+
+    FieldDescriptor parquet_field;
+    FieldSchema parquet_field_col1;
+    parquet_field_col1.name = "col1_old";
+    parquet_field_col1.data_type =
+            DataTypeFactory::instance().create_data_type(PrimitiveType::TYPE_BIGINT, true);
+    parquet_field_col1.field_id = -1;
+    parquet_field._fields.emplace_back(parquet_field_col1);
+
+    std::shared_ptr<TableSchemaChangeHelper::Node> ans_node = nullptr;
+    ASSERT_TRUE(TableSchemaChangeHelper::BuildTableInfoUtil::by_parquet_field_id_with_name_mapping(
+                        root_field, parquet_field, ans_node)
+                        .ok());
+
+    ASSERT_EQ(TableSchemaChangeHelper::debug(ans_node),
+              "StructNode\n"
+              "  col1_new (file: col1_old)\n"
+              "    ScalarNode\n");
+}
+
 TEST(MockTableSchemaChangeHelper, IcebergOrcSchemaChange) {
     schema::external::TField test_field;
     TColumnType struct_type;
@@ -436,6 +469,34 @@ TEST(MockTableSchemaChangeHelper, IcebergOrcSchemaChange) {
               "        ScalarNode\n"
               "      b (file: aa)\n"
               "        ScalarNode\n");
+}
+
+TEST(MockTableSchemaChangeHelper, IcebergOrcNameMappingFallback) {
+    TColumnType int_type;
+    int_type.type = TPrimitiveType::INT;
+
+    schema::external::TStructField root_field;
+    auto renamed_field = std::make_shared<schema::external::TField>();
+    renamed_field->name = "col1_new";
+    renamed_field->id = 1;
+    renamed_field->type = int_type;
+    renamed_field->__set_name_mapping(std::vector<std::string> {"col1_old"});
+    schema::external::TFieldPtr renamed_ptr;
+    renamed_ptr.field_ptr = renamed_field;
+    root_field.fields.emplace_back(renamed_ptr);
+
+    std::unique_ptr<orc::Type> orc_type(orc::Type::buildTypeFromString("struct<col1_old:int>"));
+
+    std::shared_ptr<TableSchemaChangeHelper::Node> ans_node = nullptr;
+    ASSERT_TRUE(
+            TableSchemaChangeHelper::BuildTableInfoUtil::by_orc_field_id_with_name_mapping(
+                    root_field, orc_type.get(), IcebergOrcReader::ICEBERG_ORC_ATTRIBUTE, ans_node)
+                    .ok());
+
+    ASSERT_EQ(TableSchemaChangeHelper::debug(ans_node),
+              "StructNode\n"
+              "  col1_new (file: col1_old)\n"
+              "    ScalarNode\n");
 }
 
 TEST(MockTableSchemaChangeHelper, NestedMapArrayStruct) {

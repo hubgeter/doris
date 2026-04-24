@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <boost/iterator/iterator_facade.hpp>
 #include <memory>
+#include <numeric>
 #include <ostream>
 
 #include "common/config.h"
@@ -324,6 +325,7 @@ Status RowGroupReader::next_batch(Block* block, size_t batch_size, size_t* read_
     // Process external table query task that select columns are all from path.
     if (_read_table_columns.empty()) {
         bool modify_row_ids = false;
+        int64_t batch_base_row = _total_read_rows;
         RETURN_IF_ERROR(_read_empty_batch(batch_size, read_rows, batch_eof, &modify_row_ids));
 
         DCHECK(_table_format_reader);
@@ -336,9 +338,17 @@ Status RowGroupReader::next_batch(Block* block, size_t batch_size, size_t* read_
         }
         RETURN_IF_ERROR(_table_format_reader->fill_synthesized_columns(block, *read_rows));
         RETURN_IF_ERROR(_table_format_reader->fill_generated_columns(block, *read_rows));
-        Status st = VExprContext::filter_block(_lazy_read_ctx.conjuncts, block, block->columns());
+        std::vector<uint32_t> columns_to_filter(block->columns());
+        for (uint32_t i = 0; i < columns_to_filter.size(); ++i) {
+            columns_to_filter[i] = i;
+        }
+        IColumn::Filter result_filter;
+        RETURN_IF_ERROR(VExprContext::execute_conjuncts_and_filter_block(
+                _lazy_read_ctx.conjuncts, block, columns_to_filter, block->columns(),
+                result_filter));
+        _mark_condition_cache_granules(result_filter.data(), *read_rows, batch_base_row);
         *read_rows = block->rows();
-        return st;
+        return Status::OK();
     }
     if (_lazy_read_ctx.can_lazy_read) {
         // call _do_lazy_read recursively when current batch is skipped
