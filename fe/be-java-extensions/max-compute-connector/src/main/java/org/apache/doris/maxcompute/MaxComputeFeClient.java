@@ -28,6 +28,7 @@ import org.apache.log4j.Logger;
 import org.apache.thrift.protocol.TBinaryProtocol;
 import org.apache.thrift.transport.TSocket;
 import org.apache.thrift.transport.TTransport;
+import org.apache.thrift.transport.TTransportException;
 import org.apache.thrift.transport.layered.TFramedTransport;
 
 import java.io.IOException;
@@ -38,7 +39,7 @@ import java.util.Objects;
 /**
  * FE thrift client used by MaxCompute writer runtime code in BE's embedded JVM.
  */
-class MaxComputeFeClient {
+class MaxComputeFeClient implements AutoCloseable {
     static final String FE_HOST = "fe_host";
     static final String FE_PORT = "fe_port";
     static final String FE_RPC_TIMEOUT_MS = "fe_rpc_timeout_ms";
@@ -68,13 +69,8 @@ class MaxComputeFeClient {
     }
 
     MaxComputeFeClient(TNetworkAddress masterAddress, int rpcTimeoutMs, String thriftServerType) {
-        this(masterAddress, rpcTimeoutMs, thriftServerType, new RpcExecutor() {
-            @Override
-            public <T> T call(TNetworkAddress address, int timeoutMs, boolean useFramedTransport,
-                    FeCall<T> call) throws Exception {
-                return callFe(address, timeoutMs, useFramedTransport, call);
-            }
-        }, FETCH_BLOCK_ID_RETRY_SLEEP_MS);
+        this(masterAddress, rpcTimeoutMs, thriftServerType, new ReusableRpcExecutor(),
+                FETCH_BLOCK_ID_RETRY_SLEEP_MS);
     }
 
     MaxComputeFeClient(TNetworkAddress masterAddress, int rpcTimeoutMs, String thriftServerType,
@@ -102,7 +98,13 @@ class MaxComputeFeClient {
                         handleBlockIdResult(result, requestAddress, retryTimes, txnId, writeSessionId));
     }
 
-    private <T, R> R callWithMasterRedirect(String operation, FeCall<T> call, ResponseHandler<T, R> handler)
+    @Override
+    public synchronized void close() {
+        rpcExecutor.close();
+    }
+
+    private synchronized <T, R> R callWithMasterRedirect(String operation, FeCall<T> call,
+            ResponseHandler<T, R> handler)
             throws IOException {
         validateAddress(masterAddress);
 
@@ -114,6 +116,7 @@ class MaxComputeFeClient {
                 result = rpcExecutor.call(requestAddress, rpcTimeoutMs, useFramedTransport(), call);
             } catch (Exception e) {
                 lastException = e;
+                rpcExecutor.close();
                 LOG.warn("Failed to " + operation + ", rpc failure, retry_time="
                         + retryTimes + ", fe=" + formatAddress(requestAddress), e);
                 sleepBeforeRetry();
@@ -125,6 +128,7 @@ class MaxComputeFeClient {
             } catch (NotMasterException e) {
                 masterAddress = copyAddress(e.masterAddress);
                 lastException = e;
+                rpcExecutor.close();
                 sleepBeforeRetry();
             }
         }
@@ -199,17 +203,10 @@ class MaxComputeFeClient {
         }
     }
 
-    private static <T> T callFe(TNetworkAddress address, int timeoutMs,
-            boolean useFramedTransport, FeCall<T> call) throws Exception {
+    private static TTransport createTransport(TNetworkAddress address, int timeoutMs,
+            boolean useFramedTransport) throws TTransportException {
         TSocket socket = new TSocket(address.getHostname(), address.getPort(), timeoutMs);
-        TTransport transport = useFramedTransport ? new TFramedTransport(socket) : socket;
-        try {
-            transport.open();
-            FrontendService.Client client = new FrontendService.Client(new TBinaryProtocol(transport));
-            return call.call(client);
-        } finally {
-            transport.close();
-        }
+        return useFramedTransport ? new TFramedTransport(socket) : socket;
     }
 
     private static void validateAddress(TNetworkAddress address) throws IOException {
@@ -239,6 +236,12 @@ class MaxComputeFeClient {
         return new TNetworkAddress(address.getHostname(), address.getPort());
     }
 
+    private static boolean sameAddress(TNetworkAddress left, TNetworkAddress right) {
+        return left != null && right != null
+                && Objects.equals(left.getHostname(), right.getHostname())
+                && left.getPort() == right.getPort();
+    }
+
     private static String formatAddress(TNetworkAddress address) {
         if (address == null) {
             return "null";
@@ -249,6 +252,9 @@ class MaxComputeFeClient {
     interface RpcExecutor {
         <T> T call(TNetworkAddress address, int timeoutMs, boolean useFramedTransport,
                 FeCall<T> call) throws Exception;
+
+        default void close() {
+        }
     }
 
     interface FeCall<T> {
@@ -257,6 +263,57 @@ class MaxComputeFeClient {
 
     private interface ResponseHandler<T, R> {
         R handle(T result, TNetworkAddress requestAddress, int retryTimes) throws IOException, NotMasterException;
+    }
+
+    private static class ReusableRpcExecutor implements RpcExecutor {
+        private TNetworkAddress connectedAddress;
+        private boolean connectedFramedTransport;
+        private TTransport transport;
+        private FrontendService.Client client;
+
+        @Override
+        public synchronized <T> T call(TNetworkAddress address, int timeoutMs, boolean useFramedTransport,
+                FeCall<T> call) throws Exception {
+            ensureConnected(address, timeoutMs, useFramedTransport);
+            try {
+                return call.call(client);
+            } catch (Exception e) {
+                close();
+                throw e;
+            }
+        }
+
+        @Override
+        public synchronized void close() {
+            if (transport != null) {
+                transport.close();
+            }
+            transport = null;
+            client = null;
+            connectedAddress = null;
+        }
+
+        private void ensureConnected(TNetworkAddress address, int timeoutMs, boolean useFramedTransport)
+                throws Exception {
+            if (client != null && transport != null && transport.isOpen()
+                    && connectedFramedTransport == useFramedTransport
+                    && sameAddress(connectedAddress, address)) {
+                return;
+            }
+
+            close();
+            TTransport newTransport = createTransport(address, timeoutMs, useFramedTransport);
+            try {
+                newTransport.open();
+                transport = newTransport;
+                client = new FrontendService.Client(new TBinaryProtocol(transport));
+                connectedAddress = copyAddress(address);
+                connectedFramedTransport = useFramedTransport;
+            } catch (Exception e) {
+                newTransport.close();
+                throw e;
+            }
+        }
     }
 
     private static class NotMasterException extends Exception {

@@ -2151,7 +2151,7 @@ public class Config extends ConfigBase {
     /**
      * Maximum number of MaxCompute Storage API write block IDs that can be allocated in one write session.
      */
-    @ConfField(mutable = true, masterOnly = true, description = {
+    @ConfField(mutable = false, masterOnly = true, description = {
             "Maximum number of MaxCompute Storage API write block IDs that can be allocated in one write session."})
     public static long max_compute_write_max_block_count = 20000L;
 

@@ -919,6 +919,8 @@ public class MaxComputeJniWriter extends JniWriter {
             String errorMsg = "Failed to close MaxCompute arrow writer";
             LOG.error(errorMsg, e);
             throw new IOException(errorMsg, e);
+        } finally {
+            feClient.close();
         }
     }
 
