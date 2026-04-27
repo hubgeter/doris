@@ -32,7 +32,8 @@ public class MaxComputeSplit extends FileSplit {
 
     public enum SplitType {
         ROW_OFFSET,
-        BYTE_SIZE
+        BYTE_SIZE,
+        MCQA
     }
 
     public SplitType splitType;

@@ -29,8 +29,14 @@ import org.apache.doris.datasource.operations.ExternalMetadataOperations;
 import org.apache.doris.transaction.TransactionManagerFactory;
 
 import com.aliyun.odps.Odps;
+import com.aliyun.odps.OdpsException;
 import com.aliyun.odps.Partition;
 import com.aliyun.odps.account.AccountFormat;
+import com.aliyun.odps.sqa.ExecuteMode;
+import com.aliyun.odps.sqa.FallbackPolicy;
+import com.aliyun.odps.sqa.SQLExecutor;
+import com.aliyun.odps.sqa.SQLExecutorPool;
+import com.aliyun.odps.sqa.SQLExecutorPoolBuilder;
 import com.aliyun.odps.table.TableIdentifier;
 import com.aliyun.odps.table.configuration.RestOptions;
 import com.aliyun.odps.table.configuration.SplitOptions;
@@ -60,6 +66,7 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
     private String defaultProject;
     private String quota;
     private EnvironmentSettings settings;
+    private transient SQLExecutorPool sqlExecutorPool;
 
     private String splitStrategy;
     private SplitOptions splitOptions;
@@ -69,7 +76,9 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
     private int connectTimeout;
     private int readTimeout;
     private int retryTimes;
+    private int mcqaPoolSize;
     private long mcqaQueryLimitThreshold;
+    private boolean namespaceSchemaEnabled;
 
     public boolean dateTimePredicatePushDown;
 
@@ -192,6 +201,8 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
                 props.getOrDefault(MCProperties.READ_TIMEOUT, MCProperties.DEFAULT_READ_TIMEOUT));
         retryTimes = Integer.parseInt(
                 props.getOrDefault(MCProperties.RETRY_COUNT, MCProperties.DEFAULT_RETRY_COUNT));
+        mcqaPoolSize = Integer.parseInt(
+                props.getOrDefault(MCProperties.MCQA_POOL_SIZE, MCProperties.DEFAULT_MCQA_POOL_SIZE));
         mcqaQueryLimitThreshold = Long.parseLong(props.getOrDefault(
                 MCProperties.MCQA_QUERY_LIMIT_THRESHOLD, MCProperties.DEFAULT_MCQA_QUERY_LIMIT_THRESHOLD));
 
@@ -225,13 +236,20 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
                 .withRestOptions(restOptions)
                 .build();
 
-        boolean enableNamespaceSchema = Boolean.parseBoolean(
+        namespaceSchemaEnabled = Boolean.parseBoolean(
                 props.getOrDefault(MCProperties.ENABLE_NAMESPACE_SCHEMA, MCProperties.DEFAULT_ENABLE_NAMESPACE_SCHEMA));
-        mcStructureHelper = McStructureHelper.getHelper(enableNamespaceSchema, defaultProject);
+        mcStructureHelper = McStructureHelper.getHelper(namespaceSchemaEnabled, defaultProject);
 
         initPreExecutionAuthenticator();
         metadataOps = ExternalMetadataOperations.newMaxComputeMetadataOps(this, odps);
         transactionManager = TransactionManagerFactory.createMCTransactionManager(this);
+        if (isMcqaQueryEnabled()) {
+            try {
+                ensureMcqaSqlExecutorPool();
+            } catch (OdpsException e) {
+                throw new RuntimeException("Failed to initialize MaxCompute MCQA SQL executor pool", e);
+            }
+        }
     }
 
     public Odps getClient() {
@@ -332,6 +350,43 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
         return mcqaQueryLimitThreshold;
     }
 
+    public synchronized SQLExecutor getMcqaSqlExecutor() throws OdpsException {
+        makeSureInitialized();
+        ensureMcqaSqlExecutorPool();
+        return sqlExecutorPool.getExecutor();
+    }
+
+    private void ensureMcqaSqlExecutorPool() throws OdpsException {
+        if (sqlExecutorPool == null) {
+            SQLExecutorPoolBuilder builder = SQLExecutorPoolBuilder.builder()
+                    .odps(odps)
+                    .initPoolSize(1)
+                    .maxPoolSize(mcqaPoolSize)
+                    .executeMode(ExecuteMode.INTERACTIVE)
+                    .fallbackPolicy(FallbackPolicy.alwaysFallbackPolicy())
+                    .enableReattach(true)
+                    .taskName(MCProperties.MCQA_TASK_NAME)
+                    .properties(buildMcqaProperties())
+                    .useInstanceTunnel(false);
+            sqlExecutorPool = builder.build();
+        }
+    }
+
+    public Map<String, String> getMcqaSqlProperties() {
+        Map<String, String> properties = new HashMap<>();
+        if (namespaceSchemaEnabled) {
+            properties.put("odps.namespace.schema", "true");
+            properties.put("odps.sql.allow.namespace.schema", "true");
+        }
+        return properties;
+    }
+
+    public void releaseMcqaSqlExecutor(SQLExecutor sqlExecutor) {
+        if (sqlExecutorPool != null && sqlExecutor != null) {
+            sqlExecutorPool.releaseExecutor(sqlExecutor);
+        }
+    }
+
     public ZoneId getProjectDateTimeZone() {
         makeSureInitialized();
 
@@ -386,6 +441,29 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
     }
 
     @Override
+    public void onClose() {
+        super.onClose();
+        if (sqlExecutorPool != null) {
+            sqlExecutorPool.close();
+            sqlExecutorPool = null;
+        }
+    }
+
+    private Map<String, String> buildMcqaProperties() {
+        Map<String, String> mcqaProperties = new HashMap<>();
+        if (namespaceSchemaEnabled) {
+            mcqaProperties.put("odps.namespace.schema", "true");
+            mcqaProperties.put("odps.sql.allow.namespace.schema", "true");
+        }
+        return mcqaProperties;
+    }
+
+    private boolean isMcqaQueryEnabled() {
+        return Boolean.parseBoolean(props.getOrDefault(
+                MCProperties.ENABLE_MCQA_QUERY, MCProperties.DEFAULT_ENABLE_MCQA_QUERY));
+    }
+
+    @Override
     public void checkProperties() throws DdlException {
         super.checkProperties();
         Map<String, String> props = catalogProperty.getProperties();
@@ -437,6 +515,8 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
                     props.getOrDefault(MCProperties.READ_TIMEOUT, MCProperties.DEFAULT_READ_TIMEOUT));
             retryTimes = Integer.parseInt(
                     props.getOrDefault(MCProperties.RETRY_COUNT, MCProperties.DEFAULT_RETRY_COUNT));
+            mcqaPoolSize = Integer.parseInt(
+                    props.getOrDefault(MCProperties.MCQA_POOL_SIZE, MCProperties.DEFAULT_MCQA_POOL_SIZE));
             mcqaQueryLimitThreshold = Long.parseLong(props.getOrDefault(
                     MCProperties.MCQA_QUERY_LIMIT_THRESHOLD, MCProperties.DEFAULT_MCQA_QUERY_LIMIT_THRESHOLD));
             if (connectTimeout <= 0) {
@@ -451,6 +531,10 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
                 throw new DdlException(MCProperties.RETRY_COUNT + " must be greater than 0");
             }
 
+            if (mcqaPoolSize <= 1) {
+                throw new DdlException(MCProperties.MCQA_POOL_SIZE + " must be greater than 1");
+            }
+
             if (mcqaQueryLimitThreshold <= 0) {
                 throw new DdlException(MCProperties.MCQA_QUERY_LIMIT_THRESHOLD + " must be greater than 0");
             }
@@ -458,6 +542,7 @@ public class MaxComputeExternalCatalog extends ExternalCatalog {
         } catch (NumberFormatException e) {
             throw new DdlException("property " + MCProperties.CONNECT_TIMEOUT + "/"
                     + MCProperties.READ_TIMEOUT + "/" + MCProperties.RETRY_COUNT + "/"
+                    + MCProperties.MCQA_POOL_SIZE + "/"
                     + MCProperties.MCQA_QUERY_LIMIT_THRESHOLD + "must be an integer");
         }
 

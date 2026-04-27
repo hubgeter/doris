@@ -74,9 +74,14 @@ public class MCProperties {
             "mc.datetime_predicate_push_down";
     public static final String DEFAULT_DATETIME_PREDICATE_PUSH_DOWN = "true";
 
+    public static final String MCQA_TASK_NAME = "doris_mcqa_query";
+    public static final String MCQA_INSTANCE_PAYLOAD_PREFIX = "mcqa_instance:v1:";
+    public static final String QUERY_PAYLOAD_SEPARATOR = ":";
+
     public static final String ENABLE_MCQA_QUERY = "mc.enable_mcqa_query";
     public static final String DEFAULT_ENABLE_MCQA_QUERY = "false";
-    public static final String MCQA_QUOTA = "mc.mcqa_quota";
+    public static final String MCQA_POOL_SIZE = "mc.mcqa_pool_size";
+    public static final String DEFAULT_MCQA_POOL_SIZE = "5";
     public static final String MCQA_QUERY_LIMIT_THRESHOLD = "mc.mcqa_query_limit_threshold";
     public static final String DEFAULT_MCQA_QUERY_LIMIT_THRESHOLD = "4096";
 
