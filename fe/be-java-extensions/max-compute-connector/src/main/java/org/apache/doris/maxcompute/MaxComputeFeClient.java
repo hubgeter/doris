@@ -65,11 +65,8 @@ class MaxComputeFeClient implements AutoCloseable {
         int timeoutMs = Integer.parseInt(params.getOrDefault(FE_RPC_TIMEOUT_MS,
                 String.valueOf(DEFAULT_FE_RPC_TIMEOUT_MS)));
         String serverType = params.getOrDefault(FE_THRIFT_SERVER_TYPE, THREAD_POOL);
-        return new MaxComputeFeClient(new TNetworkAddress(host, port), timeoutMs, serverType);
-    }
-
-    MaxComputeFeClient(TNetworkAddress masterAddress, int rpcTimeoutMs, String thriftServerType) {
-        this(masterAddress, rpcTimeoutMs, thriftServerType, new ReusableRpcExecutor(),
+        return new MaxComputeFeClient(new TNetworkAddress(host, port), timeoutMs, serverType,
+                new ReusableRpcExecutor(),
                 FETCH_BLOCK_ID_RETRY_SLEEP_MS);
     }
 
@@ -176,9 +173,11 @@ class MaxComputeFeClient implements AutoCloseable {
                     + result.getLength() + ", txn_id=" + txnId + ", write_session_id=" + writeSessionId);
         }
 
-        LOG.info("Allocated MaxCompute block_id from FE@" + formatAddress(requestAddress)
-                + ", txn_id=" + txnId + ", write_session_id=" + writeSessionId
-                + ", block_id=" + result.getStart());
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Allocated MaxCompute block_id from FE@" + formatAddress(requestAddress)
+                    + ", txn_id=" + txnId + ", write_session_id=" + writeSessionId
+                    + ", block_id=" + result.getStart());
+        }
         return result.getStart();
     }
 
