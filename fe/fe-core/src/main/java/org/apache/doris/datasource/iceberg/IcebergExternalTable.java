@@ -66,6 +66,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -381,36 +382,17 @@ public class IcebergExternalTable extends ExternalTable implements MTMVRelatedTa
     }
 
     public String getViewText() {
-        try {
-            return catalog.getExecutionAuthenticator().execute(() -> {
-                View icebergView = IcebergUtils.getIcebergView(this);
-                ViewVersion viewVersion = icebergView.currentVersion();
-                if (viewVersion == null) {
-                    throw new RuntimeException(String.format("Cannot get view version for view '%s'", icebergView));
-                }
-                Map<String, String> summary = viewVersion.summary();
-                if (summary == null) {
-                    throw new RuntimeException(String.format("Cannot get summary for view '%s'", icebergView));
-                }
-                String engineName = summary.get(ENGINE_PROP_NAME);
-                if (StringUtils.isEmpty(engineName)) {
-                    throw new RuntimeException(String.format("Cannot get engine-name for view '%s'", icebergView));
-                }
-                SQLViewRepresentation sqlViewRepresentation = icebergView.sqlFor(engineName.toLowerCase());
-                if (sqlViewRepresentation == null) {
-                    throw new UnsupportedOperationException("Cannot get view text from iceberg view");
-                }
-                return sqlViewRepresentation.sql();
-            });
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        return getViewSqlRepresentation().sql();
     }
 
     public String getSqlDialect() {
+        return getViewSqlRepresentation().dialect().toLowerCase(Locale.ROOT);
+    }
+
+    private SQLViewRepresentation getViewSqlRepresentation() {
         try {
             return catalog.getExecutionAuthenticator().execute(() -> {
-                View icebergView = IcebergUtils.getIcebergView(this);
+                View icebergView = getIcebergView();
                 ViewVersion viewVersion = icebergView.currentVersion();
                 if (viewVersion == null) {
                     throw new RuntimeException(String.format("Cannot get view version for view '%s'", icebergView));
@@ -420,10 +402,16 @@ public class IcebergExternalTable extends ExternalTable implements MTMVRelatedTa
                     throw new RuntimeException(String.format("Cannot get summary for view '%s'", icebergView));
                 }
                 String engineName = summary.get(ENGINE_PROP_NAME);
-                if (StringUtils.isEmpty(engineName)) {
-                    throw new RuntimeException(String.format("Cannot get engine-name for view '%s'", icebergView));
+                // Preserve engine-based selection. Only a missing/empty engine-name prefers Doris;
+                // Iceberg falls back to the first SQL representation if the dialect has no match.
+                String preferredDialect = StringUtils.isEmpty(engineName)
+                        ? "doris" : engineName.toLowerCase(Locale.ROOT);
+                SQLViewRepresentation sqlViewRepresentation = icebergView.sqlFor(preferredDialect);
+                if (sqlViewRepresentation == null) {
+                    throw new UnsupportedOperationException(String.format(
+                            "Cannot get SQL representation for Iceberg view '%s'", icebergView));
                 }
-                return engineName.toLowerCase();
+                return sqlViewRepresentation;
             });
         } catch (Exception e) {
             throw new RuntimeException(e);
