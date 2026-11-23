@@ -63,6 +63,7 @@ import org.apache.iceberg.view.View;
 import org.apache.iceberg.view.ViewVersion;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -108,6 +109,9 @@ public class IcebergExternalTable extends ExternalTable implements MTMVRelatedTa
 
     @Override
     public Optional<SchemaCacheValue> getSchemaCacheValue() {
+        if (isView()) {
+            return Optional.of(IcebergUtils.getSchemaCacheValue(this, IcebergUtils.NEWEST_SCHEMA_ID));
+        }
         IcebergSnapshotCacheValue snapshotValue = IcebergUtils.getSnapshotCacheValue(
                 MvccUtil.getSnapshotFromContext(this), this);
         return Optional.of(IcebergUtils.getSchemaCacheValue(this, snapshotValue));
@@ -169,11 +173,14 @@ public class IcebergExternalTable extends ExternalTable implements MTMVRelatedTa
 
     @Override
     public Map<String, PartitionItem> getAndCopyPartitionItems(Optional<MvccSnapshot> snapshot) {
-        return Maps.newHashMap(IcebergUtils.getIcebergPartitionItems(snapshot, this));
+        return Maps.newHashMap(getNameToPartitionItems(snapshot));
     }
 
     @Override
     public Map<String, PartitionItem> getNameToPartitionItems(Optional<MvccSnapshot> snapshot) {
+        if (isView()) {
+            return Collections.emptyMap();
+        }
         return IcebergUtils.getIcebergPartitionItems(snapshot, this);
     }
 
@@ -189,6 +196,9 @@ public class IcebergExternalTable extends ExternalTable implements MTMVRelatedTa
 
     @Override
     public List<Column> getPartitionColumns(Optional<MvccSnapshot> snapshot) {
+        if (isView()) {
+            return Collections.emptyList();
+        }
         return IcebergUtils.getIcebergPartitionColumns(snapshot, this);
     }
 
@@ -244,7 +254,9 @@ public class IcebergExternalTable extends ExternalTable implements MTMVRelatedTa
      */
     @Override
     public boolean isValidRelatedTable() {
-        makeSureInitialized();
+        if (isView()) {
+            return false;
+        }
         if (isValidRelatedTableCached) {
             return isValidRelatedTable;
         }
@@ -280,11 +292,13 @@ public class IcebergExternalTable extends ExternalTable implements MTMVRelatedTa
     @Override
     public MvccSnapshot loadSnapshot(Optional<TableSnapshot> tableSnapshot, Optional<TableScanParams> scanParams) {
         if (isView()) {
+            if (scanParams.isPresent()) {
+                throw new UnsupportedOperationException(
+                        "view not supported with scan params: @" + scanParams.get().getParamType());
+            }
             return new EmptyMvccSnapshot();
-        } else {
-            return new IcebergMvccSnapshot(IcebergUtils.getSnapshotCacheValue(
-                    tableSnapshot, this, scanParams));
         }
+        return new IcebergMvccSnapshot(IcebergUtils.getSnapshotCacheValue(tableSnapshot, this, scanParams));
     }
 
     @Override
@@ -301,6 +315,10 @@ public class IcebergExternalTable extends ExternalTable implements MTMVRelatedTa
     @Override
     public List<Column> getFullSchema(Optional<MvccSnapshot> snapshot) {
         List<Column> schema = IcebergUtils.getIcebergSchema(this, snapshot);
+        // Views have no physical row-id or row-lineage metadata.
+        if (isView()) {
+            return new ArrayList<>(schema);
+        }
         schema = new ArrayList<>(schema);
 
         if (Util.showHiddenColumns() || needInternalHiddenColumns()) {
@@ -323,7 +341,7 @@ public class IcebergExternalTable extends ExternalTable implements MTMVRelatedTa
 
     @Override
     public boolean supportInternalPartitionPruned() {
-        return true;
+        return !isView();
     }
 
     @Override

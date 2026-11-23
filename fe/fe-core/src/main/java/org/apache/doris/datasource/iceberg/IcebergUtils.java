@@ -1890,6 +1890,9 @@ public class IcebergUtils {
 
     // read schema from iceberg.schema entry
     public static IcebergSchemaCacheValue getSchemaCacheValue(ExternalTable dorisTable, long schemaId) {
+        if (dorisTable instanceof IcebergExternalTable && dorisTable.isView()) {
+            return icebergExternalMetaCache(dorisTable).getIcebergViewSchemaCacheValue(dorisTable, schemaId);
+        }
         return icebergExternalMetaCache(dorisTable)
                 .getIcebergSchemaCacheValue(dorisTable.getOrBuildNameMapping(), schemaId);
     }
@@ -2243,8 +2246,11 @@ public class IcebergUtils {
     }
 
     public static List<Column> getIcebergSchema(ExternalTable dorisTable, Optional<MvccSnapshot> snapshot) {
-        IcebergSnapshotCacheValue cacheValue = IcebergUtils.getSnapshotCacheValue(snapshot, dorisTable);
-        return IcebergUtils.getSchemaCacheValue(dorisTable, cacheValue).getSchema();
+        if (dorisTable instanceof IcebergExternalTable && dorisTable.isView()) {
+            return getSchemaCacheValue(dorisTable, NEWEST_SCHEMA_ID).getSchema();
+        }
+        IcebergSnapshotCacheValue cacheValue = getSnapshotCacheValue(snapshot, dorisTable);
+        return getSchemaCacheValue(dorisTable, cacheValue).getSchema();
     }
 
     public static List<Column> getIcebergPartitionColumns(Optional<MvccSnapshot> snapshot, ExternalTable dorisTable) {
