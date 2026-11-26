@@ -52,14 +52,18 @@ import org.apache.doris.thrift.TTableDescriptor;
 import org.apache.doris.thrift.TTableType;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.iceberg.PartitionField;
 import org.apache.iceberg.PartitionSpec;
+import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.view.SQLViewRepresentation;
 import org.apache.iceberg.view.View;
+import org.apache.iceberg.view.ViewRepresentation;
 import org.apache.iceberg.view.ViewVersion;
 
 import java.util.ArrayList;
@@ -389,33 +393,98 @@ public class IcebergExternalTable extends ExternalTable implements MTMVRelatedTa
         return getViewSqlRepresentation().dialect().toLowerCase(Locale.ROOT);
     }
 
-    private SQLViewRepresentation getViewSqlRepresentation() {
+    /** A single stored version's SQL, declared columns, and namespace. */
+    public static final class ViewDefinition {
+        private final String sql;
+        private final String defaultCatalog;
+        private final String defaultDatabase;
+        private final List<Column> schema;
+
+        ViewDefinition(String sql, String defaultCatalog, String defaultDatabase, List<Column> schema) {
+            this.sql = sql;
+            this.defaultCatalog = defaultCatalog;
+            this.defaultDatabase = defaultDatabase;
+            this.schema = schema;
+        }
+
+        public String getSql() {
+            return sql;
+        }
+
+        public String getDefaultCatalog() {
+            return defaultCatalog;
+        }
+
+        public String getDefaultDatabase() {
+            return defaultDatabase;
+        }
+
+        public List<Column> getSchema() {
+            return schema;
+        }
+    }
+
+    public ViewDefinition getViewDefinition() {
         try {
             return catalog.getExecutionAuthenticator().execute(() -> {
-                View icebergView = getIcebergView();
-                ViewVersion viewVersion = icebergView.currentVersion();
-                if (viewVersion == null) {
-                    throw new RuntimeException(String.format("Cannot get view version for view '%s'", icebergView));
+                View view = getIcebergView();
+                ViewVersion version = getViewVersion(view);
+                SQLViewRepresentation sql = selectViewSql(view, version);
+                Schema schema = view.schemas().get(version.schemaId());
+                Preconditions.checkNotNull(schema, "Cannot get schema for view '%s'", view);
+
+                String defaultCatalog = version.defaultCatalog();
+                Namespace namespace = version.defaultNamespace();
+                if (defaultCatalog == null || defaultCatalog.equals(catalog.getName())) {
+                    namespace = ((IcebergMetadataOps) catalog.getMetadataOps()).visibleViewNamespace(namespace);
                 }
-                Map<String, String> summary = viewVersion.summary();
-                if (summary == null) {
-                    throw new RuntimeException(String.format("Cannot get summary for view '%s'", icebergView));
-                }
-                String engineName = summary.get(ENGINE_PROP_NAME);
-                // Preserve engine-based selection. Only a missing/empty engine-name prefers Doris;
-                // Iceberg falls back to the first SQL representation if the dialect has no match.
-                String preferredDialect = StringUtils.isEmpty(engineName)
-                        ? "doris" : engineName.toLowerCase(Locale.ROOT);
-                SQLViewRepresentation sqlViewRepresentation = icebergView.sqlFor(preferredDialect);
-                if (sqlViewRepresentation == null) {
-                    throw new UnsupportedOperationException(String.format(
-                            "Cannot get SQL representation for Iceberg view '%s'", icebergView));
-                }
-                return sqlViewRepresentation;
+                List<Column> columns = IcebergUtils.parseSchema(schema, catalog.getEnableMappingVarbinary(),
+                        catalog.getEnableMappingTimestampTz());
+                new SchemaCacheValue(columns).validateSchema();
+                return new ViewDefinition(sql.sql(), defaultCatalog == null ? catalog.getName() : defaultCatalog,
+                        namespace.toString(), columns);
             });
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private SQLViewRepresentation getViewSqlRepresentation() {
+        try {
+            return catalog.getExecutionAuthenticator().execute(() -> {
+                View view = getIcebergView();
+                return selectViewSql(view, getViewVersion(view));
+            });
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static ViewVersion getViewVersion(View view) {
+        return Preconditions.checkNotNull(view.currentVersion(), "Cannot get view version for view '%s'", view);
+    }
+
+    private static SQLViewRepresentation selectViewSql(View view, ViewVersion version) {
+        Map<String, String> summary = version.summary();
+        String engineName = summary == null ? null : summary.get(ENGINE_PROP_NAME);
+        String preferredDialect = StringUtils.isEmpty(engineName) ? "doris" : engineName.toLowerCase(Locale.ROOT);
+        SQLViewRepresentation firstSql = null;
+        for (ViewRepresentation representation : version.representations()) {
+            if (representation instanceof SQLViewRepresentation) {
+                SQLViewRepresentation sql = (SQLViewRepresentation) representation;
+                if (sql.dialect().equalsIgnoreCase(preferredDialect)) {
+                    return sql;
+                }
+                if (firstSql == null) {
+                    firstSql = sql;
+                }
+            }
+        }
+        if (firstSql == null) {
+            throw new UnsupportedOperationException(
+                    String.format("Cannot get SQL representation for Iceberg view '%s'", view));
+        }
+        return firstSql;
     }
 
     public View getIcebergView() {

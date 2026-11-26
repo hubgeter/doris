@@ -948,6 +948,35 @@ public class ConnectContext {
         currentDbId = -1;
     }
 
+    public static final class NameSpaceContext {
+        private final String catalog;
+        private final String database;
+        private final long databaseId;
+
+        public NameSpaceContext(String catalog, String database, long databaseId) {
+            this.catalog = catalog;
+            this.database = database;
+            this.databaseId = databaseId;
+        }
+    }
+
+    public NameSpaceContext getNameSpaceContext() {
+        return new NameSpaceContext(defaultCatalog, currentDb, currentDbId);
+    }
+
+    public void restoreNameSpaceContext(NameSpaceContext namespace) {
+        defaultCatalog = namespace.catalog;
+        currentDb = namespace.database;
+        currentDbId = namespace.databaseId;
+    }
+
+    /** Set the saved namespace without looking it up until relation binding needs it. */
+    public void setViewDefaultNamespace(String catalogName, String database) {
+        defaultCatalog = catalogName;
+        currentDb = database;
+        currentDbId = -1L;
+    }
+
     public String getDatabase() {
         return currentDb;
     }

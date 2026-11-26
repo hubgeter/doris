@@ -97,6 +97,7 @@ import org.apache.doris.nereids.trees.plans.logical.LogicalJdbcScan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalOdbcScan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalOlapScan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalPlan;
+import org.apache.doris.nereids.trees.plans.logical.LogicalProject;
 import org.apache.doris.nereids.trees.plans.logical.LogicalSchemaScan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalSubQueryAlias;
 import org.apache.doris.nereids.trees.plans.logical.LogicalTVFRelation;
@@ -502,7 +503,7 @@ public class BindRelation extends OneAnalysisRuleFactory {
                         String hiveDb = hmsTable.getDatabase().getFullName();
                         String ddlSql = hmsTable.getViewText();
                         Plan hiveViewPlan = parseAndAnalyzeExternalView(
-                                hmsTable, hiveCatalog, hiveDb, ddlSql, cascadesContext);
+                                new ExternalView(hmsTable, ddlSql), hiveCatalog, hiveDb, cascadesContext);
                         return new LogicalSubQueryAlias<>(qualifiedTableName, hiveViewPlan);
                     }
                     if (hmsTable.getDlaType() == DLAType.HUDI) {
@@ -535,12 +536,17 @@ public class BindRelation extends OneAnalysisRuleFactory {
                                 "iceberg view not supported with snapshot time/version travel");
                         }
                         isView = true;
-                        String icebergCatalog = icebergExternalTable.getCatalog().getName();
-                        String icebergDb = icebergExternalTable.getDatabase().getFullName();
-                        String ddlSql = icebergExternalTable.getViewText();
-                        Plan icebergViewPlan = parseAndAnalyzeExternalView(icebergExternalTable,
-                                icebergCatalog, icebergDb, ddlSql, cascadesContext);
-                        return new LogicalSubQueryAlias<>(qualifiedTableName, icebergViewPlan);
+                        IcebergExternalTable.ViewDefinition definition = icebergExternalTable.getViewDefinition();
+                        ExternalView externalView = new ExternalView(icebergExternalTable, definition.getSql(),
+                                definition.getSchema());
+                        Plan icebergViewPlan = parseAndAnalyzeExternalView(externalView,
+                                definition.getDefaultCatalog(), definition.getDefaultDatabase(), cascadesContext);
+                        List<NamedExpression> outputs = new ArrayList<>();
+                        for (Slot output : icebergViewPlan.getOutput()) {
+                            outputs.add(new Alias(output, output.getName()));
+                        }
+                        return new LogicalSubQueryAlias<>(qualifiedTableName,
+                                new LogicalProject<>(outputs, icebergViewPlan));
                     }
                     if (icebergExternalTable.isView()) {
                         throw new UnsupportedOperationException(
@@ -673,23 +679,16 @@ public class BindRelation extends OneAnalysisRuleFactory {
     }
 
     private Plan parseAndAnalyzeExternalView(
-            ExternalTable table, String externalCatalog, String externalDb,
-            String ddlSql, CascadesContext cascadesContext) {
+            ExternalView view, String externalCatalog, String externalDb, CascadesContext cascadesContext) {
         ConnectContext ctx = cascadesContext.getConnectContext();
-        String previousCatalog = ctx.getCurrentCatalog().getName();
-        String previousDb = ctx.getDatabase();
-        String convertedSql = SqlDialectHelper.convertSqlByDialect(ddlSql, ctx.getSessionVariable());
-        // change catalog and db to external catalog and db,
-        // so that we can parse and analyze the view sql in external context.
-        ctx.changeDefaultCatalog(externalCatalog);
-        ctx.setDatabase(externalDb);
+        ConnectContext.NameSpaceContext previousNamespace = ctx.getNameSpaceContext();
+        String convertedSql = SqlDialectHelper.convertSqlByDialect(view.getViewText(), ctx.getSessionVariable());
         try {
-            return new LogicalView<>(new ExternalView(table, ddlSql),
-                    parseAndAnalyzeView(table, convertedSql, cascadesContext));
+            ctx.setViewDefaultNamespace(externalCatalog, externalDb);
+            return new LogicalView<>(view,
+                    parseAndAnalyzeView(view.getExternalTable(), convertedSql, cascadesContext));
         } finally {
-            // restore catalog and db in connect context
-            ctx.changeDefaultCatalog(previousCatalog);
-            ctx.setDatabase(previousDb);
+            ctx.restoreNameSpaceContext(previousNamespace);
         }
     }
 

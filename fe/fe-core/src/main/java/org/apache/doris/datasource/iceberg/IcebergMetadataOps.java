@@ -170,18 +170,13 @@ public class IcebergMetadataOps implements ExternalMetadataOps {
     private List<String> listNestedNamespaces(Namespace parentNs) {
         // Handle nested namespaces for Iceberg REST catalog,
         // only if "iceberg.rest.nested-namespace-enabled" is true.
-        if (dorisCatalog instanceof IcebergRestExternalCatalog) {
-            IcebergRestExternalCatalog restCatalog = (IcebergRestExternalCatalog) dorisCatalog;
-            MetastoreProperties metaProps = restCatalog.getCatalogProperty().getMetastoreProperties();
-            if (metaProps instanceof IcebergRestProperties
-                    && ((IcebergRestProperties) metaProps).isIcebergRestNestedNamespaceEnabled()) {
-                return nsCatalog.listNamespaces(parentNs)
-                        .stream()
-                        .flatMap(childNs -> Stream.concat(
-                                Stream.of(childNs.toString()),
-                                listNestedNamespaces(childNs).stream()
-                        )).collect(Collectors.toList());
-            }
+        if (hasNestedNamespaces()) {
+            return nsCatalog.listNamespaces(parentNs)
+                    .stream()
+                    .flatMap(childNs -> Stream.concat(
+                            Stream.of(childNs.toString()),
+                            listNestedNamespaces(childNs).stream()
+                    )).collect(Collectors.toList());
         }
 
         return nsCatalog.listNamespaces(parentNs)
@@ -1889,6 +1884,26 @@ public class IcebergMetadataOps implements ExternalMetadataOps {
         } catch (Exception e) {
             throw new RuntimeException("Failed to list view names, error message is:" + e.getMessage(), e);
         }
+    }
+
+    /** Use a flat database name only when lookup resolves it to the same saved namespace. */
+    Namespace visibleViewNamespace(Namespace namespace) {
+        if (externalCatalogName.isPresent() && namespace.length() == 2 && !hasNestedNamespaces()) {
+            String dbName = namespace.level(0);
+            if (getNamespace(dbName).equals(namespace)) {
+                return Namespace.of(dbName);
+            }
+        }
+        return namespace;
+    }
+
+    private boolean hasNestedNamespaces() {
+        if (!(dorisCatalog instanceof IcebergRestExternalCatalog)) {
+            return false;
+        }
+        MetastoreProperties metaProps = dorisCatalog.getCatalogProperty().getMetastoreProperties();
+        return metaProps instanceof IcebergRestProperties
+                && ((IcebergRestProperties) metaProps).isIcebergRestNestedNamespaceEnabled();
     }
 
     private TableIdentifier getTableIdentifier(String dbName, String tblName) {
